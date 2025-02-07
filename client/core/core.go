@@ -1693,22 +1693,13 @@ func (c *Core) Run(ctx context.Context) {
 	// when new accounts are registered.
 	c.ctx = ctx
 
-	// Start initialization, retries are needed to mitigate temporary failures
-	// to connect to DEX servers.
-	go func() {
-		const maxRetries = 10
-		var err error
-		for retry := 0; retry < maxRetries; retry++ {
-			err = c.initialize()
-			if err == nil {
-				close(c.ready) // signal that Core has been initialized
-				return
-			}
-		}
-		c.log.Critical(fmt.Errorf("couldn't initialize core after %d retries: %w", maxRetries, err))
+	err := c.initialize()
+	if err != nil {
+		c.log.Critical(fmt.Errorf("couldn't initialize core: %w", err))
 		close(c.ready) // unblock <-Ready()
 		return
-	}()
+	}
+	close(c.ready) // signal that Core has been initialized
 
 	// The DB starts first and stops last.
 	ctxDB, stopDB := context.WithCancel(context.Background())
@@ -7422,11 +7413,7 @@ func (c *Core) initialize() error {
 	// (contracts and bonds), so we don't wait after the dbWallets loop.
 	wg.Wait()
 
-	msgConnectedServersInfo := fmt.Sprintf("Connected to %d of %d DEX servers", liveConns, len(accts))
-	if len(accts) > 0 && liveConns == 0 {
-		return fmt.Errorf(msgConnectedServersInfo)
-	}
-	c.log.Infof(msgConnectedServersInfo)
+	c.log.Infof("Connected to %d of %d DEX servers", liveConns, len(accts))
 
 	for _, dbWallet := range dbWallets {
 		if asset.Asset(dbWallet.AssetID) == nil && asset.TokenInfo(dbWallet.AssetID) == nil {

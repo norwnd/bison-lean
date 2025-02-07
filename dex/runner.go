@@ -121,7 +121,8 @@ func (c *ConnectionMaster) Connect(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	wg, err := c.connector.Connect(ctx)
 	if err != nil {
-		cancel() // no context leak
+		// TODO - work-around for annoying bug that Bison wallet doesn't recover from
+		//cancel() // no context leak
 		return fmt.Errorf("connect failure: %w", err)
 	}
 	// NOTE: A non-nil error currently does not indicate that the Connector is
