@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -259,6 +260,11 @@ func (conn *wsConn) connect(ctx context.Context) error {
 		dialer.Proxy = http.ProxyFromEnvironment
 	}
 
+	// TODO
+	if rand.Intn(3) != 0 {
+		return fmt.Errorf("DUMMY CONNECT ERRRRRRR")
+	}
+
 	ws, _, err := dialer.DialContext(ctx, conn.url(), conn.cfg.ConnectHeaders)
 	if err != nil {
 		if isErrorInvalidCert(err) {
@@ -437,6 +443,12 @@ func (conn *wsConn) read(ctx context.Context) {
 				continue
 			}
 			conn.handleReadError(err)
+			return
+		}
+
+		// TODO
+		if rand.Intn(40) == 0 {
+			conn.handleReadError(fmt.Errorf("DUMMY READ ERRRRRR"))
 			return
 		}
 
