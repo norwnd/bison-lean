@@ -11,7 +11,6 @@ import {
 import { postJSON } from './http'
 import {
   NewWalletForm,
-  DepositAddress,
   TokenApprovalForm,
   bind as bindForm,
   Forms
@@ -169,7 +168,8 @@ export default class MarketsPage extends BasePage {
   actionInflightCompletedOrderHistory: boolean
   hovers: HTMLElement[]
   ogTitle: string
-  candleChart: CandleChart // reused across different markets
+  candleChart: CandleChart // re-used across different markets
+  chosenCandleDuration: string // re-used across different markets
   // reqCandleDuration is used to differentiate between ws responses coming as a results of requests
   // with different durations, note - that only covers the most common case of concurrent candles
   // request(s), if racy concurrent candles requests prove to be a problem in practice we'll need
@@ -177,7 +177,6 @@ export default class MarketsPage extends BasePage {
   reqCandleDuration: string
   marketList: MarketList
   newWalletForm: NewWalletForm
-  depositAddrForm: DepositAddress
   approveTokenForm: TokenApprovalForm
   reputationMeter: ReputationMeter
   keyup: (e: KeyboardEvent) => void
@@ -212,6 +211,7 @@ export default class MarketsPage extends BasePage {
       mouse: c => { this.reportMouseCandle(c) }
     }
     this.candleChart = new CandleChart(page.candlesChart, candleReporters)
+    this.chosenCandleDuration = State.fetchLocal(State.lastCandleDurationLK) || candleBinKey24h
     this.loadingAnimations = {}
 
     this.approveTokenForm = new TokenApprovalForm(page.approveTokenForm)
@@ -623,14 +623,21 @@ export default class MarketsPage extends BasePage {
   }
 
   // showCandlesLoadingAnimation hides candle chart and displays loading animation, must
-  // be done before 'loadcandles' request is issued to properly handle its response
+  // be called before 'loadcandles' request is issued so we are always ready to handle its
+  // response
   showCandlesLoadingAnimation () {
+    const { page } = this
+
     if (this.loadingAnimations.candles) {
       return
     }
+
     this.candleChart.canvas.classList.add('invisible')
     this.candleChart.pause() // let candle chart know we are in the process of updating it
-    this.loadingAnimations.candles = new Wave(this.page.candlesChart, { message: intl.prep(intl.ID_CANDLES_LOADING) })
+    this.loadingAnimations.candles = new Wave(page.candlesChart, { message: intl.prep(intl.ID_CANDLES_LOADING) })
+    // candle duration buttons are a part of candle chart, gotta hide them as well - these
+    // will be re-drawn once 'loadcandles' response comes along with candle chart
+    Doc.hide(page.candleDurBttnBox)
   }
 
   /* hasPendingBonds is true if there are pending bonds */
@@ -778,8 +785,8 @@ export default class MarketsPage extends BasePage {
     return maxOrderLots * lotSizeAtom
   }
 
-  /* setHighLow calculates the high and low rates over the last 24 hours. */
-  setHighLow () {
+  /* setHighLowMarketStats calculates the high and low rates over the last 24 hours. */
+  setHighLowMarketStats () {
     let [high, low] = [0, 0]
     const mkt = this.market
     const spot = mkt.cfg.spot
@@ -1120,10 +1127,9 @@ export default class MarketsPage extends BasePage {
    */
   setRegistrationStatusVisibility () {
     const { page, market } = this
-    if (!market || !market.dex) return
 
-    // If dex is not connected to server, is not possible to know the
-    // registration status.
+    // If dex is not connected to server, is not possible to know the registration status.
+    if (!market || !market.dex) return
     if (market.dex.connectionStatus !== ConnectionStatus.Connected) return
 
     this.updateRegistrationStatusView()
@@ -1186,7 +1192,7 @@ export default class MarketsPage extends BasePage {
     }
   }
 
-  setCandleDurationBttns () {
+  drawCandleDurationBttns () {
     const { page, market } = this
 
     Doc.empty(page.candleDurBttnBox)
@@ -1199,18 +1205,25 @@ export default class MarketsPage extends BasePage {
         if (!dur) {
           return // should never happen since we are initializing button textContent guaranteed
         }
+        this.chosenCandleDuration = dur
         State.storeLocal(State.lastCandleDurationLK, dur)
-        this.selectCandleDurationElem(dur)
-        this.loadCandles(dur)
+        this.selectChosenCandleDurationElem()
+        this.loadCandles()
       })
       page.candleDurBttnBox.appendChild(bttn)
     }
+
+    this.selectChosenCandleDurationElem()
+
+    Doc.show(page.candleDurBttnBox)
   }
 
-  // selectCandleDurationElem draws in UI which candle duration was chosen.
-  selectCandleDurationElem (dur: string) {
-    for (const bttn of Doc.kids(this.page.candleDurBttnBox)) {
-      if (bttn.textContent === dur) {
+  // selectChosenCandleDurationElem draws in UI which candle duration was chosen.
+  selectChosenCandleDurationElem () {
+    const { page } = this
+
+    for (const bttn of Doc.kids(page.candleDurBttnBox)) {
+      if (bttn.textContent === this.chosenCandleDuration) {
         bttn.classList.add('selected')
         continue
       }
@@ -1283,12 +1296,16 @@ export default class MarketsPage extends BasePage {
     Doc.hide(page.notRegistered, page.bondRequired, page.noWallet)
     Doc.show(this.stats.htmlElem)
 
-    // If we have not yet connected, there is no dex.assets or any other
-    // exchange data, so just put up a message and wait for the connection to be
-    // established, at which time handleConnNote will refresh and reload.
+    // If we have not yet connected, there is no dex.assets or any other exchange data,
+    // so just show loading candles animation and display error message in UI while waiting
+    // for the connection to be established, at which time handleConnNote will refresh and
+    // reload everything on markets page.
     if (!dex || !dex.markets || dex.connectionStatus !== ConnectionStatus.Connected) {
+      this.showCandlesLoadingAnimation()
       let errMsg = intl.prep(intl.ID_CONNECTION_FAILED)
-      if (dex.disabled) errMsg = intl.prep(intl.ID_DEX_DISABLED_MSG)
+      if (dex.disabled) {
+        errMsg = intl.prep(intl.ID_DEX_DISABLED_MSG)
+      }
       page.chartErrMsg.textContent = errMsg
       Doc.show(page.chartErrMsg)
       return
@@ -1341,11 +1358,7 @@ export default class MarketsPage extends BasePage {
     this.setMarketDetails()
     this.setCurrMarketPrice()
 
-    this.setCandleDurationBttns()
-    // use user's last known candle duration (or 24h) as "initial default"
-    const candleDur = State.fetchLocal(State.lastCandleDurationLK) || candleBinKey24h
-    this.selectCandleDurationElem(candleDur)
-    this.loadCandles(candleDur)
+    this.loadCandles()
 
     State.storeLocal(State.lastMarketLK, {
       host: host,
@@ -2336,9 +2349,12 @@ export default class MarketsPage extends BasePage {
       this.loadingAnimations.candles.stop() // just a cleanup
       this.loadingAnimations.candles = undefined // signals we are not on animation screen anymore
       this.candleChart.canvas.classList.remove('invisible') // everything is ready, show the chart
+
+      // set candle duration buttons as well here once we have candle chart data to display
+      this.drawCandleDurationBttns()
     }
 
-    this.setHighLow()
+    this.setHighLowMarketStats()
   }
 
   handleEpochMatchSummary (data: BookUpdate) {
@@ -3633,18 +3649,18 @@ export default class MarketsPage extends BasePage {
   }
 
   /*
-   * loadCandles loads the candles for the current candleDur. If a cache is already
-   * active, the cache will be used without a loadcandles request.
+   * loadCandles loads the candles for the currently chosen candle duration. If a cache
+   * is already active, the cache will be used without a loadcandles request.
    */
-  loadCandles (duration: string) {
+  loadCandles () {
     const { candleCaches, cfg, baseUnitInfo, quoteUnitInfo } = this.market
-    const cache = candleCaches[duration]
+    const cache = candleCaches[this.chosenCandleDuration]
     if (cache) {
       this.candleChart.setCandlesAndDraw(cache, cfg, baseUnitInfo, quoteUnitInfo)
       return
     }
-    this.reqCandleDuration = duration
-    this.requestCandles(duration)
+    this.reqCandleDuration = this.chosenCandleDuration
+    this.requestCandles(this.chosenCandleDuration)
   }
 
   /* requestCandles sends the loadcandles request. It accepts an optional candle
