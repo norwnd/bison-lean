@@ -9588,9 +9588,10 @@ func TestPreOrder(t *testing.T) {
 	var baseFeeRate uint64 = 5
 	var quoteFeeRate uint64 = 10
 
+	const seedSeq = 1
 	err := book.Sync(&msgjson.OrderBook{
 		MarketID:     tDcrBtcMktName,
-		Seq:          1,
+		Seq:          seedSeq,
 		Epoch:        1,
 		Orders:       []*msgjson.BookOrderNote{sellNote, &buyNote},
 		BaseFeeRate:  baseFeeRate,
@@ -9666,10 +9667,12 @@ func TestPreOrder(t *testing.T) {
 
 	// Market orders have to have a market to make estimates.
 	book.Unbook(&msgjson.UnbookOrderNote{
+		Seq:      seedSeq + 1,
 		MarketID: tDcrBtcMktName,
 		OrderID:  sellNote.OrderID,
 	})
 	book.Unbook(&msgjson.UnbookOrderNote{
+		Seq:      seedSeq + 2,
 		MarketID: tDcrBtcMktName,
 		OrderID:  buyNote.OrderID,
 	})
