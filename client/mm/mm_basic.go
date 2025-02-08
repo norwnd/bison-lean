@@ -408,7 +408,7 @@ func (m *basicMarketMaker) ordersToPlace() (buyOrders, sellOrders []*TradePlacem
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetch Bison book: %v", err)
 	}
-	defer feed.Close() // have to release resources, otherwise feed isn't used here
+	defer feed.Close() // have to release resources, feed isn't used here otherwise
 
 	// bestBuy falls back to basisPrice-4%, this is a reasonably safe reference point
 	bestBuy := steppedRate(uint64(float64(basisPrice)-0.04*float64(basisPrice)), m.rateStep)

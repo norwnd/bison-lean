@@ -254,7 +254,6 @@ func (b *bookie) closeFeeds() {
 		close(f.c)
 	}
 	b.feeds = make(map[uint32]*bookFeed, 1)
-
 }
 
 // candles fetches the candle set from the server and activates the candle
@@ -448,8 +447,8 @@ func (dc *dexConnection) syncBook(base, quote uint32) (*orderbook.OrderBook, Boo
 		dc.books[mktID] = booky
 	}
 
-	// Get the feed and the book under a single lock to make sure the first
-	// message is the book.
+	// Get the feed and the book under a single lock to make sure the first message is "book"
+	// (so that nobody else could send anything on this feed concurrently).
 	feed := booky.newFeed(&BookUpdate{
 		Action:   FreshBookAction,
 		Host:     dc.acct.host,
