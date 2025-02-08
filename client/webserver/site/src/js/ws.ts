@@ -47,7 +47,6 @@ class MessageSocket {
   handlers: Record<string, NoteReceiver[]>
   queue: [string, any][]
   maxQlength: number
-  reloader: () => void // appears unused
 
   constructor () {
     this.handlers = {}
@@ -89,10 +88,11 @@ class MessageSocket {
     if (this.connection) this.connection.close()
   }
 
-  connect (uri: string, reloader: () => void) {
+  connect (uri: string, pageReloader: () => void) {
     this.uri = uri
-    this.reloader = reloader
+
     let retrys = 0
+
     const go = () => {
       window.log('ws', `connecting to ${uri}`)
       let conn: WebSocket | null = this.connection = new window.WebSocket(uri)
@@ -127,9 +127,11 @@ class MessageSocket {
         window.log('ws', 'onopen')
         clearTimeout(timeout)
         if (retrys > 0) {
-          retrys = 0
-          reloader()
+          // means we couldn't connect right away had to retry, and as a result - browser page
+          // wasn't able to initialize & display all the data correctly (hence we need to reload it)
+          pageReloader()
         }
+        retrys = 0
         forward('open', null, this.handlers)
         const queue = this.queue
         this.queue = []
