@@ -132,7 +132,7 @@ export default class SettingsPage extends BasePage {
       this.confirmRegisterForm.setExchange(xc, certFile)
       this.walletWaitForm.setExchange(xc)
       this.regAssetForm.setExchange(xc, certFile)
-      this.animateRegAsset(page.dexAddrForm)
+      await this.animateRegAsset(page.dexAddrForm)
     })
 
     Doc.bind(page.importAccount, 'click', () => this.prepareAccountImport(page.authorizeAccountImportForm))
@@ -307,7 +307,7 @@ export default class SettingsPage extends BasePage {
   async prepareAccountImport (authorizeAccountImportForm: HTMLElement) {
     const page = this.page
     page.importAccountErr.textContent = ''
-    this.showForm(authorizeAccountImportForm)
+    await this.showForm(authorizeAccountImportForm)
   }
 
   // importAccount imports the account
@@ -366,7 +366,7 @@ export default class SettingsPage extends BasePage {
     if (res.seed.length === 128 && res.seed.split(' ').length === 1) {
       page.legacySeed.textContent = res.seed.match(/.{1,32}/g).map((chunk: string) => chunk.match(/.{1,8}/g)?.join(' ')).join('\n')
     } else page.mnemonic.textContent = res.seed
-    this.showForm(page.authorizeSeedDisplay)
+    await this.showForm(page.authorizeSeedDisplay)
   }
 
   /* showForm shows a modal form with a little animation. */
@@ -381,16 +381,6 @@ export default class SettingsPage extends BasePage {
       form.style.right = `${(1 - progress) * shift}px`
     }, 'easeOutHard')
     form.style.right = '0'
-  }
-
-  /* gets the contents of the cert file */
-  async getCertFile () {
-    let cert = ''
-    if (this.dexAddrForm.page.certFile.value) {
-      const files = this.dexAddrForm.page.certFile.files
-      if (files && files.length) cert = await files[0].text()
-    }
-    return cert
   }
 
   /* Called after successful registration to a DEX. */
@@ -448,13 +438,13 @@ export default class SettingsPage extends BasePage {
     Doc.hide(oldForm)
     const form = this.page.regAssetForm
     this.currentForm = form
-    this.regAssetForm.animate()
+    await this.regAssetForm.animate()
     Doc.show(form)
   }
 
   /* Swap in the confirmation form and run the animation. */
   async animateConfirmForm (oldForm: HTMLElement) {
-    this.confirmRegisterForm.animate()
+    await this.confirmRegisterForm.animate()
     const form = this.page.confirmRegForm
     this.currentForm = form
     Doc.hide(oldForm)
