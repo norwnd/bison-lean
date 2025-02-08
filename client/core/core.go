@@ -69,8 +69,8 @@ const (
 	// or a config response field if it should be considered variable.
 	preimageReqTimeout = 20 * time.Second
 
-	// wsMaxAnomalyCount is the maximum websocket connection anomaly after which
-	// a client receives a notification to check their connectivity.
+	// wsMaxAnomalyCount is how many anomalies we tolerate before notifying
+	// user to check if his internet connection is fine(stable).
 	wsMaxAnomalyCount = 3
 	// If a client's websocket connection to a server disconnects before
 	// wsAnomalyDuration since last connect time, the client's websocket
@@ -5228,8 +5228,6 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 	if dc.IsDown() {
 		c.log.Warnf("Connection to %v not available for authorization. "+
 			"It will automatically authorize when it connects.", dc.acct.host)
-		subject, details := c.formatDetails(TopicDEXDisconnected, dc.acct.host)
-		c.notify(newConnEventNote(TopicDEXDisconnected, subject, dc.acct.host, comms.Disconnected, details, db.ErrorLevel))
 		return
 	}
 
@@ -8705,7 +8703,7 @@ func (c *Core) handleConnectEvent(dc *dexConnection, status comms.ConnectionStat
 			// Increase anomalies count for this connection.
 			count := atomic.AddUint32(&dc.anomaliesCount, 1)
 			if count%wsMaxAnomalyCount == 0 {
-				// Send notification to check connectivity.
+				// Send notification to ask user to check if his internet is fine(stable).
 				subject, details := c.formatDetails(TopicDexConnectivity, dc.acct.host)
 				c.notify(newConnEventNote(TopicDexConnectivity, subject, dc.acct.host, dc.status(), details, db.Poke))
 			}
@@ -8733,7 +8731,7 @@ func (c *Core) handleConnectEvent(dc *dexConnection, status comms.ConnectionStat
 
 	if dc.broadcastingConnect() {
 		subject, details := c.formatDetails(topic, dc.acct.host)
-		dc.notify(newConnEventNote(topic, subject, dc.acct.host, status, details, db.Poke))
+		c.notify(newConnEventNote(topic, subject, dc.acct.host, status, details, db.Poke))
 	}
 }
 

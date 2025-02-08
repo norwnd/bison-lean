@@ -1293,8 +1293,11 @@ export default class Application {
       }, 6000)
     }
     // Success and higher severity go to the bell dropdown.
-    if (note.severity === ntfn.POKE) this.prependPokeElement(note)
-    else this.prependNoteElement(note)
+    if (note.severity === ntfn.POKE) {
+      this.prependPokeElement(note)
+    } else {
+      this.prependNoteElement(note)
+    }
 
     // show desktop notification
     ntfn.desktopNotify(note)

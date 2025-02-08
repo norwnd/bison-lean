@@ -267,12 +267,12 @@ var originLocale = map[Topic]*translation{
 		template: intl.Translation{T: "%s", Notes: "args: [host]"},
 	},
 	TopicDEXDisconnected: {
-		subject:  intl.Translation{T: "Server disconnect"},
+		subject:  intl.Translation{T: "Server disconnected"},
 		template: intl.Translation{T: "%s", Notes: "args: [host]"},
 	},
 	TopicDexConnectivity: {
 		subject:  intl.Translation{T: "Internet Connectivity"},
-		template: intl.Translation{T: "Your internet connection to %s is unstable, check your internet connection", Notes: "args: [host]"},
+		template: intl.Translation{T: "Your connection to %s is unstable, check your internet connection", Notes: "args: [host]"},
 	},
 	TopicPenalized: {
 		subject:  intl.Translation{T: "Server has penalized you"},

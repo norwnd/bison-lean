@@ -243,6 +243,12 @@ func (conn *wsConn) setConnectionStatus(status ConnectionStatus) {
 
 // connect attempts to establish a websocket connection.
 func (conn *wsConn) connect(ctx context.Context) error {
+	connStatus := Disconnected
+	initializeConnStatus := func() {
+		conn.setConnectionStatus(connStatus)
+	}
+	defer initializeConnStatus()
+
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: DefaultResponseTimeout,
 		TLSClientConfig:  conn.tlsCfg,
@@ -256,13 +262,12 @@ func (conn *wsConn) connect(ctx context.Context) error {
 	ws, _, err := dialer.DialContext(ctx, conn.url(), conn.cfg.ConnectHeaders)
 	if err != nil {
 		if isErrorInvalidCert(err) {
-			conn.setConnectionStatus(InvalidCert)
+			connStatus = InvalidCert
 			if len(conn.cfg.Cert) == 0 {
 				return dex.NewError(ErrCertRequired, err.Error())
 			}
 			return dex.NewError(ErrInvalidCert, err.Error())
 		}
-		conn.setConnectionStatus(Disconnected)
 		return err
 	}
 
@@ -311,7 +316,7 @@ func (conn *wsConn) connect(ctx context.Context) error {
 	conn.ws = ws
 	conn.wsMtx.Unlock()
 
-	conn.setConnectionStatus(Connected)
+	connStatus = Connected
 	conn.wg.Add(1)
 	go func() {
 		defer conn.wg.Done()
@@ -538,6 +543,7 @@ func (conn *wsConn) Connect(ctx context.Context) (*sync.WaitGroup, error) {
 		}()
 	}
 
+	// take care of graceful shutdown
 	conn.wg.Add(1)
 	go func() {
 		defer conn.wg.Done()
