@@ -263,6 +263,8 @@ export default class MarketsPage extends BasePage {
         return
       }
 
+      this.drawSliderBuyBar(sliderValue)
+
       let maxBuyLots = 0
       const maxBuy = mkt.maxBuys[this.chosenRateBuyAtom]
       if (maxBuy) {
@@ -294,6 +296,8 @@ export default class MarketsPage extends BasePage {
       if (sliderValue === null || isNaN(sliderValue) || sliderValue < 0) {
         return
       }
+
+      this.drawSliderSellBar(sliderValue)
 
       let maxSellLots = 0
       if (mkt.maxSell) {
@@ -909,6 +913,7 @@ export default class MarketsPage extends BasePage {
     this.chosenQtyBuyAtom = 0
     page.qtyFieldBuy.value = ''
     page.qtySliderBuyInput.value = '0'
+    this.drawSliderBuyBar(0)
     page.orderTotalPreviewBuyLeft.textContent = ''
     page.orderTotalPreviewBuyRight.textContent = ''
     this.chosenRateSellAtom = 0
@@ -916,6 +921,7 @@ export default class MarketsPage extends BasePage {
     this.chosenQtySellAtom = 0
     page.qtyFieldSell.value = ''
     page.qtySliderSellInput.value = '0'
+    this.drawSliderSellBar(0)
     page.orderTotalPreviewSellLeft.textContent = ''
     page.orderTotalPreviewSellRight.textContent = ''
     this.setOrderBttnBuyEnabled(false)
@@ -2892,6 +2898,7 @@ export default class MarketsPage extends BasePage {
       mkt.cfg.lotsize
     )
     page.qtySliderBuyInput.value = '0'
+    this.drawSliderBuyBar(0)
   }
 
   setSellQtyDefault () {
@@ -2905,6 +2912,59 @@ export default class MarketsPage extends BasePage {
       mkt.cfg.lotsize
     )
     page.qtySliderSellInput.value = '0'
+    this.drawSliderSellBar(0)
+  }
+
+  drawSliderBuyBar (sliderValue: number) {
+    const page = this.page
+
+    // update slider styles to draw how newly-chosen value looks like,
+    // background size defaults to 0 representing how slider looks when its value is 0,
+    // here we are drawing background image up to the point where slider thumb is moved
+    const sliderValuePercent = sliderValue * 100
+    page.qtySliderBuyInput.style.backgroundSize = `${sliderValuePercent}% 100%`
+    page.qtySliderBuyMark25.classList.remove('mark-enabled')
+    page.qtySliderBuyMark50.classList.remove('mark-enabled')
+    page.qtySliderBuyMark75.classList.remove('mark-enabled')
+    page.qtySliderBuyMark100.classList.remove('mark-enabled')
+    if (sliderValue > 0.25) {
+      page.qtySliderBuyMark25.classList.add('mark-enabled')
+    }
+    if (sliderValue > 0.50) {
+      page.qtySliderBuyMark50.classList.add('mark-enabled')
+    }
+    if (sliderValue > 0.75) {
+      page.qtySliderBuyMark75.classList.add('mark-enabled')
+    }
+    if (sliderValue > 1.0) {
+      page.qtySliderBuyMark100.classList.add('mark-enabled')
+    }
+  }
+
+  drawSliderSellBar (sliderValue: number) {
+    const page = this.page
+
+    // update slider styles to draw how newly-chosen value looks like,
+    // background size defaults to 0 representing how slider looks when its value is 0,
+    // here we are drawing background image up to the point where slider thumb is moved
+    const sliderValuePercent = sliderValue * 100
+    page.qtySliderSellInput.style.backgroundSize = `${sliderValuePercent}% 100%`
+    page.qtySliderSellMark25.classList.remove('mark-enabled')
+    page.qtySliderSellMark50.classList.remove('mark-enabled')
+    page.qtySliderSellMark75.classList.remove('mark-enabled')
+    page.qtySliderSellMark100.classList.remove('mark-enabled')
+    if (sliderValue > 0.25) {
+      page.qtySliderSellMark25.classList.add('mark-enabled')
+    }
+    if (sliderValue > 0.50) {
+      page.qtySliderSellMark50.classList.add('mark-enabled')
+    }
+    if (sliderValue > 0.75) {
+      page.qtySliderSellMark75.classList.add('mark-enabled')
+    }
+    if (sliderValue > 1.0) {
+      page.qtySliderSellMark100.classList.add('mark-enabled')
+    }
   }
 
   /*
@@ -3337,6 +3397,7 @@ export default class MarketsPage extends BasePage {
     if (maxBuy) {
       const sliderValue = Math.min(1, lots / maxBuy.swap.lots)
       page.qtySliderBuyInput.value = String(sliderValue)
+      this.drawSliderBuyBar(sliderValue)
     }
   }
 
@@ -3350,6 +3411,7 @@ export default class MarketsPage extends BasePage {
     if (maxSell) {
       const sliderValue = Math.min(1, lots / maxSell.swap.lots)
       page.qtySliderSellInput.value = String(sliderValue)
+      this.drawSliderSellBar(sliderValue)
     }
   }
 

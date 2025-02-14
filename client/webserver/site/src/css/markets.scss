@@ -83,12 +83,92 @@ div[data-handler=markets] {
       }
     }
 
-    .qty-slider {
-      height: 8px;
+    #qtySliderBuy,
+    #qtySliderSell {
+      position: relative;
+      padding-left: 12px;
+      padding-right: 12px;
+      height: 16px;
 
-      &:hover,
-      &:focus {
+      input[type="range"] {
+        z-index: 3;
+        position: absolute;
+        left: 0;
+        bottom: 6px;
+        width: 100%;
+        height: 3px;
+        -webkit-appearance: none;
+        background: var(--form-input-slider-fill-no) linear-gradient(var(--form-input-slider-fill-yes), var(--form-input-slider-fill-yes)) no-repeat left;
+        background-size: 0 100%;
+        border-radius: 10px;
         cursor: pointer;
+      }
+
+      /* Chrome, Safari, Edge */
+      input[type="range"]::-webkit-slider-thumb {
+        z-index: 3;
+        -webkit-appearance: none; /* clear browser thumb */
+        width: 14px;
+        height: 14px;
+        transform: rotate(45deg);
+        background: linear-gradient(var(--form-input-slider-thumb), var(--form-input-slider-thumb));
+        border-radius: 20%;
+
+        &:hover,
+        &:focus {
+          border: 1px solid var(--text-warning);
+        }
+      }
+
+      /* Firefox */
+      input[type="range"]::-moz-range-thumb {
+        z-index: 3;
+        -webkit-appearance: none; /* clear browser thumb */
+        width: 14px;
+        height: 14px;
+        transform: rotate(45deg);
+        background: linear-gradient(var(--form-input-slider-thumb), var(--form-input-slider-thumb));
+        border-radius: 20%;
+
+        &:hover,
+        &:focus {
+          border: 1px solid var(--text-warning);
+        }
+      }
+
+      .slider-mark {
+        z-index: 2;
+        position: absolute;
+        bottom: 4px;
+        width: 7px;
+        height: 7px;
+        transform: rotate(45deg);
+        border-radius: 20%;
+        background-color: var(--form-input-slider-fill-no);
+      }
+
+      .slider-mark-0 {
+        left: 0;
+      }
+
+      .slider-mark-25 {
+        left: 25%;
+      }
+
+      .slider-mark-50 {
+        left: 50%;
+      }
+
+      .slider-mark-75 {
+        left: 75%;
+      }
+
+      .slider-mark-100 {
+        right: 0; // using right here (not left) to not overflow parent element
+      }
+
+      .mark-enabled {
+        background-color: var(--form-input-slider-fill-yes);
       }
     }
 

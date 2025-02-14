@@ -3,7 +3,7 @@
 <div id="main" data-handler="markets" class="main m-0 flex-nowrap">
   {{- /* BODY */ -}}
   <div class="flex-grow-1 position-relative">
-    <div class="stylish-overflow h-100 w-100 overflow-x-hidden flex-stretch-column">
+    <div class="h-100 w-100 overflow-x-hidden flex-stretch-column">
         {{- /* MAIN CONTENT */ -}}
         <div id="mainContent" class="d-flex flex-grow-1 flex-stretch-row">
           {{- /* LEFTMOST SECTION */ -}}
@@ -128,19 +128,17 @@
                       </div>
                     </div>
                   </div>
-                  <div id="qtySliderBuy" class="d-flex flex-stretch-column mt-3 mb-2 mx-2">
-                    <input id="qtySliderBuyInput" type="range" min="0" max="1" step="0.01" list="markers" class="qty-slider" tabindex="-1">
-                    <datalist id="markers">
-                      <option value="0"></option>
-                      <option value="0.25"></option>
-                      <option value="0.5"></option>
-                      <option value="0.75"></option>
-                      <option value="1"></option>
-                    </datalist>
+                  <div id="qtySliderBuy" class="mt-2 mb-1 mx-2">
+                    <input id="qtySliderBuyInput" type="range" min="0" max="1" step="0.01">
+                    <div id="qtySliderBuyMark0" class="slider-mark slider-mark-0 mark-enabled"></div>
+                    <div id="qtySliderBuyMark25" class="slider-mark slider-mark-25"></div>
+                    <div id="qtySliderBuyMark50" class="slider-mark slider-mark-50"></div>
+                    <div id="qtySliderBuyMark75" class="slider-mark slider-mark-75"></div>
+                    <div id="qtySliderBuyMark100" class="slider-mark slider-mark-100"></div>
                   </div>
                   <div class="d-flex flex-stretch-row m-1" id="previewTotalBuy">
                     <div id="orderTotalPreviewBuyLeft" class="d-flex align-items-center justify-content-end me-1 demi fs18"></div>
-                    <span id="orderTotalPreviewBuyDelimiter" class="d-flex align-items-center mx-1 pt-0-5 fs22">⇄</span>
+                    <span id="orderTotalPreviewBuyDelimiter" class="d-flex align-items-center mx-1 pt-0-5 fs22 grey">⇄</span>
                     <div id="orderTotalPreviewBuyRight" class="d-flex align-items-center justify-content-start ms-1 demi fs18"></div>
                   </div>
                   <button id="submitBttnBuy" type="button" class="flex-center border pointer hoverbg border-rounded3 m-1 submit fs18 text-center buygreen-bg"></button> {{/* textContent set by script */}}
@@ -177,19 +175,17 @@
                       </div>
                     </div>
                   </div>
-                  <div id="qtySliderSell" class="d-flex flex-stretch-column mt-3 mb-2 mx-2">
-                    <input id="qtySliderSellInput" type="range" min="0" max="1" step="0.01" list="markers" class="qty-slider" tabindex="-1">
-                    <datalist id="markers">
-                      <option value="0"></option>
-                      <option value="0.25"></option>
-                      <option value="0.5"></option>
-                      <option value="0.75"></option>
-                      <option value="1"></option>
-                    </datalist>
+                  <div id="qtySliderSell" class="mt-2 mb-1 mx-2">
+                    <input id="qtySliderSellInput" type="range" min="0" max="1" step="0.01">
+                    <div id="qtySliderSellMark0" class="slider-mark slider-mark-0 mark-enabled"></div>
+                    <div id="qtySliderSellMark25" class="slider-mark slider-mark-25"></div>
+                    <div id="qtySliderSellMark50" class="slider-mark slider-mark-50"></div>
+                    <div id="qtySliderSellMark75" class="slider-mark slider-mark-75"></div>
+                    <div id="qtySliderSellMark100" class="slider-mark slider-mark-100"></div>
                   </div>
                   <div class="d-flex flex-stretch-row m-1" id="previewTotalSell">
                     <div id="orderTotalPreviewSellLeft" class="d-flex align-items-center justify-content-end me-1 demi fs18"></div>
-                    <span id="orderTotalPreviewSellDelimiter" class="d-flex align-items-center mx-1 pt-0-5 fs22">⇄</span>
+                    <span id="orderTotalPreviewSellDelimiter" class="d-flex align-items-center mx-1 pt-0-5 fs22 grey">⇄</span>
                     <div id="orderTotalPreviewSellRight" class="d-flex align-items-center justify-content-start ms-1 demi fs18"></div>
                   </div>
                   <button id="submitBttnSell" type="button" class="flex-center border pointer hoverbg border-rounded3 m-1 submit fs18 text-center sellred-bg"></button> {{/* textContent set by script */}}

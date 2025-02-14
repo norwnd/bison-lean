@@ -49,6 +49,9 @@ body:not(.dark) {
   --form-input-bg-active: #3095db;
   --form-opt-selected-bg: #0001;
   --form-selected-tab-bg: white;
+  --form-input-slider-fill-no: #cecece;
+  --form-input-slider-fill-yes: var(--text-color);
+  --form-input-slider-thumb: var(--text-color); // must be same as --form-input-slider-fill-yes as a work-around for overlay issues between different slider elements
 
   // market view
   --indicator-good: #179717;
@@ -115,8 +118,11 @@ body.dark {
   --form-input-border-focus: #4271ce;
   --form-input-bg-passive: black;
   --form-input-bg-active: #27278d;
-  --form-opt-selected-bg: #fff1;
+  --form-opt-selected-bg: #181891;
   --form-selected-tab-bg: #39447c;
+  --form-input-slider-fill-no: #535353;
+  --form-input-slider-fill-yes: var(--text-color);
+  --form-input-slider-thumb: var(--text-color); // must be same as --form-input-slider-fill-yes as a work-around for overlay issues between different slider elements
 
   // market view
   --indicator-good: #29bb77;
