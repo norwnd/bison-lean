@@ -217,6 +217,16 @@ export default class DexSettingsPage extends BasePage {
     const asset = app().assets[assetID]
     const { bondAssets } = this.regAssetForm.xc
     const bondAsset = bondAssets[asset.symbol]
+    if (!wallet.open) {
+      const loaded = app().loading(page.forms)
+      const res = await postJSON('/api/openwallet', { assetID: assetID })
+      loaded()
+      if (!app().checkResponse(res)) {
+        this.regAssetForm.setAssetError(`error unlocking wallet: ${res.msg}`)
+        await this.runAnimation(this.regAssetForm, page.regAssetForm)
+      }
+      return
+    }
     if (wallet.synced && wallet.balance.available >= 2 * bondAsset.amount + fees) {
       // If we are raising our tier, we'll show a confirmation form
       await this.progressTierFormWithSyncedFundedWallet(assetID)
@@ -429,7 +439,7 @@ export default class DexSettingsPage extends BasePage {
   async disableAutoRenew () {
     const loaded = app().loading(this.page.otherBondSettings)
     try {
-      this.updateBondOptions({ targetTier: 0 })
+      await this.updateBondOptions({ targetTier: 0 })
       loaded()
     } catch (e) {
       loaded()
