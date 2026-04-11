@@ -1,0 +1,748 @@
+@import "mixins";
+
+div[data-handler=markets] {
+  .ordertable-wrap {
+    width: 100%;
+
+    &:first-child {
+      @include border-bottom;
+    }
+
+    &:last-child {
+      @include border-top;
+    }
+
+    tbody#sellRows {
+      @include border-top;
+    }
+  }
+
+  #orderFormBuy,
+  #orderFormSell {
+    .order-form-input{
+      height: 44px; // helps to keep input size from growing larger than it could be
+      font-weight: bold;
+      background-color: var(--body-bg-lower-opacity);
+      border: 1.5px solid var(--border-color);
+      border-radius: 8px;
+      transition-property: border;
+      transition-duration: 300ms;
+      transition-timing-function: ease-in-out;
+
+      &:hover,
+      &:focus,
+      &.selected {
+        border: 1.5px solid var(--text-warning);
+      }
+
+      // override the global defaults for input form
+      input[type=text]{
+        border: none;
+        background-color: transparent;
+        border-radius: 0;
+      }
+
+      .arrows-up-down{
+        height: 90%;
+
+        #rateFieldBuyArrowUp,
+        #qtyFieldBuyArrowUp,
+        #rateFieldSellArrowUp,
+        #qtyFieldSellArrowUp{
+          .arrow-up{
+            border-bottom-color: var(--text-grey);
+          }
+
+          &:hover,
+          &:focus {
+            cursor: pointer;
+
+            .arrow-up{
+              border-bottom-color: var(--text-color);
+            }
+          }
+        }
+
+        #rateFieldBuyArrowDown,
+        #qtyFieldBuyArrowDown,
+        #rateFieldSellArrowDown,
+        #qtyFieldSellArrowDown{
+          .arrow-down{
+            border-top-color: var(--text-grey);
+          }
+
+          &:hover,
+          &:focus {
+            cursor: pointer;
+
+            .arrow-down{
+              border-top-color: var(--text-color);
+            }
+          }
+        }
+      }
+    }
+
+    #qtySliderBuy,
+    #qtySliderSell {
+      position: relative;
+      padding-left: 12px;
+      padding-right: 12px;
+      height: 16px;
+
+      input[type="range"] {
+        z-index: 3;
+        position: absolute;
+        left: 0;
+        bottom: 6px;
+        width: 100%;
+        height: 3px;
+        -webkit-appearance: none;
+        background: var(--form-input-slider-fill-no) linear-gradient(var(--form-input-slider-fill-yes), var(--form-input-slider-fill-yes)) no-repeat left;
+        background-size: 0 100%;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      /* Chrome, Safari, Edge */
+      input[type="range"]::-webkit-slider-thumb {
+        z-index: 3;
+        -webkit-appearance: none; /* clear browser thumb */
+        width: 14px;
+        height: 14px;
+        transform: rotate(45deg);
+        background: linear-gradient(var(--form-input-slider-thumb), var(--form-input-slider-thumb));
+        border-radius: 20%;
+
+        &:hover,
+        &:focus {
+          border: 1px solid var(--text-warning);
+        }
+      }
+
+      /* Firefox */
+      input[type="range"]::-moz-range-thumb {
+        z-index: 3;
+        -webkit-appearance: none; /* clear browser thumb */
+        width: 14px;
+        height: 14px;
+        transform: rotate(45deg);
+        background: linear-gradient(var(--form-input-slider-thumb), var(--form-input-slider-thumb));
+        border-radius: 20%;
+
+        &:hover,
+        &:focus {
+          border: 1px solid var(--text-warning);
+        }
+      }
+
+      .slider-mark {
+        z-index: 2;
+        position: absolute;
+        bottom: 4px;
+        width: 7px;
+        height: 7px;
+        transform: rotate(45deg);
+        border-radius: 20%;
+        background-color: var(--form-input-slider-fill-no);
+      }
+
+      .slider-mark-0 {
+        left: 0;
+      }
+
+      .slider-mark-25 {
+        left: 25%;
+      }
+
+      .slider-mark-50 {
+        left: 50%;
+      }
+
+      .slider-mark-75 {
+        left: 75%;
+      }
+
+      .slider-mark-100 {
+        right: 0; // using right here (not left) to not overflow parent element
+      }
+
+      .mark-enabled {
+        background-color: var(--form-input-slider-fill-yes);
+      }
+    }
+
+    #previewTotalBuy {
+      #orderTotalPreviewBuyLeft {
+        flex-basis: 47%;
+      }
+
+      #orderTotalPreviewBuyDelimiter {
+        flex-basis: 6%;
+      }
+
+      #orderTotalPreviewBuyRight {
+        flex-basis: 47%;
+      }
+    }
+
+    #previewTotalSell {
+      #orderTotalPreviewSellLeft {
+        flex-basis: 47%;
+      }
+
+      #orderTotalPreviewSellDelimiter {
+        flex-basis: 6%;
+      }
+
+      #orderTotalPreviewSellRight {
+        flex-basis: 47%;
+      }
+    }
+
+    button {
+      opacity: 0.90;
+      padding: 5px 25px;
+      border-radius: 6px;
+      background-color: var(--section-bg);
+      color: var(--market-btn-selected-color);
+
+      &:hover,
+      &:focus {
+        opacity: 1;
+      }
+
+      &:disabled {
+        pointer-events: auto; // can't use none because it will not show "title" message
+        opacity: 0.4;
+      }
+    }
+
+    button.submit {
+      &.buygreen-bg {
+        background-color: var(--market-buygreen-bg);
+      }
+
+      &.sellred-bg {
+        background-color: var(--market-sellred-bg);
+      }
+    }
+
+    #orderTotalPreviewBuyLeft {
+      color: var(--sell-color);
+    }
+
+    #orderTotalPreviewBuyRight {
+      color: var(--buy-color);
+    }
+
+    #orderTotalPreviewSellLeft {
+      color: var(--sell-color);
+    }
+
+    #orderTotalPreviewSellRight {
+      color: var(--buy-color);
+    }
+  }
+
+  .rightmost-panel {
+    .ico-unlocked {
+      color: $success;
+    }
+
+    .ico-disconnected {
+      color: var(--text-warning);
+    }
+  }
+
+  .market-chart {
+    @extend .flex-center;
+
+    flex-grow: 1;
+    position: relative;
+    min-width: 100px; // Letting it go to zero can be problematic, causing some major cpu during chart calcs
+
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      user-select: none;
+    }
+  }
+
+  #unreadyOrdersMsg {
+    color: $danger;
+  }
+
+  .unready-user-order {
+    background-color: #6e0909;
+  }
+
+  .user-order {
+    &:not(:last-child) {
+      border-bottom-style: none !important;
+    }
+
+    &:last-child .order-details {
+      border-bottom-style: none !important;
+      padding-bottom: 0;
+    }
+
+    .user-order-header {
+      @extend .flex-center;
+
+      padding: 5px 10px 5px 20px;
+      font-size: 14px;
+      position: relative;
+      // border: 1px solid grey;
+
+      .side-indicator {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 8px;
+
+        &.buy {
+          background-color: var(--buy-color);
+        }
+
+        &.sell {
+          background-color: var(--sell-color);
+        }
+
+        &.inactive {
+          opacity: 0.5;
+        }
+      }
+
+      .active-indicator {
+        height: 8px;
+        border-radius: 4px;
+
+        &.active {
+          margin: 0 5px;
+          width: 8px;
+          background-color: var(--buy-color);
+        }
+      }
+    }
+
+    .order-details {
+      margin-bottom: 25px;
+      padding: 0 10px 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      row-gap: 10px;
+      column-gap: 5px;
+      line-height: 1;
+
+      .user-order-datum {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+
+        & > span:first-child {
+          font-family: $demi-sans;
+          color: grey;
+          margin-bottom: 4px;
+        }
+
+        &.full-span {
+          grid-column: 1 / -1;
+        }
+      }
+    }
+  }
+
+  .numorders {
+    background-color: var(--market-numorders-bg);
+    padding: 1px 2px;
+  }
+
+  #leftMarketDock {
+    display: flex;
+    z-index: 2;
+    min-height: -webkit-fill-available; // for webkit browsers
+    min-width: 150px; // hack to prevent leftMarketDock from collapsing when there is no content to show
+    background-color: var(--section-bg);
+
+    #searchBoxV1 {
+      height: 55px;
+    }
+
+    #marketSearchV1:focus {
+      border: none;
+      outline: none;
+    }
+
+    #marketSearchV1 {
+      @extend .fill-abs;
+
+      width: 100%; // firefox needs, for some reason
+      z-index: 2;
+      background-color: transparent; // must be transparent for `ico-search` to show in background
+      border: none;
+      text-align: center;
+      font-family: $demi-sans;
+      text-transform: uppercase;
+
+      & + .ico-search {
+        position: absolute;
+        z-index: 1;
+        left: 50%;
+        top: 50%;
+        transform: translateX(-50%) translateY(-50%);
+        opacity: 0.25;
+      }
+
+      &:hover + .ico-search {
+        opacity: 0.5;
+      }
+
+      &:not(:placeholder-shown) + .ico-search,
+      &:focus + .ico-search {
+        display: none;
+      }
+    }
+
+    #marketListV1 {
+      height: 100%;
+
+      & > div {
+        &:focus,
+        &.selected {
+          background-color: var(--tertiary-bg);
+        }
+      }
+    }
+  }
+
+  #mainContent {
+    & > section {
+      &:first-child { // leftmost section
+        order: 1;
+        flex-basis: 18%; /* width/height - depending on flex-direction */
+      }
+
+      &:nth-child(2) { // middle section
+        order: 2;
+        flex-basis: 58%; /* width/height - depending on flex-direction */
+
+        & > section {
+          &:first-child { // candle chart
+            order: 1;
+            flex-basis: 68%; /* width/height - depending on flex-direction */
+          }
+
+          &:last-child { // rightmost section
+            order: 2;
+            flex-basis: 32%; /* width/height - depending on flex-direction */
+
+            & > section {
+              &:first-child { // buy form
+                order: 1;
+                flex-basis: 50%; /* width/height - depending on flex-direction */
+              }
+
+              &:last-child { // sell form
+                order: 2;
+                flex-basis: 50%; /* width/height - depending on flex-direction */
+              }
+            }
+          }
+        }
+      }
+
+      &:last-child { // user orders, recent matches
+        order: 3;
+        flex-basis: 24%; /* width/height - depending on flex-direction */
+      }
+    }
+
+    #leftMarketDock {
+      width: 100%; // takes care of stretching to full parent size
+      height: 100%; // takes care of stretching to full parent size
+    }
+
+    #orderBook {
+      width: 100%; // takes care of stretching to full parent size
+      height: 100%; // takes care of stretching to full parent size
+
+      #ownBookOrder{
+        background-color: var(--text-warning);
+        border-radius: 50%;
+        height: 4px;
+        top: 10px;
+        width: 4px;
+      }
+    }
+  }
+
+  #candleDurBttnBox {
+    position: absolute;
+    left: 65px;
+    top: 5px;
+    opacity: 0.65; // make these non-distracting
+    background-color: var(--section-bg);
+    z-index: 1;
+
+    .candle-dur-bttn {
+      background-color: var(--section-bg);
+      border: 1px solid var(--btn-border-color);
+      padding: 2px 4px;
+      font-size: 14px;
+      line-height: 1;
+      margin: 0 2px;
+
+      &:hover {
+        background-color: var(--section-bg-strong);
+      }
+
+      &:hover,
+      &.selected {
+        border-color: var(--text-warning);
+        color: var(--text-warning);
+      }
+    }
+  }
+
+  #loaderMsg {
+    color: var(--text-grey);
+  }
+
+  #bondCreationPending {
+    .title {
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #9b8c09;
+    }
+  }
+
+  #registrationStatus {
+    .title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    &.waiting {
+      .title {
+        color: #9b8c09;
+      }
+    }
+
+    &.completed {
+      .title {
+        color: $success;
+      }
+
+      #regStatusMessage {
+        display: none;
+      }
+    }
+
+    &.error {
+      .title {
+        color: $danger;
+      }
+    }
+  }
+
+  #approveTokenForm {
+    width: 450px;
+  }
+
+  #verifyForm {
+    header {
+      &.buygreen-bg {
+        background-color: var(--market-buygreen-bg);
+      }
+
+      &.sellred-bg {
+        background-color: var(--market-sellred-bg);
+      }
+    }
+
+    button {
+      &.buygreen-bg {
+        background-color: var(--market-buygreen-bg);
+      }
+
+      &.sellred-bg {
+        background-color: var(--market-sellred-bg);
+      }
+    }
+
+    .loader {
+      height: 40px;
+    }
+
+    #youSpend {
+      color: var(--sell-color);
+    }
+
+    #youGet {
+      color: var(--buy-color);
+    }
+  }
+}
+
+#marketStats {
+  .statgrid {
+    display: grid;
+    grid-template-columns: auto auto auto auto;
+    row-gap: 0;
+    column-gap: 0;
+  }
+}
+
+#recentMatchesBox {
+  @extend .stylish-overflow;
+
+  max-height: 350px;
+}
+
+#recentMatchesTable {
+  table-layout: fixed; // helps to align columns more evenly (than default `auto`)
+  width: 100%; // must be set for `fixed` layout to work I guess
+
+  th {
+    align-items: center;
+
+    &:hover {
+      opacity: 0.7;
+    }
+
+    .ico-arrowdown {
+      display: inline-block;
+      visibility: hidden;
+      vertical-align: middle;
+      font-size: 10px;
+    }
+
+    &.sorted-dsc {
+      .ico-arrowdown {
+        visibility: visible;
+      }
+    }
+
+    &.sorted-asc {
+      .ico-arrowdown {
+        visibility: visible;
+        transform: rotate(180deg);
+      }
+    }
+  }
+}
+
+#completedOrderHistoryDurBttnBox {
+  background-color: var(--section-bg);
+  z-index: 1;
+
+  .completed-order-dur-bttn {
+    background-color: var(--section-bg);
+    border: 1px solid var(--btn-border-color);
+    line-height: 1;
+
+    &:hover {
+      background-color: var(--section-bg-strong);
+    }
+
+    &:hover,
+    &.selected {
+      border-color: var(--text-warning);
+      color: var(--text-warning);
+    }
+  }
+}
+
+@include media-breakpoint-up(xl) {
+  #marketStats {
+    display: none;
+    border-top: none;
+  }
+}
+
+@include media-breakpoint-up(lg) {
+  div[data-handler=markets] {
+    .ordertable-wrap {
+      height: calc(50% - 15px);
+      display: flex;
+
+      &.reversible {
+        flex-direction: column-reverse;
+      }
+
+      tbody {
+        display: flex;
+        align-items: stretch;
+      }
+
+      tbody#sellRows {
+        flex-direction: column-reverse;
+        border-top: none;
+      }
+
+      tbody#buyRows {
+        flex-direction: column;
+      }
+    }
+
+    .rightmost-panel {
+      & > div {
+        @include fill-abs;
+        @include stylish-overflow;
+
+        height: 100%;
+        overflow-x: hidden;
+      }
+    }
+  }
+
+  #recentMatchesBox {
+    overflow: visible;
+    max-height: none;
+    border-bottom: none;
+  }
+
+  #candlesLegend {
+    z-index: 10;
+    position: absolute;
+    top: 0;
+    right: 0;
+    background-color: var(--section-bg);
+  }
+}
+
+.user-order-floaty-menu {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  z-index: 5;
+  border-style: none solid solid;
+  border-width: 0 2px 2px 1px;
+  border-color: var(--border-color);
+  background-color: var(--section-bg);
+  cursor: pointer;
+  overflow: hidden;
+
+  & > span,
+  & > a {
+    margin: 0 5px;
+    padding-right: 10px;
+    padding-left: 10px;
+
+    &:hover {
+      background-color: #7775;
+    }
+  }
+}
+
+.bot-problems-section {
+  background-color: #f00a;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  padding-left: 2px;
+  border-radius: 5px;
+}

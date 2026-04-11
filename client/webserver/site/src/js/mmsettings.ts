@@ -51,6 +51,7 @@ import {
   GapStrategyAbsolutePlus,
   GapStrategyPercent,
   GapStrategyPercentPlus,
+  GapStrategyCompetitive,
   feesAndCommit
 } from './mmutil'
 import { Forms, bind as bindForm, NewWalletForm, TokenApprovalForm, DepositAddress, CEXConfigurationForm } from './forms'
@@ -63,7 +64,7 @@ const lastArbExchangeLK = 'lastArbExchange'
 const arbMMRowCacheKey = 'arbmm'
 
 const defaultSwapReserves = {
-  n: 50,
+  n: 0,
   prec: 0,
   inc: 10,
   minR: 0,
@@ -73,9 +74,9 @@ const defaultSwapReserves = {
 const defaultOrderReserves = {
   factor: 1.0,
   minR: 0,
-  maxR: 3,
-  range: 3,
-  prec: 3
+  maxR: 10,
+  range: 10,
+  prec: 10
 }
 const defaultTransfer = {
   factor: 0.1,
@@ -84,14 +85,14 @@ const defaultTransfer = {
   range: 1
 }
 const defaultSlippage = {
-  factor: 0.05,
+  factor: 0.0,
   minR: 0,
   maxR: 0.3,
   range: 0.3,
   prec: 3
 }
 const defaultDriftTolerance = {
-  value: 0.002,
+  value: 0.0,
   minV: 0,
   maxV: 0.02,
   range: 0.02,
@@ -106,10 +107,10 @@ const defaultOrderPersistence = {
 }
 const defaultProfit = {
   prec: 3,
-  value: 0.01,
+  value: 0.05,
   minV: 0.001,
   maxV: 0.1,
-  range: 0.1 - 0.001
+  range: 0.05 - 0.001
 }
 const defaultLevelSpacing = {
   prec: 3,
@@ -142,11 +143,11 @@ const defaultUSDPerSide = {
 }
 
 const defaultMarketMakingConfig: ConfigState = {
-  gapStrategy: GapStrategyPercentPlus,
+  gapStrategy: GapStrategyCompetitive,
   sellPlacements: [],
   buyPlacements: [],
   driftTolerance: defaultDriftTolerance.value,
-  profit: 0.02,
+  profit: 0.005,
   orderPersistence: defaultOrderPersistence.value,
   cexRebalance: true,
   simpleArbLots: 1
@@ -275,7 +276,11 @@ export default class MarketMakerSettingsPage extends BasePage {
     this.basePane = new AssetPane(this, page.basePane)
     this.quotePane = new AssetPane(this, page.quotePane)
 
-    app().headerSpace.appendChild(page.mmTitle)
+    // since marketStats resides directly on the header (not markets page) we need to fetch
+    // it through markets page parent
+    if (!main.parentElement) return // Not gonna happen, but TypeScript cares.
+    const mmTitleElem = Doc.idDescendants(main.parentElement).mmTitle
+    Doc.show(mmTitleElem)
 
     setOptionTemplates(page)
     Doc.cleanTemplates(
@@ -668,9 +673,9 @@ export default class MarketMakerSettingsPage extends BasePage {
 
     // If this is a new bot, show the quick config form.
     const isQuickPlacements = !botCfg || this.isQuickPlacements(this.updatedConfig.buyPlacements, this.updatedConfig.sellPlacements)
-    const gapStrategy = botCfg?.basicMarketMakingConfig?.gapStrategy ?? GapStrategyPercentPlus
+    const gapStrategy = botCfg?.basicMarketMakingConfig?.gapStrategy ?? GapStrategyCompetitive
     page.gapStrategySelect.value = gapStrategy
-    if (botType === botTypeBasicArb || (isQuickPlacements && gapStrategy === GapStrategyPercentPlus)) this.showQuickConfig()
+    if (botType === botTypeBasicArb || (isQuickPlacements && gapStrategy === GapStrategyCompetitive)) this.showQuickConfig()
     else this.showAdvancedConfig()
 
     this.setOriginalValues()
@@ -1337,6 +1342,7 @@ export default class MarketMakerSettingsPage extends BasePage {
       }
       case GapStrategyPercent:
       case GapStrategyPercentPlus:
+      case GapStrategyCompetitive:
         return ['Percent', '%']
       default:
         throw new Error(`Unknown gap strategy ${gapStrategy}`)
@@ -1362,6 +1368,7 @@ export default class MarketMakerSettingsPage extends BasePage {
         return null
       case GapStrategyPercent:
       case GapStrategyPercentPlus:
+      case GapStrategyCompetitive:
         if (value <= 0 || value > 10) {
           return 'Percent must be between 0 and 10'
         }
@@ -1387,6 +1394,7 @@ export default class MarketMakerSettingsPage extends BasePage {
         return gapFactor
       case GapStrategyPercent:
       case GapStrategyPercentPlus:
+      case GapStrategyCompetitive:
         if (toDisplay) {
           return gapFactor * 100
         }
@@ -1542,8 +1550,10 @@ export default class MarketMakerSettingsPage extends BasePage {
     const header = this.gapFactorHeaderUnit(gapStrategy)[0]
     page.buyGapFactorHdr.textContent = header
     page.sellGapFactorHdr.textContent = header
-    Doc.hide(page.percentPlusInfo, page.percentInfo, page.absolutePlusInfo, page.absoluteInfo, page.multiplierInfo)
+    Doc.hide(page.competitiveInfo, page.percentPlusInfo, page.percentInfo, page.absolutePlusInfo, page.absoluteInfo, page.multiplierInfo)
     switch (gapStrategy) {
+      case 'competitive':
+        return Doc.show(page.competitiveInfo)
       case 'percent-plus':
         return Doc.show(page.percentPlusInfo)
       case 'percent':
@@ -1818,21 +1828,21 @@ export default class MarketMakerSettingsPage extends BasePage {
         const tmpl = Doc.parseTemplate(tr)
         tmpl.logo.src = 'img/' + o.host + '.png'
         tmpl.host.textContent = ExchangeNames[o.host]
-        tmpl.volume.textContent = Doc.formatFourSigFigs(o.usdVol)
-        tmpl.price.textContent = Doc.formatFourSigFigs((o.bestBuy + o.bestSell) / 2)
+        tmpl.volume.textContent = Doc.formatBestWeCan(o.usdVol)
+        tmpl.price.textContent = Doc.formatBestWeCan((o.bestBuy + o.bestSell) / 2)
       }
-      page.avgPrice.textContent = r.price ? Doc.formatFourSigFigs(r.price) : '0'
+      page.avgPrice.textContent = r.price ? Doc.formatBestWeCan(r.price) : '0'
       Doc.show(page.oraclesTable)
     }
 
     if (r.baseFiatRate > 0) {
-      page.baseFiatRate.textContent = Doc.formatFourSigFigs(r.baseFiatRate)
+      page.baseFiatRate.textContent = Doc.formatBestWeCan(r.baseFiatRate)
     } else {
       page.baseFiatRate.textContent = 'N/A'
     }
 
     if (r.quoteFiatRate > 0) {
-      page.quoteFiatRate.textContent = Doc.formatFourSigFigs(r.quoteFiatRate)
+      page.quoteFiatRate.textContent = Doc.formatBestWeCan(r.quoteFiatRate)
     } else {
       page.quoteFiatRate.textContent = 'N/A'
     }
@@ -2153,42 +2163,42 @@ class AssetPane {
     this.setLotSize(lotSize)
     const { page, cfg, lotSizeConv, inv, ui, feeUI, isToken, isQuote, pg: { specs: { cexName, botType } } } = this
     page.bookLots.textContent = String(lots)
-    page.bookLotSize.textContent = Doc.formatFourSigFigs(lotSizeConv)
+    page.bookLotSize.textContent = Doc.formatBestWeCan(lotSizeConv)
     inv.book = lots * lotSizeConv
-    page.bookCommitment.textContent = Doc.formatFourSigFigs(inv.book)
+    page.bookCommitment.textContent = Doc.formatBestWeCan(inv.book)
     const feesPerLotConv = fees.bookingFeesPerLot / feeUI.conventional.conversionFactor
-    page.bookingFeesPerLot.textContent = Doc.formatFourSigFigs(feesPerLotConv)
+    page.bookingFeesPerLot.textContent = Doc.formatBestWeCan(feesPerLotConv)
     page.swapReservesFactor.textContent = fees.swapReservesFactor.toFixed(2)
     page.bookingFeesLots.textContent = String(lots)
     inv.bookingFees = fees.bookingFees / feeUI.conventional.conversionFactor
-    page.bookingFees.textContent = Doc.formatFourSigFigs(inv.bookingFees)
+    page.bookingFees.textContent = Doc.formatBestWeCan(inv.bookingFees)
     if (cexName) {
       inv.cex = cexCommit / ui.conventional.conversionFactor
-      page.cexMinInv.textContent = Doc.formatFourSigFigs(inv.cex)
+      page.cexMinInv.textContent = Doc.formatBestWeCan(inv.cex)
     }
     if (botType !== botTypeBasicArb) {
       const totalInventory = Math.max(cexCommit, dexCommit) / ui.conventional.conversionFactor
-      page.orderReservesBasis.textContent = Doc.formatFourSigFigs(totalInventory)
+      page.orderReservesBasis.textContent = Doc.formatBestWeCan(totalInventory)
       const orderReserves = totalInventory * cfg.orderReservesFactor
       inv.orderReserves = orderReserves
-      page.orderReserves.textContent = Doc.formatFourSigFigs(orderReserves)
+      page.orderReserves.textContent = Doc.formatBestWeCan(orderReserves)
     }
     if (isToken) {
       const feesPerSwapConv = fees.tokenFeesPerSwap / feeUI.conventional.conversionFactor
-      page.feeReservesPerSwap.textContent = Doc.formatFourSigFigs(feesPerSwapConv)
+      page.feeReservesPerSwap.textContent = Doc.formatBestWeCan(feesPerSwapConv)
       inv.swapFeeReserves = feesPerSwapConv * cfg.swapFeeN
-      page.feeReserves.textContent = Doc.formatFourSigFigs(inv.swapFeeReserves)
+      page.feeReserves.textContent = Doc.formatBestWeCan(inv.swapFeeReserves)
     }
     if (isQuote) {
       const basis = inv.book + inv.cex + inv.orderReserves
-      page.slippageBufferBasis.textContent = Doc.formatCoinValue(basis * ui.conventional.conversionFactor, ui)
+      page.slippageBufferBasis.textContent = Doc.formatCoinAtom(basis * ui.conventional.conversionFactor, ui)
       inv.slippageBuffer = basis * cfg.slippageBufferFactor
-      page.slippageBuffer.textContent = Doc.formatCoinValue(inv.slippageBuffer * ui.conventional.conversionFactor, ui)
+      page.slippageBuffer.textContent = Doc.formatCoinAtom(inv.slippageBuffer * ui.conventional.conversionFactor, ui)
     }
     Doc.setVis(fees.bookingFeesPerCounterLot > 0, page.redemptionFeesBox)
     if (fees.bookingFeesPerCounterLot > 0) {
       const feesPerLotConv = fees.bookingFeesPerCounterLot / feeUI.conventional.conversionFactor
-      page.redemptionFeesPerLot.textContent = Doc.formatFourSigFigs(feesPerLotConv)
+      page.redemptionFeesPerLot.textContent = Doc.formatBestWeCan(feesPerLotConv)
       page.redemptionFeesLots.textContent = String(counterLots)
       page.redeemReservesFactor.textContent = fees.redeemReservesFactor.toFixed(2)
     }
@@ -2200,16 +2210,16 @@ class AssetPane {
   updateCommitTotal () {
     const { page, assetID, ui } = this
     const commit = this.commit()
-    page.commitTotal.textContent = Doc.formatCoinValue(Math.round(commit * ui.conventional.conversionFactor), ui)
-    page.commitTotalFiat.textContent = Doc.formatFourSigFigs(commit * app().fiatRatesMap[assetID])
+    page.commitTotal.textContent = Doc.formatCoinAtom(Math.round(commit * ui.conventional.conversionFactor), ui)
+    page.commitTotalFiat.textContent = Doc.formatBestWeCan(commit * app().fiatRatesMap[assetID])
   }
 
   updateTokenFees () {
     const { page, inv, feeAssetID, feeUI, isToken } = this
     if (!isToken) return
     const feeReserves = inv.bookingFees + inv.swapFeeReserves
-    page.feeTotal.textContent = Doc.formatCoinValue(feeReserves * feeUI.conventional.conversionFactor, feeUI)
-    page.feeTotalFiat.textContent = Doc.formatFourSigFigs(feeReserves * app().fiatRatesMap[feeAssetID])
+    page.feeTotal.textContent = Doc.formatCoinAtom(feeReserves * feeUI.conventional.conversionFactor, feeUI)
+    page.feeTotalFiat.textContent = Doc.formatBestWeCan(feeReserves * app().fiatRatesMap[feeAssetID])
   }
 
   updateRebalance () {
@@ -2310,14 +2320,14 @@ class AssetPane {
     let cexAvail = 0
     Doc.setVis(cexName, page.balanceBreakdown)
     if (cexName) {
-      page.dexAvail.textContent = Doc.formatFourSigFigs(dexAvail / ui.conventional.conversionFactor)
+      page.dexAvail.textContent = Doc.formatBestWeCan(dexAvail / ui.conventional.conversionFactor)
       const { available: cexRawAvail } = assetID === baseID ? cexBaseBalance : cexQuoteBalance
       cexAvail = cexRawAvail - botInv.cex.total
-      page.cexAvail.textContent = Doc.formatFourSigFigs(cexAvail / ui.conventional.conversionFactor)
+      page.cexAvail.textContent = Doc.formatBestWeCan(cexAvail / ui.conventional.conversionFactor)
     }
-    page.avail.textContent = Doc.formatFourSigFigs((dexAvail + cexAvail) / ui.conventional.conversionFactor)
+    page.avail.textContent = Doc.formatBestWeCan((dexAvail + cexAvail) / ui.conventional.conversionFactor)
     if (assetID === feeAssetID) return
     const { balance: { available: feeAvail } } = app().walletMap[feeAssetID]
-    page.feeAvail.textContent = Doc.formatFourSigFigs(feeAvail / feeUI.conventional.conversionFactor)
+    page.feeAvail.textContent = Doc.formatBestWeCan(feeAvail / feeUI.conventional.conversionFactor)
   }
 }

@@ -447,14 +447,6 @@ type OrderMetaData struct {
 	// orders, in which case the current asset config should be used.
 	FromSwapConf uint32
 	ToSwapConf   uint32
-	// MaxFeeRate is the dex.Asset.MaxFeeRate at the time of ordering. The rates
-	// assigned to matches will be validated against this value.
-	MaxFeeRate uint64
-	// RedeemMaxFeeRate is the dex.Asset.MaxFeeRate for the redemption asset at
-	// the time of ordering. This rate is used to reserve funds for redemption,
-	// and therefore this rate can be used when actually submitting a redemption
-	// transaction.
-	RedeemMaxFeeRate uint64
 	// FromVersion is the version of the from asset.
 	FromVersion uint32
 	// ToVersion is the version of the to asset.
@@ -469,7 +461,7 @@ type OrderMetaData struct {
 	// to this order, and determining how many more possible redemptions there
 	// could be.
 	RedemptionReserves uint64
-	// RedemptionRefunds is the amount of funds reserved by the wallet to pay
+	// RefundReserves is the amount of funds reserved by the wallet to pay
 	// the transaction fees for all the possible refunds in this order.
 	// The amount that should be locked at any point can be determined by
 	// checking the status of the order and the status of all matches related
@@ -1218,6 +1210,12 @@ type OrderFilter struct {
 	// Statuses is a list of acceptable statuses. A zero-length Statuses means
 	// all statuses are accepted.
 	Statuses []order.OrderStatus
+	// CompletedOnly is a flag that when specified limits results to only those orders
+	// that have been fully filled (or partially filled) and are no longer active.
+	CompletedOnly bool
+	// FresherThanUnixMs is a unix millisecond timestamp used to filter out orders that are
+	// older than its value.
+	FresherThanUnixMs uint64
 }
 
 // noteKeySize must be <= 32.
