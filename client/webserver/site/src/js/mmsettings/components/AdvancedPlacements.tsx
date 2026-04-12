@@ -13,6 +13,7 @@ import {
   ID_MM_ABSOLUTE_PLUS, ID_MM_ABSOLUTE_PLUS_DESC,
   ID_MM_ABSOLUTE, ID_MM_ABSOLUTE_DESC,
   ID_MM_MULTIPLIER, ID_MM_MULTIPLIER_DESC,
+  ID_MM_COMPETITIVE, ID_MM_COMPETITIVE_DESC,
   ID_MM_FACTOR_LABEL_PERCENT, ID_MM_FACTOR_LABEL_RATE, ID_MM_FACTOR_LABEL_MULTIPLIER,
   ID_MM_PROFIT_THRESHOLD, ID_MM_PROFIT_ADV_DESC,
   ID_MM_PRIORITY, ID_MM_PRIORITY_TOOLTIP,
@@ -34,6 +35,13 @@ interface GapStrategyConfig {
 
 function gapStrategies (): Record<GapStrategy, GapStrategyConfig> {
   return {
+    'competitive': {
+      label: prep(ID_MM_COMPETITIVE),
+      description: prep(ID_MM_COMPETITIVE_DESC),
+      factorLabel: prep(ID_MM_FACTOR_LABEL_PERCENT),
+      checkRange: (value: number) => (value <= 0 || value > 10) ? 'Percent must be between 0 and 10' : null,
+      convert: (value: number) => value / 100
+    },
     'percent-plus': {
       label: prep(ID_MM_PERCENT_PLUS),
       description: prep(ID_MM_PERCENT_PLUS_DESC),
@@ -176,7 +184,7 @@ const PlacementRow: React.FC<PlacementRowProps> = ({
   const { botConfig } = useBotConfigState()
   const isBasicMM = !!botConfig.basicMarketMakingConfig
 
-  const isPercent = gapStrategy === 'percent' || gapStrategy === 'percent-plus'
+  const isPercent = gapStrategy === 'percent' || gapStrategy === 'percent-plus' || gapStrategy === 'competitive'
   const displayFactor = isPercent ? gapFactor * 100 : gapFactor
 
   return (
@@ -243,7 +251,7 @@ const Placements: React.FC<PlacementsProps> = ({ isSell }) => {
     const duplicateExists = placements.some(placement => Math.abs(getFactor(placement) - storageGapFactor) < 1e-9)
 
     if (duplicateExists) {
-      setErrorMessage(`A placement with ${gapFactor}${(gapStrategy === 'percent' || gapStrategy === 'percent-plus') ? '%' : ''} already exists`)
+      setErrorMessage(`A placement with ${gapFactor}${(gapStrategy === 'percent' || gapStrategy === 'percent-plus' || gapStrategy === 'competitive') ? '%' : ''} already exists`)
       return
     }
 

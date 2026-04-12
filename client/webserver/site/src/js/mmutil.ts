@@ -41,6 +41,7 @@ export const GapStrategyAbsolute = 'absolute'
 export const GapStrategyAbsolutePlus = 'absolute-plus'
 export const GapStrategyPercent = 'percent'
 export const GapStrategyPercentPlus = 'percent-plus'
+export const GapStrategyCompetitive = 'competitive'
 
 export const botTypeBasicMM = 'basicMM'
 export const botTypeArbMM = 'arbMM'
@@ -247,6 +248,8 @@ export class PlacementsChart extends Chart {
       click: (/* e: MouseEvent */) => { /* pass */ },
       zoom: (/* bigger: boolean */) => { /* pass */ }
     })
+    // pausing is only relevant for candle-chart, but we share the same code - hence gotta take care of this
+    this.unpause()
   }
 
   resized () {
@@ -705,6 +708,7 @@ export class RunningMarketMakerDisplay {
     switch (gapStrategy) {
       case GapStrategyPercent:
       case GapStrategyPercentPlus:
+      case GapStrategyCompetitive:
         Doc.show(page.profitLabel, page.profitUnit)
         page.gapFactor.textContent = (gapFactor * 100).toFixed(2)
         break
@@ -713,7 +717,7 @@ export class RunningMarketMakerDisplay {
         page.gapFactor.textContent = (gapFactor * 100).toFixed(2)
         break
       default:
-        page.gapFactor.textContent = Doc.formatFourSigFigs(gapFactor / OrderUtil.RateEncodingFactor * baseFactor / quoteFactor)
+        page.gapFactor.textContent = Doc.formatBestWeCan(gapFactor / OrderUtil.RateEncodingFactor * baseFactor / quoteFactor)
     }
 
     this.update()
@@ -750,7 +754,7 @@ export class RunningMarketMakerDisplay {
   }
 
   setTicker () {
-    this.page.runTime.textContent = Doc.hmsSince(this.startTime)
+    this.page.runTime.textContent = Doc.hmsSinceFromS(this.startTime)
   }
 
   update () {
@@ -800,48 +804,48 @@ export class RunningMarketMakerDisplay {
     }
 
     const dexBaseInv = summedBalance(runStats.dexBalances[baseID]) / baseFactor
-    page.walletBaseInventory.textContent = Doc.formatFourSigFigs(dexBaseInv)
-    page.walletBaseInvFiat.textContent = Doc.formatFourSigFigs(dexBaseInv * baseFiatRate, 2)
+    page.walletBaseInventory.textContent = Doc.formatBestWeCan(dexBaseInv)
+    page.walletBaseInvFiat.textContent = Doc.formatBestWeCan(dexBaseInv * baseFiatRate, 2)
     const dexQuoteInv = summedBalance(runStats.dexBalances[quoteID]) / quoteFactor
-    page.walletQuoteInventory.textContent = Doc.formatFourSigFigs(dexQuoteInv)
-    page.walletQuoteInvFiat.textContent = Doc.formatFourSigFigs(dexQuoteInv * quoteFiatRate, 2)
+    page.walletQuoteInventory.textContent = Doc.formatBestWeCan(dexQuoteInv)
+    page.walletQuoteInvFiat.textContent = Doc.formatBestWeCan(dexQuoteInv * quoteFiatRate, 2)
 
     Doc.setVis(cexName, page.cexRow)
     if (cexName) {
       Doc.show(page.pendingDepositBox, page.pendingWithdrawalBox)
       setCexElements(div, cexName)
       const cexBaseInv = summedBalance(runStats.cexBalances[cexBaseID]) / baseFactor
-      page.cexBaseInventory.textContent = Doc.formatFourSigFigs(cexBaseInv)
-      page.cexBaseInventoryFiat.textContent = Doc.formatFourSigFigs(cexBaseInv * baseFiatRate, 2)
+      page.cexBaseInventory.textContent = Doc.formatBestWeCan(cexBaseInv)
+      page.cexBaseInventoryFiat.textContent = Doc.formatBestWeCan(cexBaseInv * baseFiatRate, 2)
       const cexQuoteInv = summedBalance(runStats.cexBalances[cexQuoteID]) / quoteFactor
-      page.cexQuoteInventory.textContent = Doc.formatFourSigFigs(cexQuoteInv)
-      page.cexQuoteInventoryFiat.textContent = Doc.formatFourSigFigs(cexQuoteInv * quoteFiatRate, 2)
+      page.cexQuoteInventory.textContent = Doc.formatBestWeCan(cexQuoteInv)
+      page.cexQuoteInventoryFiat.textContent = Doc.formatBestWeCan(cexQuoteInv * quoteFiatRate, 2)
     }
 
     if (baseFeeID !== baseID) {
       const feeBalance = summedBalance(runStats.dexBalances[baseFeeID]) / baseFeeFactor
-      page.baseFeeReserves.textContent = Doc.formatFourSigFigs(feeBalance)
+      page.baseFeeReserves.textContent = Doc.formatBestWeCan(feeBalance)
     }
     if (quoteFeeID !== quoteID) {
       const feeBalance = summedBalance(runStats.dexBalances[quoteFeeID]) / quoteFeeFactor
-      page.quoteFeeReserves.textContent = Doc.formatFourSigFigs(feeBalance)
+      page.quoteFeeReserves.textContent = Doc.formatBestWeCan(feeBalance)
     }
 
     page.pendingDeposits.textContent = String(Math.round(runStats.pendingDeposits))
     page.pendingWithdrawals.textContent = String(Math.round(runStats.pendingWithdrawals))
     page.completedMatches.textContent = String(Math.round(runStats.completedMatches))
     Doc.setVis(runStats.tradedUSD, page.tradedUSDBox)
-    if (runStats.tradedUSD > 0) page.tradedUSD.textContent = Doc.formatFourSigFigs(runStats.tradedUSD)
+    if (runStats.tradedUSD > 0) page.tradedUSD.textContent = Doc.formatBestWeCan(runStats.tradedUSD)
     Doc.setVis(baseFiatRate, page.roundTripFeesBox)
-    if (baseFiatRate) page.roundTripFeesUSD.textContent = Doc.formatFourSigFigs((runStats.feeGap?.roundTripFees / baseFactor * baseFiatRate) || 0)
+    if (baseFiatRate) page.roundTripFeesUSD.textContent = Doc.formatBestWeCan((runStats.feeGap?.roundTripFees / baseFactor * baseFiatRate) || 0)
     const basisPrice = app().conventionalRate(baseID, quoteID, runStats.feeGap?.basisPrice || 0)
-    page.basisPrice.textContent = Doc.formatFourSigFigs(basisPrice)
+    page.basisPrice.textContent = Doc.formatBestWeCan(basisPrice)
 
     const displayFeeGap = !bmmCfg || bmmCfg.gapStrategy === GapStrategyAbsolutePlus || bmmCfg.gapStrategy === GapStrategyPercentPlus
     Doc.setVis(displayFeeGap, page.feeGapBox)
     if (displayFeeGap) {
       const feeGap = app().conventionalRate(baseID, quoteID, runStats.feeGap?.feeGap || 0)
-      page.feeGap.textContent = Doc.formatFourSigFigs(feeGap)
+      page.feeGap.textContent = Doc.formatBestWeCan(feeGap)
       page.feeGapPct.textContent = (feeGap / basisPrice * 100 || 0).toFixed(2)
     }
     Doc.setVis(bmmCfg, page.gapStrategyBox)
@@ -850,7 +854,7 @@ export class RunningMarketMakerDisplay {
     const remoteGap = app().conventionalRate(baseID, quoteID, runStats.feeGap?.remoteGap || 0)
     Doc.setVis(remoteGap, page.remoteGapBox)
     if (remoteGap) {
-      page.remoteGap.textContent = Doc.formatFourSigFigs(remoteGap)
+      page.remoteGap.textContent = Doc.formatBestWeCan(remoteGap)
       page.remoteGapPct.textContent = (remoteGap / basisPrice * 100 || 0).toFixed(2)
     }
 
@@ -882,7 +886,8 @@ export class RunningMarketMakerDisplay {
 
   updateOrderReport (report: OrderReport, side: 'buys' | 'sells', epochNum: number) {
     const form = this.orderReportForm
-    const sideTxt = side === 'buys' ? intl.prep(intl.ID_BUY) : intl.prep(intl.ID_SELL)
+    const sell = side === 'sells'
+    const sideTxt = sell ? intl.prep(intl.ID_SELL) : intl.prep(intl.ID_BUY)
     form.orderReportTitle.textContent = intl.prep(intl.ID_ORDER_REPORT_TITLE, { side: sideTxt, epochNum: `${epochNum}` })
 
     Doc.setVis(report.error, form.orderReportError)
@@ -912,17 +917,17 @@ export class RunningMarketMakerDisplay {
       const pending = report.availableDexBals[assetID] ? report.availableDexBals[assetID].pending : 0
       const locked = report.availableDexBals[assetID] ? report.availableDexBals[assetID].locked : 0
       const used = report.usedDexBals[assetID] ? report.usedDexBals[assetID] : 0
-      rowTmpl.available.textContent = Doc.formatCoinValue(available, unitInfo)
-      rowTmpl.locked.textContent = Doc.formatCoinValue(locked, unitInfo)
-      rowTmpl.required.textContent = Doc.formatCoinValue(required, unitInfo)
-      rowTmpl.remaining.textContent = Doc.formatCoinValue(remaining, unitInfo)
-      rowTmpl.pending.textContent = Doc.formatCoinValue(pending, unitInfo)
-      rowTmpl.used.textContent = Doc.formatCoinValue(used, unitInfo)
+      rowTmpl.available.textContent = Doc.formatCoinAtom(available, unitInfo)
+      rowTmpl.locked.textContent = Doc.formatCoinAtom(locked, unitInfo)
+      rowTmpl.required.textContent = Doc.formatCoinAtom(required, unitInfo)
+      rowTmpl.remaining.textContent = Doc.formatCoinAtom(remaining, unitInfo)
+      rowTmpl.pending.textContent = Doc.formatCoinAtom(pending, unitInfo)
+      rowTmpl.used.textContent = Doc.formatCoinAtom(used, unitInfo)
       const deficiency = safeSub(required, available)
-      rowTmpl.deficiency.textContent = Doc.formatCoinValue(deficiency, unitInfo)
+      rowTmpl.deficiency.textContent = Doc.formatCoinAtom(deficiency, unitInfo)
       if (deficiency > 0) rowTmpl.deficiency.classList.add('text-warning')
       const deficiencyWithPending = safeSub(deficiency, pending)
-      rowTmpl.deficiencyWithPending.textContent = Doc.formatCoinValue(deficiencyWithPending, unitInfo)
+      rowTmpl.deficiencyWithPending.textContent = Doc.formatCoinAtom(deficiencyWithPending, unitInfo)
       if (deficiencyWithPending > 0) rowTmpl.deficiencyWithPending.classList.add('text-warning')
       return [row, deficiency]
     }
@@ -971,18 +976,18 @@ export class RunningMarketMakerDisplay {
       const usedCexBal = report.usedCexBal ? report.usedCexBal : 0
       const deficiencyCexBal = safeSub(requiredCexBal, availableCexBal)
       const deficiencyWithPendingCexBal = safeSub(deficiencyCexBal, pendingCexBal)
-      form.cexAvailable.textContent = Doc.formatCoinValue(availableCexBal, cexAsset.unitInfo)
-      form.cexLocked.textContent = Doc.formatCoinValue(reservedCexBal, cexAsset.unitInfo)
-      form.cexRequired.textContent = Doc.formatCoinValue(requiredCexBal, cexAsset.unitInfo)
-      form.cexRemaining.textContent = Doc.formatCoinValue(remainingCexBal, cexAsset.unitInfo)
-      form.cexPending.textContent = Doc.formatCoinValue(pendingCexBal, cexAsset.unitInfo)
-      form.cexUsed.textContent = Doc.formatCoinValue(usedCexBal, cexAsset.unitInfo)
+      form.cexAvailable.textContent = Doc.formatCoinAtom(availableCexBal, cexAsset.unitInfo)
+      form.cexLocked.textContent = Doc.formatCoinAtom(reservedCexBal, cexAsset.unitInfo)
+      form.cexRequired.textContent = Doc.formatCoinAtom(requiredCexBal, cexAsset.unitInfo)
+      form.cexRemaining.textContent = Doc.formatCoinAtom(remainingCexBal, cexAsset.unitInfo)
+      form.cexPending.textContent = Doc.formatCoinAtom(pendingCexBal, cexAsset.unitInfo)
+      form.cexUsed.textContent = Doc.formatCoinAtom(usedCexBal, cexAsset.unitInfo)
       const deficient = deficiencyCexBal > 0
       Doc.setVis(deficient, form.cexDeficiencyHeader, form.cexDeficiencyWithPendingHeader,
         form.cexDeficiency, form.cexDeficiencyWithPending)
       if (deficient) {
-        form.cexDeficiency.textContent = Doc.formatCoinValue(deficiencyCexBal, cexAsset.unitInfo)
-        form.cexDeficiencyWithPending.textContent = Doc.formatCoinValue(deficiencyWithPendingCexBal, cexAsset.unitInfo)
+        form.cexDeficiency.textContent = Doc.formatCoinAtom(deficiencyCexBal, cexAsset.unitInfo)
+        form.cexDeficiencyWithPending.textContent = Doc.formatCoinAtom(deficiencyWithPendingCexBal, cexAsset.unitInfo)
         if (deficiencyWithPendingCexBal > 0) form.cexDeficiencyWithPending.classList.add('text-warning')
         else form.cexDeficiencyWithPending.classList.remove('text-warning')
       }
@@ -997,7 +1002,7 @@ export class RunningMarketMakerDisplay {
       const baseUI = app().assets[this.mkt.baseID].unitInfo
       const quoteUI = app().assets[this.mkt.quoteID].unitInfo
       rowTmpl.priority.textContent = String(priority)
-      rowTmpl.rate.textContent = Doc.formatRateFullPrecision(placement.rate, baseUI, quoteUI, this.mkt.rateStep)
+      rowTmpl.rate.textContent = Doc.formatRateAtomToRateStep(placement.rate, baseUI, quoteUI, this.mkt.rateStep, sell)
       rowTmpl.lots.textContent = String(placement.lots)
       rowTmpl.standingLots.textContent = String(placement.standingLots)
       rowTmpl.orderedLots.textContent = String(placement.orderedLots)
@@ -1030,7 +1035,9 @@ export class RunningMarketMakerDisplay {
       } else {
         Doc.show(rowTmpl.counterTradeRate)
         Doc.hide(rowTmpl.multiHopRates)
-        rowTmpl.counterTradeRate.textContent = `${Doc.formatRateFullPrecision(placement.counterTradeRate, baseUI, quoteUI, this.mkt.rateStep)} ${app().assets[this.mkt.baseID].symbol.toUpperCase()}/${app().assets[this.mkt.quoteID].symbol.toUpperCase()}`
+        // dev2 prefers the side-aware rate-step formatter for the single-hop fallback
+        // (rounding in the opposite direction of `sell` mirrors how Bison's order book displays rates).
+        rowTmpl.counterTradeRate.textContent = `${Doc.formatRateAtomToRateStep(placement.counterTradeRate, baseUI, quoteUI, this.mkt.rateStep, !sell)} ${app().assets[this.mkt.baseID].symbol.toUpperCase()}/${app().assets[this.mkt.quoteID].symbol.toUpperCase()}`
       }
       for (const assetID of assetIDs) {
         const asset = app().assets[assetID]
@@ -1041,10 +1048,10 @@ export class RunningMarketMakerDisplay {
         const requiredRowTmpl = Doc.parseTemplate(requiredRow)
         const usedRow = this.placementAmtRowTmpl.cloneNode(true) as HTMLElement
         const usedRowTmpl = Doc.parseTemplate(usedRow)
-        requiredRowTmpl.amt.textContent = Doc.formatCoinValue(requiredAmt, unitInfo)
+        requiredRowTmpl.amt.textContent = Doc.formatCoinAtom(requiredAmt, unitInfo)
         requiredRowTmpl.assetLogo.src = Doc.logoPath(asset.symbol)
         requiredRowTmpl.assetSymbol.textContent = asset.symbol.toUpperCase()
-        usedRowTmpl.amt.textContent = Doc.formatCoinValue(usedAmt, unitInfo)
+        usedRowTmpl.amt.textContent = Doc.formatCoinAtom(usedAmt, unitInfo)
         usedRowTmpl.assetLogo.src = Doc.logoPath(asset.symbol)
         usedRowTmpl.assetSymbol.textContent = asset.symbol.toUpperCase()
         rowTmpl.requiredDEX.appendChild(requiredRow)
@@ -1052,9 +1059,9 @@ export class RunningMarketMakerDisplay {
       }
       Doc.setVis(this.mkt.cexName, rowTmpl.requiredCEX, rowTmpl.usedCEX)
       if (this.mkt.cexName) {
-        const requiredAmt = Doc.formatCoinValue(placement.requiredCex, cexAsset.unitInfo)
+        const requiredAmt = Doc.formatCoinAtom(placement.requiredCex, cexAsset.unitInfo)
         rowTmpl.requiredCEX.textContent = `${requiredAmt} ${cexAsset.symbol.toUpperCase()}`
-        const usedAmt = Doc.formatCoinValue(placement.usedCex, cexAsset.unitInfo)
+        const usedAmt = Doc.formatCoinAtom(placement.usedCex, cexAsset.unitInfo)
         rowTmpl.usedCEX.textContent = `${usedAmt} ${cexAsset.symbol.toUpperCase()}`
       }
       Doc.setVis(anyErrors, rowTmpl.error)
@@ -1097,7 +1104,7 @@ function allOrdersPlaced (report: OrderReport) {
 }
 
 function setSignedValue (v: number, vEl: PageElement, signEl: PageElement, maxDecimals?: number) {
-  vEl.textContent = Doc.formatFourSigFigs(v, maxDecimals)
+  vEl.textContent = Doc.formatBestWeCan(v, maxDecimals)
   signEl.classList.toggle('ico-plus', v > 0)
   signEl.classList.toggle('text-good', v > 0)
   // signEl.classList.toggle('ico-minus', v < 0)

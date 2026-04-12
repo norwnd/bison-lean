@@ -4,6 +4,7 @@
 package core
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -255,7 +256,6 @@ func (b *bookie) closeFeeds() {
 		close(f.c)
 	}
 	b.feeds = make(map[uint32]*bookFeed, 1)
-
 }
 
 // candles fetches the candle set from the server and activates the candle
@@ -374,12 +374,12 @@ func (b *bookie) book() *OrderBook {
 // be supplied.
 func (b *bookie) minifyOrder(oid dex.Bytes, trade *msgjson.TradeNote, epoch uint64) *MiniOrder {
 	return &MiniOrder{
+		ID:        hex.EncodeToString(oid),
 		Qty:       float64(trade.Quantity) / float64(b.baseUnits.Conventional.ConversionFactor),
 		QtyAtomic: trade.Quantity,
 		Rate:      calc.ConventionalRate(trade.Rate, b.baseUnits, b.quoteUnits),
 		MsgRate:   trade.Rate,
 		Sell:      trade.Side == msgjson.SellOrderNum,
-		Token:     token(oid),
 		Epoch:     epoch,
 	}
 }
@@ -393,11 +393,14 @@ func (dc *dexConnection) bookie(marketID string) *bookie {
 
 func (dc *dexConnection) midGap(base, quote uint32) (midGap uint64, err error) {
 	marketID := marketName(base, quote)
+	return dc.midGapMkt(marketID)
+}
+
+func (dc *dexConnection) midGapMkt(marketID string) (midGap uint64, err error) {
 	booky := dc.bookie(marketID)
 	if booky == nil {
 		return 0, fmt.Errorf("no bookie found for market %s", marketID)
 	}
-
 	return booky.MidGap()
 }
 
@@ -412,9 +415,20 @@ func (dc *dexConnection) syncBook(base, quote uint32) (*orderbook.OrderBook, Boo
 	dc.booksMtx.Lock()
 	defer dc.booksMtx.Unlock()
 
+	// Note, there are a bunch of issues with the way order server-originating book
+	// updates are handled, for details see: https://github.com/norwnd/dcrdex/pulls
+	// in particular this negatively affects mm bot operations, as a work-around
+	// we can remedy this for the most part by forcing full order book re-sync every
+	// once in a while (instead of using cached book every 5th call we'll re-populate
+	// it).
+
+	// TODO
+	dc.obSyncReqCnt = 1
+	//dc.obSyncReqCnt++
+
 	mktID := marketName(base, quote)
 	booky, found := dc.books[mktID]
-	if !found {
+	if !found || (dc.obSyncReqCnt%5 == 0) {
 		// Make sure the market exists.
 		if dc.marketConfig(mktID) == nil {
 			return nil, nil, fmt.Errorf("unknown market %s", mktID)
@@ -433,8 +447,8 @@ func (dc *dexConnection) syncBook(base, quote uint32) (*orderbook.OrderBook, Boo
 		dc.books[mktID] = booky
 	}
 
-	// Get the feed and the book under a single lock to make sure the first
-	// message is the book.
+	// Get the feed and the book under a single lock to make sure the first message is "book"
+	// (so that nobody else could send anything on this feed concurrently).
 	feed := booky.newFeed(&BookUpdate{
 		Action:   FreshBookAction,
 		Host:     dc.acct.host,
@@ -597,12 +611,12 @@ func (c *Core) Book(dex string, base, quote uint32) (*OrderBook, error) {
 func (b *bookie) translateBookSide(ins []*orderbook.Order) (outs []*MiniOrder) {
 	for _, o := range ins {
 		outs = append(outs, &MiniOrder{
+			ID:        hex.EncodeToString(o.OrderID[:]),
 			Qty:       float64(o.Quantity) / float64(b.baseUnits.Conventional.ConversionFactor),
 			QtyAtomic: o.Quantity,
 			Rate:      calc.ConventionalRate(o.Rate, b.baseUnits, b.quoteUnits),
 			MsgRate:   o.Rate,
 			Sell:      o.Side == msgjson.SellOrderNum,
-			Token:     token(o.OrderID[:]),
 			Epoch:     o.Epoch,
 		})
 	}
@@ -959,7 +973,7 @@ func handleUnbookOrderMsg(_ *Core, dc *dexConnection, msg *msgjson.Message) erro
 		Action:   UnbookOrderAction,
 		Host:     dc.acct.host,
 		MarketID: note.MarketID,
-		Payload:  &MiniOrder{Token: token(note.OrderID)},
+		Payload:  &MiniOrder{ID: hex.EncodeToString(note.OrderID)},
 	})
 
 	return nil
@@ -988,7 +1002,7 @@ func handleUpdateRemainingMsg(_ *Core, dc *dexConnection, msg *msgjson.Message) 
 		Host:     dc.acct.host,
 		MarketID: note.MarketID,
 		Payload: &RemainderUpdate{
-			Token:     token(note.OrderID),
+			ID:        hex.EncodeToString(note.OrderID),
 			Qty:       float64(note.Remaining) / float64(book.baseUnits.Conventional.ConversionFactor),
 			QtyAtomic: note.Remaining,
 		},

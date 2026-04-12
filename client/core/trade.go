@@ -436,9 +436,8 @@ func (t *trackedTrade) cacheFeeSuggestions() {
 		// Use the wallet's rate first. Note that this could make a costly request
 		// to an external fee oracle if an internal estimate is not available and
 		// the wallet settings permit external API requests.
-		toWallet := t.wallets.toWallet
-		if t.readyToTick && toWallet.connected() {
-			if feeRate := toWallet.feeRate(); feeRate != 0 {
+		if t.readyToTick && w.connected() {
+			if feeRate, _ := w.feeRate(); feeRate != 0 {
 				set(feeRate)
 				return
 			}
@@ -446,8 +445,8 @@ func (t *trackedTrade) cacheFeeSuggestions() {
 
 		// Check any book that might have the fee recorded from an epoch_report note
 		// (requires a book subscription).
-		asset := w.AssetID
-		feeSuggestion := t.dc.bestBookFeeSuggestion(asset)
+		assetID := w.AssetID
+		feeSuggestion := t.dc.bestBookFeeSuggestion(assetID)
 		if feeSuggestion > 0 {
 			set(feeSuggestion)
 			return
@@ -455,7 +454,7 @@ func (t *trackedTrade) cacheFeeSuggestions() {
 
 		// Fetch it from the server. Last resort!
 		go func() {
-			feeSuggestion = t.dc.fetchFeeRate(asset)
+			feeSuggestion = t.dc.fetchFeeRate(assetID)
 			if feeSuggestion > 0 {
 				fs.Lock()
 				set(feeSuggestion)
@@ -2562,9 +2561,16 @@ func (t *trackedTrade) revokeMatch(matchID order.MatchID, fromServer bool) error
 // mutex lock held for writes. The lock is temporarily released during wallet
 // calls.
 func (c *Core) swapMatches(t *trackedTrade, matches []*matchTracker) (err error) {
-	feeRate, err := t.bestSwapGroupFeeRate(matches)
-	if err != nil {
-		return err
+	fromWallet := t.wallets.fromWallet
+	feeRate, feeRateTooLow := fromWallet.feeRateSwap()
+	if feeRate == 0 { // either not a FeeRater, or FeeRate failed
+		feeRate = t.dc.bestBookFeeSuggestion(fromWallet.AssetID)
+	}
+	if feeRateTooLow {
+		return fmt.Errorf("swap cannot proceed with too low fee rate (wallet configured to refuse offering higher fee rates)")
+	}
+	if feeRate == 0 {
+		return fmt.Errorf("swap cannot proceed with a zero fee rate")
 	}
 
 	errs := newErrorSet("swapMatches order %s - ", t.ID())
@@ -2602,51 +2608,15 @@ func (c *Core) swapMatches(t *trackedTrade, matches []*matchTracker) (err error)
 	return errs.ifAny()
 }
 
-// bestSwapGroupRate gets the most appropriate fee rate for a group of swaps.
-func (t *trackedTrade) bestSwapGroupFeeRate(matches []*matchTracker) (uint64, error) {
-	var highestFeeRate uint64
-	for _, match := range matches {
-		if match.FeeRateSwap > highestFeeRate {
-			highestFeeRate = match.FeeRateSwap
-		}
-	}
-	// Use a higher swap fee rate if a local estimate is higher than the
-	// prescribed rate. If the fresh rate is higher than the max fee rate,
-	// our swap transactions will not be mined, so fail.
-	if highestFeeRate < t.metaData.MaxFeeRate {
-		freshRate := t.wallets.fromWallet.feeRate()
-		if freshRate == 0 { // either not a FeeRater, or FeeRate failed
-			freshRate = t.dc.bestBookFeeSuggestion(t.wallets.fromWallet.AssetID)
-		}
-		if freshRate > t.metaData.MaxFeeRate {
-			return 0, fmt.Errorf("current fee rate higher than the order's max %d > %d", freshRate, t.metaData.MaxFeeRate)
-		}
-		if highestFeeRate < freshRate {
-			t.dc.log.Infof("Prescribed %v fee rate %v looks low, using %v",
-				t.wallets.fromWallet.Symbol, highestFeeRate, freshRate)
-			highestFeeRate = freshRate
-		}
-	}
-	return highestFeeRate, nil
-}
-
 // swapMatchGroup will send a transaction with swap outputs for the specified
 // matches.
 //
 // This method modifies match fields and MUST be called with the trackedTrade
 // mutex lock held for writes. The lock is temporarily released during the
 // wallet Swap call to avoid blocking message handlers.
-func (c *Core) swapMatchGroup(t *trackedTrade, matches []*matchTracker, highestFeeRate uint64, errs *errorSet) {
-	// Ensure swap is not sent with a zero fee rate.
-	if highestFeeRate == 0 {
-		errs.add("swap cannot proceed with a zero fee rate")
-		return
-	}
-
+func (c *Core) swapMatchGroup(t *trackedTrade, matches []*matchTracker, swapFeeRate uint64, errs *errorSet) {
 	// Prepare the asset.Contracts.
 	contracts := make([]*asset.Contract, len(matches))
-	// These matches may have different fee rates, matched in different epochs.
-
 	for i, match := range matches {
 		value := match.Quantity
 		if !match.trade.Sell {
@@ -2731,7 +2701,7 @@ func (c *Core) swapMatchGroup(t *trackedTrade, matches []*matchTracker, highestF
 		AssetVersion: t.metaData.FromVersion,
 		Inputs:       inputs,
 		Contracts:    contracts,
-		FeeRate:      highestFeeRate,
+		FeeRate:      swapFeeRate,
 		LockChange:   lockChange,
 		Options:      t.options,
 	}
@@ -3315,14 +3285,15 @@ func (c *Core) sendRedeemAsync(t *trackedTrade, match *matchTracker, coinID, sec
 	}()
 }
 
+// redeemFee calculates fee rate that will be used for redeem transactions
 func (t *trackedTrade) redeemFee() uint64 {
 	// Try not to use (*Core).feeSuggestion here, since it can incur an RPC
 	// request to the server. t.redeemFeeSuggestion is updated every tick and
 	// uses a rate directly from our wallet, if available. Only go looking for
 	// one if we don't have one cached.
 	var feeSuggestion uint64
-	if _, is := t.accountRedeemer(); is {
-		feeSuggestion = t.metaData.RedeemMaxFeeRate
+	if feeRater, is := t.wallets.toWallet.Wallet.(asset.FeeRater); is {
+		feeSuggestion, _ = feeRater.FeeRate()
 	} else {
 		feeSuggestion = t.redeemFeeSuggestion.get()
 	}
@@ -3337,12 +3308,7 @@ func (t *trackedTrade) refundFee() uint64 {
 	// request to the server. t.refundFeeSuggestion is updated every tick and
 	// uses a rate directly from our wallet, if available. Only go looking for
 	// one if we don't have one cached.
-	var feeSuggestion uint64
-	if _, is := t.accountRefunder(); is {
-		feeSuggestion = t.metaData.MaxFeeRate
-	} else {
-		feeSuggestion = t.refundFeeSuggestion.get()
-	}
+	feeSuggestion := t.refundFeeSuggestion.get()
 	if feeSuggestion == 0 {
 		feeSuggestion = t.dc.bestBookFeeSuggestion(t.wallets.fromWallet.AssetID)
 	}
@@ -3743,13 +3709,7 @@ func (c *Core) refundMatches(t *trackedTrade, matches []*matchTracker) (uint64, 
 		c.log.Infof("Refunding %s contract %s for match %s (%s)",
 			symbol, swapCoinString, match, matchFailureReason)
 
-		var feeRate uint64
-		if _, is := t.accountRefunder(); is {
-			feeRate = t.metaData.MaxFeeRate
-		}
-		if feeRate == 0 {
-			feeRate = c.feeSuggestionAny(assetID) // includes wallet itself
-		}
+		feeRate := c.feeSuggestionAny(assetID)
 
 		// Release the trade lock during the wallet call to avoid blocking
 		// message handlers (e.g. revoke_match, audit) for this trade.
@@ -4321,7 +4281,7 @@ func (t *trackedTrade) requiredForRemainingSwaps() (uint64, error) {
 	}
 
 	// Add the fees.
-	requiredForRemainingSwaps += accelWallet.FeesForRemainingSwaps(maxSwapsRemaining, t.metaData.MaxFeeRate)
+	requiredForRemainingSwaps += accelWallet.FeesForRemainingSwaps(maxSwapsRemaining)
 
 	return requiredForRemainingSwaps, nil
 }

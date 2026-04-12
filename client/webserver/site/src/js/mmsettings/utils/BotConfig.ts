@@ -536,10 +536,10 @@ function setBotSpecificDefaultConfig (
   switch (botType) {
     case 'basicMM':
       config.basicMarketMakingConfig = {
-        gapStrategy: 'percent-plus',
+        gapStrategy: 'competitive',
         sellPlacements: [{ lots: 1, gapFactor: 0.01 }],
         buyPlacements: [{ lots: 1, gapFactor: 0.01 }],
-        driftTolerance: 0.001
+        driftTolerance: 0.0
       }
       break
     case 'arbMM': {
@@ -551,8 +551,8 @@ function setBotSpecificDefaultConfig (
       config.arbMarketMakingConfig = {
         buyPlacements: [{ lots: 1, multiplier: 1 }],
         sellPlacements: [{ lots: 1, multiplier: 1 }],
-        profit: 0.01,
-        driftTolerance: 0.001,
+        profit: 0.005,
+        driftTolerance: 0.0,
         orderPersistence: 2,
         multiHop
       }
@@ -626,7 +626,7 @@ export async function initialBotConfigState (
         buyFeeReserve: 0,
         sellFeeReserve: 0,
         rebalanceFeeReserve: 0,
-        slippageBuffer: 0.05
+        slippageBuffer: 0.0
       },
       usingQuickBalance: true
     },
@@ -1154,7 +1154,7 @@ export const botConfigStateReducer = (state: BotConfigState | null, action: BotC
             ...newState.botConfig,
             basicMarketMakingConfig: {
               ...newState.botConfig.basicMarketMakingConfig,
-              gapStrategy: 'percent-plus'
+              gapStrategy: 'competitive'
             }
           }
         }

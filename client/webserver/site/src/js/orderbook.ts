@@ -3,26 +3,13 @@ import {
   MiniOrder
 } from './registry'
 
-import { RateEncodingFactor } from './orderutil'
-
-export interface MarketOrderEstimate {
-  avgRate: number // VWAP fill rate (msgRate-encoded)
-  worstRate: number // Worst (last) fill rate
-  midGapRate: number // Mid-gap rate for comparison
-  slippagePct: number // |avgRate - midGap| / midGap * 100
-  filled: boolean // Book can fully fill the order?
-  orderFillPct: number // % of the order that can be filled
-  bookDepthPct: number // % of book side consumed (by base qty)
-  levelsConsumed: number // Number of price levels consumed
-}
-
 export default class OrderBook {
   base: number
   baseSymbol: string
   quote: number
   quoteSymbol: string
-  buys: MiniOrder[]
-  sells: MiniOrder[]
+  buys: MiniOrder[] // includes epoch orders
+  sells: MiniOrder[] // includes epoch orders
 
   constructor (mktBook: MarketOrderBook, baseSymbol: string, quoteSymbol: string) {
     this.base = mktBook.base
@@ -56,14 +43,14 @@ export default class OrderBook {
   }
 
   /* remove removes an order from the order book. */
-  remove (token: string) {
-    if (this.removeFromSide(this.sells, token)) return
-    this.removeFromSide(this.buys, token)
+  remove (id: string) {
+    if (this.removeFromSide(this.sells, id)) return
+    this.removeFromSide(this.buys, id)
   }
 
   /* removeFromSide removes an order from the list of orders. */
-  removeFromSide (side: MiniOrder[], token: string) {
-    const [ord, i] = this.findOrder(side, token)
+  removeFromSide (side: MiniOrder[], id: string) {
+    const [ord, i] = this.findOrder(side, id)
     if (ord) {
       side.splice(i, 1)
       return true
@@ -72,9 +59,9 @@ export default class OrderBook {
   }
 
   /* findOrder finds an order in a specified side */
-  findOrder (side: MiniOrder[], token: string): [MiniOrder | null, number] {
+  findOrder (side: MiniOrder[], id: string): [MiniOrder | null, number] {
     for (let i = 0; i < side.length; i++) {
-      if (side[i].token === token) {
+      if (side[i].id === id) {
         return [side[i], i]
       }
     }
@@ -120,134 +107,69 @@ export default class OrderBook {
     return this.sells.length + this.buys.length
   }
 
-  /* bestGapOrder will return the best non-epoch order if one exists, or the
-   * best epoch order if there are only epoch orders, or null if there are no
-   * orders.
-   */
-  bestGapOrder (side: MiniOrder[]) {
-    let best = null
-    for (const ord of side) {
-      if (!ord.epoch) return ord
-      if (!best) {
-        best = ord
-      }
-    }
-    return best
-  }
-
-  bestGapBuy () {
-    return this.bestGapOrder(this.buys)
-  }
-
-  bestGapSell () {
-    return this.bestGapOrder(this.sells)
-  }
-
-  /*
-   * estimateMarketOrder walks the order book to estimate fill quality for a
-   * market order, returning slippage, VWAP, worst rate, and book depth info.
-   * For sell orders, qty is in base-asset atoms. For buy orders, qty is in
-   * quote-asset atoms.
-   */
-  estimateMarketOrder (sell: boolean, qty: number): MarketOrderEstimate | null {
-    // For a sell, we consume buy orders. For a buy, sell orders.
-    const side = sell ? this.buys : this.sells
-    if (!side || !side.length || qty <= 0) return null
-
-    // Compute mid-gap rate from best non-epoch orders.
-    const bestBuy = this.bestGapBuy()
-    const bestSell = this.bestGapSell()
-    if (!bestBuy && !bestSell) return null
-    const midGapRate = bestBuy && bestSell
-      ? (bestBuy.msgRate + bestSell.msgRate) / 2
-      : bestBuy ? bestBuy.msgRate : bestSell ? bestSell.msgRate : 0
-
-    if (midGapRate <= 0) return null
-
-    const isMarketBuy = !sell
-    let remainingQty = qty
-    let weightedSum = 0
-    let baseQtySum = 0
-    let worstRate = 0
-    let levelsConsumed = 0
-    let filledBaseQty = 0
-    let totalBookBaseQty = 0
-
-    for (const ord of side) {
-      if (!ord.epoch) totalBookBaseQty += ord.qtyAtomic
+  // bestOrder will return the best order in book-side if one exists
+  // (including epoch-orders) or null if there are no orders in book-side
+  bestOrder (sell: boolean): MiniOrder | null {
+    let side = this.buys
+    if (sell) {
+      side = this.sells
     }
 
-    let filled = false
-    for (const ord of side) {
-      if (remainingQty <= 0) break
-      // Skip epoch orders for estimation — they may not be matched.
-      if (ord.epoch) continue
-      levelsConsumed++
-      worstRate = ord.msgRate
+    if (side.length > 0) {
+      return side[0]
+    }
+    return null
+  }
 
-      if (isMarketBuy) {
-        // qty is in quote atoms. Each order costs qtyAtomic * (msgRate / RateEncodingFactor) quote atoms.
-        // Divide first to avoid intermediate overflow past Number.MAX_SAFE_INTEGER.
-        const rate = ord.msgRate / RateEncodingFactor
-        const quoteCost = ord.qtyAtomic * rate
-        if (quoteCost >= remainingQty) {
-          // Partial fill
-          const baseUsed = remainingQty / rate
-          weightedSum += baseUsed * rate
-          baseQtySum += baseUsed
-          filledBaseQty += baseUsed
-          remainingQty = 0
-          filled = true
-        } else {
-          weightedSum += ord.qtyAtomic * rate
-          baseQtySum += ord.qtyAtomic
-          filledBaseQty += ord.qtyAtomic
-          remainingQty -= quoteCost
+  bestBuyRateAtom (): number {
+    const bestBuy = this.bestOrder(false)
+    if (!bestBuy) {
+      return 0
+    }
+    return bestBuy.msgRate
+  }
+
+  bestSellRateAtom (): number {
+    const bestSell = this.bestOrder(true)
+    if (!bestSell) {
+      return 0
+    }
+    return bestSell.msgRate
+  }
+
+  // heaviestOrder will return the order in book-side of highest quantity if one exists
+  // (including epoch-orders) or null if there are no orders in book-side, the
+  // bestPriceDriftTolerance parameter value is between 0 and 1 (when set) allows for
+  // skipping orders with price that's too far from best price for this side of the book
+  heaviestOrder (sell: boolean, bestPriceDriftTolerance: number): MiniOrder | null {
+    let side = this.buys
+    if (sell) {
+      side = this.sells
+    }
+    if (side.length <= 0) {
+      return null
+    }
+
+    const bestOrder = this.bestOrder(sell)
+    if (!bestOrder) {
+      return null
+    }
+
+    let heaviestOrder = side[0]
+    side.forEach((order: MiniOrder) => {
+      if (bestPriceDriftTolerance > 0 && bestPriceDriftTolerance <= 1) {
+        if (!sell && (bestOrder.msgRate - order.msgRate > bestPriceDriftTolerance * bestOrder.msgRate)) {
+          return // order price drifted too far to consider it relevant
         }
-      } else {
-        // qty is in base atoms.
-        const orderQty = ord.qtyAtomic
-        const rate = ord.msgRate / RateEncodingFactor
-        if (orderQty >= remainingQty) {
-          weightedSum += remainingQty * rate
-          baseQtySum += remainingQty
-          filledBaseQty += remainingQty
-          remainingQty = 0
-          filled = true
-        } else {
-          weightedSum += orderQty * rate
-          baseQtySum += orderQty
-          filledBaseQty += orderQty
-          remainingQty -= orderQty
+        if (sell && (order.msgRate - bestOrder.msgRate > bestPriceDriftTolerance * bestOrder.msgRate)) {
+          return // order price drifted too far to consider it relevant
         }
       }
-    }
-
-    if (baseQtySum === 0) return null
-
-    // weightedSum uses conventional rate (msgRate / RateEncodingFactor) to
-    // avoid overflow, so avgConvRate is also conventional.
-    const avgConvRate = weightedSum / baseQtySum
-    // Convert back to msgRate-encoded for the interface contract.
-    const avgRate = avgConvRate * RateEncodingFactor
-    const bookDepthPct = totalBookBaseQty > 0 ? (filledBaseQty / totalBookBaseQty) * 100 : 0
-    const slippagePct = Math.abs(avgRate - midGapRate) / midGapRate * 100
-    // For sell: qty is base atoms, filledBaseQty is base atoms matched.
-    // For buy: qty is quote atoms, use spent quote to calculate fill %.
-    const orderFillPct = sell
-      ? (filledBaseQty / qty) * 100
-      : ((qty - remainingQty) / qty) * 100
-
-    return {
-      avgRate,
-      worstRate,
-      midGapRate,
-      slippagePct,
-      filled,
-      orderFillPct,
-      bookDepthPct,
-      levelsConsumed
-    }
+      if (order.qtyAtomic > heaviestOrder.qtyAtomic) {
+        heaviestOrder = order
+      }
+    })
+    return heaviestOrder
   }
 }
 

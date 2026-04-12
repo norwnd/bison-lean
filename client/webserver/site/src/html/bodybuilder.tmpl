@@ -40,33 +40,64 @@
   {{template "header" .}}
   {{end}}
 
-  {{define "header"}}
-  <header id="header" class="border-bottom mb-2">
-    {{$authed := .UserInfo.Authed}}
-    <a href="/" class="d-none d-md-block pointer hoverbg mx-2">
-      <img class="logo-full">
-    </a>
-    <a href="/" class="d-block d-md-none pointer hoverbg mx-2">
-      <img class="logo-square">
-    </a>
-    <div id="headerSpace"></div>
-    <div class="mainlinks fs18 pe-2 text-nowrap">
+{{define "header"}}
+<header id="header" class="d-flex justify-content-between border-bottom">
+  {{$authed := .UserInfo.Authed}}
+  {{- /* MM TITLE */ -}}
+  <div id="mmTitle" class="flex-center fs28 px-2 d-hide">[[[Market Maker Settings]]]</div>
 
-      <a href="/wallets" class="demi hoverbg{{if not $authed}} d-hide{{end}}" id="walletsMenuEntry">[[[Wallet]]]</a>
+  {{- /* MARKET STATS */ -}}
+  <div id="marketStats" class="d-flex align-items-center px-2 d-hide">
+    <div class="flex-center pointer hoverbg px-2" data-tmpl="marketSelect">
+      <div class="flex-center">
+        <img class="small-icon" data-tmpl="baseIcon">
+        <img class="small-icon ms-1" data-tmpl="quoteIcon">
+      </div>
+      <div class="d-flex align-items-end fs24 demi ms-1">
+        <span data-tmpl="baseSymbol"></span> / <span data-tmpl="quoteSymbol"></span>
+      </div>
+    </div>
 
-      <a href="/markets" class="demi hoverbg d-hide" id="marketsMenuEntry">[[[Trade]]]</a>
+    <div class="d-flex flex-stretch-column ps-1 border-right">
+      <div data-tmpl="externalPrice" title="Price on external markets such as Binance" class="d-flex align-items-center border-bottom pe-2 fs18 text-warning">-</div>
+      <div data-tmpl="bisonPrice" title="Price last trade executed at" class="d-flex align-items-center pe-2 fs18">-</div>
+    </div>
 
-      <a href="/mm" class="ico-robot lh1 fs32 hoverbg d-hide" id="mmLink"></a>
+    <div class="statgrid">
+      <span class="fs14 grey px-2 border-right border-bottom">[[[Change24]]]</span>
+      <span class="fs14 grey px-2 border-right border-bottom">[[[Volume24]]]</span>
+      <span class="fs14 grey px-2 border-right border-bottom">[[[High24]]]</span>
+      <span class="fs14 grey ps-2 border-bottom">[[[Low24]]]</span>
+
+      <div class="px-2 fs14 border-right" data-tmpl="change24">-</div>
+      <div class="d-flex justify-content-start align-items-center px-2 border-right">
+        <div data-tmpl="volume24" class="fs14">-</div>
+        <div data-tmpl="volume24Unit" class="fs14 grey ms-1">USD</div>
+      </div>
+      <div class="px-2 fs14 border-right" data-tmpl="high">-</div>
+      <div class="px-2 fs14" data-tmpl="low">-</div>
+    </div>
+  </div>
+
+  <div class="mainlinks fs18 pe-2 text-nowrap">
+    <a href="/wallets" class="demi hoverbg{{if not $authed}} d-hide{{end}}" id="walletsMenuEntry">[[[Wallet]]]</a>
+    <a href="/markets" class="demi hoverbg d-hide" id="marketsMenuEntry">[[[Trade]]]</a>
+    <a href="/mm" class="ico-robot lh1 fs32 hoverbg d-hide" id="mmLink"></a>
 
       <div class="d-inline-block position-relative pointer hoverbg{{if not $authed}} d-hide{{end}}" id="noteBell">
         <span class="ico-bell fs20 p-2"></span>
         <div id="noteIndicator" class="d-hide"></div>
       </div>
 
-      <div class="d-inline-block hoverbg position-relative pointer" id="burgerIcon">
-        <span class="ico-hamburger fs20 p-2"></span>
-      </div>
+    <div class="d-inline-block hoverbg position-relative pointer" id="burgerIcon">
+      <span class="ico-hamburger fs20 p-2"></span>
+    </div>
+  </div>
 
+  <div id="loader" class="fill-abs d-hide">
+    <div class="fill-abs flex-center blurry-bg">
+      <img class="d-inline-block logo-square small spinner">
+      <div id="loaderMsg" class="mx-2 d-hide"></div>
     </div>
     <div id="loader" class="fill-abs d-hide">
       <div class="fill-abs flex-center blurry-bg">
@@ -104,187 +135,182 @@
       </div>
     </div>
 
-    <div id="profileBox" class="d-hide p-3 fs15">
-      <div class="icon fs20 ico-hamburger p-1" id="innerBurgerIcon"></div>
-      <span class="text-danger" id="logoutErr"></span>
-      <a href="/orders" class="demi hoverbright plainlink d-flex align-items-center py-1 authed-only">
-        <span class="ico-settings fs16 me-2"></span>
-        [[[Order History]]]
-      </a>
-      <a href="/mm" class="demi hoverbright plainlink d-flex align-items-center py-1 authed-only">
-        <span class="ico-barchart fs16 me-2"></span>
-        [[[Market Making]]]
-      </a>
-      <a href="/settings" class="demi hoverbright plainlink d-flex align-items-center py-1 authed-only">
-        <span class="ico-settings fs16 me-2"></span>
-        [[[Settings]]]
-      </a>
-      <div class="d-flex flex-column align-items-start">
-        <div class="flex-center">
-          <span id="langFlag" class="fs20"></span>
-          <span id="langName" class="demi fs16 ms-1"></span>
-        </div>
-        <div id="langBttns" class="d-flex align-items-center flex-wrap">
-          <div id="langBttnTmpl" class="pointer fs18 me-2"></div>
-        </div>
+  <div id="profileBox" class="d-hide p-3 fs15">
+    <div class="icon fs20 ico-hamburger p-1" id="innerBurgerIcon"></div>
+    <span class="text-danger fs16" id="logoutErr"></span>
+    <a href="/orders" class="demi hoverbright plainlink d-flex align-items-center fs18 py-1 authed-only">
+      <span class="ico-settings me-2"></span>
+      [[[Order History]]]
+    </a>
+    <a href="/settings" class="demi hoverbright plainlink d-flex align-items-center fs18 py-1">
+      <span class="ico-settings me-2"></span>
+      [[[Settings]]]
+    </a>
+    <div class="d-flex flex-column align-items-start fs18">
+      <div class="flex-center">
+        <span id="langFlag" class="fs18"></span>
+        <span id="langName" class="demi ms-1"></span>
       </div>
-      <a href="https://github.com/decred/dcrdex" class="demi hoverbright plainlink d-flex align-items-center py-1"
-        target="_blank">
-        <span class="ico-open fs16 me-2"></span>
-        Homepage / Docs
-      </a>
-      <div class="demi hoverbright pointer d-flex align-items-center py-1 authed-only" id="profileSignout">
-        <span class="ico-profile fs16 me-2"></span>
-        [[[Sign Out]]]
-      </div>
-      <div class="border-bottom py-2"></div>
-      <div class="demi-sans d-flex align-items-center pt-3 lh-1" id="version">
-        <div class="flex-center">
-          [[[Version]]] {{.Version}}
-        </div>
+      <div id="langBttns" class="d-flex align-items-center flex-wrap">
+        <div id="langBttnTmpl" class="pointer me-2"></div>
       </div>
     </div>
-
-
-  </header>
-  {{end}}
-
-  {{define "bottom"}}
-  <div id="requiredActions">
-    <div id="actionDialogCollapsed" class="d-inline-block text-center p-2 m-1 pointer hoverbg d-hide">
-      <span class="text-warning fs20">
-        <span class="ico-info ms-0 me-1"></span>
-        <span id="actionDialogCount">4</span>
-      </span>
-    </div>
-    <div id="actionDialog" class="mw-375 rounded3 m-3 p-3 d-hide">
-      <div class="d-flex justify-content-between">
-        <div class="fs22">
-          <span class="ico-info text-warning me-2"></span>
-          Action Required
-        </div>
-        <div id="actionsCollapse" class="fs16 p-2 ico-arrowdown hoverbg pointer"></div>
-      </div>
-      <div id="actionDialogContent">
-
-        <table id="actionTxTableTmpl" class="compact border cell-border mt-2">
-          <thead>
-            <tr>
-              <th colspan="2">
-                <a data-tmpl="lostTxID" class="word-break-all"></a>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>[[[Amount]]]</td>
-              <td>
-                <span data-tmpl="txAmt"></span>
-                <span data-tmpl="amtUnit" class="fs15 grey"></span>
-              </td>
-            </tr>
-            <tr>
-              <td>[[[Fees]]]</td>
-              <td>
-                <span data-tmpl="feeAmount"></span>
-                <span data-tmpl="feeUnit" class="fs15 grey"></span>
-              </td>
-            </tr>
-            <tr data-tmpl="newFeesRow" class="d-hide">
-              <td>New Fees</td>
-              <td>
-                <span data-tmpl="newFees"></span>
-                <span data-tmpl="newFeesUnit" class="fs15 grey"></span>
-              </td>
-            </tr>
-            <tr>
-              <td>Tx Type</td>
-              <td data-tmpl="type"></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div id="missingNoncesTmpl" class="flex-stretch-column mt-2">
-          <div class="text-justify">
-            <span data-tmpl="assetName"></span> nonces are missing. Would you like
-            to attempt recovery?
-          </div>
-          <div class="d-flex align-items-stretch mt-3">
-            <button data-tmpl="doNothingBttn" class="flex-grow-1 me-2 danger">Do Nothing</button>
-            <button data-tmpl="recoverBttn" class="flex-grow-1 ms-2">Attempt Recovery</button>
-          </div>
-          <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
-        </div>
-
-        <div id="tooCheapTmpl" class="flex-stretch-column mt-2">
-          <div class="text-justify">
-            A <span data-tmpl="assetName"></span>
-            transaction is stuck and has low fees. Should we replace it with a new
-            transaction?
-          </div>
-          <div data-tmpl="txTable"></div>
-          <div class="d-flex align-items-stretch mt-3">
-            <button data-tmpl="keepWaitingBttn" class="flex-grow-1 me-2">Keep Waiting</button>
-            <button data-tmpl="addFeesBttn" class="flex-grow-1 ms-2">Add Fees</button>
-          </div>
-          <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
-        </div>
-
-        <div id="lostNonceTmpl" class="flex-stretch-column mt-2">
-          <div class="text-justify">
-            A <span data-tmpl="assetName"></span>
-            transaction might be lost. A different transaction with the same
-            nonce was confirmed first. You can abandon the transaction
-          </div>
-          <div data-tmpl="txTable"></div>
-          <div class="d-flex mt-2">
-            <button data-tmpl="keepWaitingBttn" class="flex-grow-1 me-1">Keep Waiting</button>
-            <button data-tmpl="abandonBttn" class="danger flex-grow-1 ms-1">Abandon</button>
-          </div>
-          <hr>
-          <div class="mt-2">
-            or you can tell us which transaction has nonce <span data-tmpl="nonce"></span>
-          </div>
-          <div class="d-flex align-items-stretch mt-2">
-            <input type="text" data-tmpl="idInput" class="flex-grow-1">
-            <button data-tmpl="replaceBttn" class="ms-2">Submit</button>
-          </div>
-          <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
-        </div>
-
-        <div id="rejectedTxTmpl" class="flex-stretch-column mt-2">
-          <div class="text-justify">
-            A <span data-tmpl="assetName"></span> trade <span data-tmpl="txType"></span>
-            was rejected by the network. Network transaction fees were incurred.
-            You can try to <span data-tmpl="txType"></span> again, but it will
-            likely incur more fees and it may be rejected again.
-          </div>
-          <a data-tmpl="txid" class="d-block fs12 mono word-break-all border p-2 mt-2"></a>
-          <div class="d-flex align-items-stretch mt-3">
-            <button data-tmpl="doNothingBttn" class="flex-grow-1 me-2">Do Nothing</button>
-            <button data-tmpl="tryAgainBttn" class="flex-grow-1 ms-2">Try Again</button>
-          </div>
-          <div class="flex-center fs14 mt-2">
-            <a href="https://docs.decred.org/getting-started/joining-matrix-channels/" target="_blank">
-              Find technical support
-            </a>
-          </div>
-          <div data-tmpl="errMsg" class="p-2 text-warning mt-2 d-hide"></div>
-        </div>
-
-      </div>
-      <div id="actionsNavigator" class="flex-center mt-2 lh1 fs16 user-select-none">
-        <span id="prevAction" class="p-1 ico-arrowleft pointer hoverbg"></span>
-        <span id="currentAction" class="mx-1"></span>
-        <span>/</span>
-        <span id="actionCount" class="mx-1"></span>
-        <span id="nextAction" class="p-1 ico-arrowright pointer hoverbg"></span>
-      </div>
+    <a href="https://github.com/decred/dcrdex" class="demi hoverbright plainlink d-flex align-items-center fs18 py-1"  target="_blank">
+      <span class="ico-open me-2"></span>
+      Homepage / Docs
+    </a>
+    <div class="demi hoverbright pointer d-flex align-items-center fs18 py-1 authed-only" id="profileSignout">
+      <span class="ico-profile me-2"></span>
+      [[[Sign Out]]]
     </div>
   </div>
 
-  <script src="/js/entry.js?v={{commitHash true}}"></script>
-</body>
+</header>
+{{end}}
 
+{{define "bottom"}}
+<div id="requiredActions">
+  <div id="actionDialogCollapsed" class="d-inline-block text-center p-2 m-1 pointer hoverbg d-hide">
+    <span class="text-warning fs20">
+      <span class="ico-info ms-0 me-1"></span>
+      <span id="actionDialogCount">4</span>
+    </span>
+  </div>
+  <div id="actionDialog" class="mw-375 border-rounded3 m-3 p-3 d-hide">
+    <div class="d-flex justify-content-between">
+      <div class="fs22">
+        <span class="ico-info text-warning me-2"></span>
+        Action Required
+      </div>
+      <div id="actionsCollapse" class="fs16 p-2 ico-arrowdown hoverbg pointer"></div>
+    </div>
+    <div id="actionDialogContent">
+
+      <table id="actionTxTableTmpl" class="compact border cell-border mt-2">
+        <thead>
+          <tr>
+            <th colspan="2">
+              <a data-tmpl="lostTxID" class="word-break-all"></a>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>[[[Amount]]]</td>
+            <td>
+              <span data-tmpl="txAmt"></span>
+              <span data-tmpl="amtUnit" class="fs15 grey"></span>
+            </td>
+          </tr>
+          <tr>
+            <td>Current Fees (too low)</td>
+            <td>
+              <span data-tmpl="feeAmount"></span>
+              <span data-tmpl="feeUnit" class="fs15 grey"></span>
+              <span class="d-flex d-hide justify-content-end grey fs14">
+                ~<span data-tmpl="feeAmountFiat" class="mx-1"></span>USD
+              </span>
+            </td>
+          </tr>
+          <tr data-tmpl="newFeesRow" class="d-hide">
+            <td>New Fees (estimate)</td>
+            <td>
+              <span data-tmpl="newFees"></span>
+              <span data-tmpl="newFeesUnit" class="fs15 grey"></span>
+              <span class="d-flex d-hide justify-content-end grey fs14">
+                ~<span data-tmpl="newFeesFiat" class="mx-1"></span>USD
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td>Tx Type</td>
+            <td data-tmpl="type"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div id="missingNoncesTmpl" class="flex-stretch-column mt-2">
+        <div class="text-justify">
+          <span data-tmpl="assetName"></span> nonces are missing. Would you like
+           to attempt recovery?
+        </div>
+        <div class="d-flex align-items-stretch mt-3">
+          <button data-tmpl="doNothingBttn" class="flex-grow-1 me-2 danger">Do Nothing</button>
+          <button data-tmpl="recoverBttn" class="flex-grow-1 ms-2">Attempt Recovery</button>
+        </div>
+        <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
+      </div>
+
+      <div id="tooCheapTmpl" class="flex-stretch-column mt-2">
+        <div class="text-justify">
+          A <span data-tmpl="assetName"></span>
+          transaction is stuck due to low fees. Should we wait, bump the fees or do you want to
+          abandon this transaction? Note, you probably don't want to abandon redeem or refund transactions,
+          if you choose to abandon - make sure it's not one of those.
+        </div>
+        <div data-tmpl="txTable"></div>
+        <div class="d-flex align-items-stretch mt-3">
+          <button data-tmpl="keepWaitingBttn" class="flex-grow-1 me-2">Keep Waiting</button>
+          <button data-tmpl="addFeesBttn" class="flex-grow-1 ms-2">Add Fees</button>
+          <button data-tmpl="abandonBttn" class="danger flex-grow-1 ms-2">Abandon</button>
+        </div>
+        <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
+      </div>
+
+      <div id="lostNonceTmpl" class="flex-stretch-column mt-2">
+        <div class="text-justify">
+          A <span data-tmpl="assetName"></span>
+          transaction might be lost. A different transaction with the same
+          nonce was confirmed first. You can abandon the transaction.
+        </div>
+        <div data-tmpl="txTable"></div>
+        <div class="d-flex mt-2">
+          <button data-tmpl="keepWaitingBttn" class="flex-grow-1 me-2">Keep Waiting</button>
+          <button data-tmpl="abandonBttn" class="danger flex-grow-1 ms-2">Abandon</button>
+        </div>
+        <hr>
+        <div class="mt-2">
+          or you can tell us which transaction has nonce <span data-tmpl="nonce"></span>
+        </div>
+        <div class="d-flex align-items-stretch mt-2">
+          <input type="text" data-tmpl="idInput" class="flex-grow-1">
+          <button data-tmpl="replaceBttn" class="ms-2">Submit</button>
+        </div>
+        <div data-tmpl="errMsg" class="p-2 text-warning d-hide"></div>
+      </div>
+
+      <div id="rejectedRedemptionTmpl" class="flex-stretch-column mt-2">
+        <div class="text-justify">
+          A <span data-tmpl="assetName"></span> trade redemption was rejected
+          by the network. Network transaction fees were incurred. You
+          can try to redeem again, but it will likely incur more fees and
+          it may be rejected again.
+        </div>
+        <a data-tmpl="txid" class="d-block fs12 mono word-break-all border p-2 mt-2"></a>
+        <div class="d-flex align-items-stretch mt-3">
+          <button data-tmpl="doNothingBttn" class="flex-grow-1 me-2">Do Nothing</button>
+          <button data-tmpl="tryAgainBttn" class="flex-grow-1 ms-2">Try Again</button>
+        </div>
+        <div class="flex-center fs14 mt-2">
+          <a href="https://docs.decred.org/getting-started/joining-matrix-channels/" target="_blank">
+            Find technical support
+          </a>
+        </div>
+        <div data-tmpl="errMsg" class="p-2 text-warning mt-2 d-hide"></div>
+      </div>
+
+    </div>
+    <div id="actionsNavigator" class="flex-center mt-2 lh1 fs16 user-select-none">
+      <span id="prevAction" class="p-1 ico-arrowleft pointer hoverbg"></span>
+      <span id="currentAction" class="mx-1"></span>
+      <span>/</span>
+      <span id="actionCount" class="mx-1"></span>
+      <span id="nextAction" class="p-1 ico-arrowright pointer hoverbg"></span>
+    </div>
+  </div>
+</div>
+
+<script src="/js/entry.js?v={{commitHash true}}"></script>
+</body>
 </html>
 {{end}}

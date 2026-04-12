@@ -151,9 +151,9 @@ var (
 			Key:         "feeratelimit",
 			DisplayName: "Highest acceptable fee rate",
 			Description: "This is the highest network fee rate you are willing to " +
-				"pay on swap transactions. If feeratelimit is lower than a market's " +
-				"maxfeerate, you will not be able to trade on that market with this " +
-				"wallet.  Units: DCR/kB",
+				"pay for transactions, fee rate for Swap transactions will be 2x of that" +
+				"(because they need to be mined faster than any other transaction type for " +
+				"trades to execute). Units: DCR/kB",
 			DefaultValue: strconv.FormatFloat(defaultFeeRateLimit*1000/1e8, 'f', -1, 64),
 		},
 		{
@@ -1341,14 +1341,23 @@ func (dcr *ExchangeWallet) SetBondReserves(reserves uint64) {
 }
 
 // FeeRate satisfies asset.FeeRater.
-func (dcr *ExchangeWallet) FeeRate() uint64 {
+func (dcr *ExchangeWallet) FeeRate() (rate uint64, tooLow bool) {
 	const confTarget = 2 // 1 historically gives crazy rates
 	rate, err := dcr.feeRate(confTarget)
 	if err != nil {
 		dcr.log.Debugf("feeRate error: %v", err)
-		return 0
+		return 0, false
 	}
-	return rate
+	return rate, false // DCR fees are never too low in practice (since network activity is always low)
+}
+
+// FeeRateSwap is same as FeeRate but for swaps.
+func (dcr *ExchangeWallet) FeeRateSwap() (rate uint64, tooLow bool) {
+	rate, tooLow = dcr.FeeRate()
+	// server typically expects "higher than normal" fee rates for swaps, to make sure we pick high
+	// enough fee rate (so that server doesn't reject our place-trade requests) we 10x the normal
+	// fee rate here (lower values don't seem to be sufficient)
+	return 10 * rate, tooLow
 }
 
 // feeRate returns the current optimal fee rate in atoms / byte.
@@ -1945,12 +1954,15 @@ func (dcr *ExchangeWallet) FundOrder(ord *asset.Order) (asset.Coins, []dex.Bytes
 	if ord.FeeSuggestion > cfg.feeRateLimit {
 		return nil, nil, 0, fmt.Errorf("suggested fee > configured limit. %d > %d", ord.FeeSuggestion, cfg.feeRateLimit)
 	}
-	// Check wallet's fee rate limit against server's max fee rate
-	if cfg.feeRateLimit < ord.MaxFeeRate {
-		return nil, nil, 0, fmt.Errorf(
-			"%v: server's max fee rate %v higher than configured fee rate limit %v",
-			dex.BipIDSymbol(BipID), ord.MaxFeeRate, cfg.feeRateLimit)
-	}
+	// This is just a sanity check that doesn't allow Bison wallet to configure lower fees
+	// on client side (server doesn't enforce/check this really), we know better than whatever
+	// server suggests.
+	//// Check wallet's fee rate limit against server's max fee rate
+	//if cfg.feeRateLimit < ord.MaxFeeRate {
+	//	return nil, nil, 0, fmt.Errorf(
+	//		"%v: server's max fee rate %v higher than configured fee rate limit %v",
+	//		dex.BipIDSymbol(BipID), ord.MaxFeeRate, cfg.feeRateLimit)
+	//}
 
 	customCfg := new(swapOptions)
 	err := config.Unmapify(ord.Options, customCfg)
@@ -2540,12 +2552,15 @@ func (dcr *ExchangeWallet) FundMultiOrder(mo *asset.MultiOrder, maxLock uint64) 
 		return nil, nil, 0, fmt.Errorf("fee suggestion %d > max fee rate %d", mo.FeeSuggestion, mo.MaxFeeRate)
 	}
 
-	cfg := dcr.config()
-	if cfg.feeRateLimit < mo.MaxFeeRate {
-		return nil, nil, 0, fmt.Errorf(
-			"%v: server's max fee rate %v higher than configured fee rate limit %v",
-			dex.BipIDSymbol(BipID), mo.MaxFeeRate, cfg.feeRateLimit)
-	}
+	// This is just a sanity check that doesn't allow Bison wallet to configure lower fees
+	// on client side (server doesn't enforce/check this really), we know better than whatever
+	// server suggests.
+	//cfg := dcr.config()
+	//if cfg.feeRateLimit < mo.MaxFeeRate {
+	//	return nil, nil, 0, fmt.Errorf(
+	//		"%v: server's max fee rate %v higher than configured fee rate limit %v",
+	//		dex.BipIDSymbol(BipID), mo.MaxFeeRate, cfg.feeRateLimit)
+	//}
 
 	bal, err := dcr.Balance()
 	if err != nil {

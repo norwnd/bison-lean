@@ -61,7 +61,7 @@ export default class InitPage extends BasePage {
     const page = this.page
     await this.quickConfigForm.update(pw, hosts)
     if (mnemonic) this.seedBackupForm.update(mnemonic)
-    slideSwap(page.appPWForm, page.quickConfigForm)
+    await slideSwap(page.appPWForm, page.quickConfigForm)
   }
 
   async quickConfigDone () {

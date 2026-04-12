@@ -44,9 +44,9 @@ var (
 			Key:         "feeratelimit",
 			DisplayName: "Highest acceptable fee rate",
 			Description: "This is the highest network fee rate you are willing to " +
-				"pay on swap transactions. If feeratelimit is lower than a market's " +
-				"maxfeerate, you will not be able to trade on that market with this " +
-				"wallet.  Units: BTC/kB",
+				"pay for transactions, fee rate for Swap transactions will be 2x of that" +
+				"(because they need to be mined faster than any other transaction type for " +
+				"trades to execute). Units: BTC/kB",
 			DefaultValue: strconv.FormatFloat(dexdgb.DefaultFeeRateLimit*1000/1e8, 'f', -1, 64), // higher than BTC default
 		},
 		{

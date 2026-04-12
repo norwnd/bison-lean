@@ -269,14 +269,14 @@ export default class MarketMakerPage extends BasePage {
       const fiatRate = app().fiatRatesMap[assetID]
       if (fiatRate) usdBal += fiatRate * (bal.available + bal.locked) / unitInfo.conventional.conversionFactor
     }
-    tmpl.usdBalance.textContent = Doc.formatFourSigFigs(usdBal)
+    tmpl.usdBalance.textContent = Doc.formatBestWeCan(usdBal)
   }
 
   percentageBalanceStr (assetID: number, balance: number, percentage: number): string {
     const asset = app().assets[assetID]
     const unitInfo = asset.unitInfo
-    const assetValue = Doc.formatCoinValue((balance * percentage) / 100, unitInfo)
-    return `${Doc.formatFourSigFigs(percentage)}% - ${assetValue} ${asset.symbol.toUpperCase()}`
+    const assetValue = Doc.formatCoinAtom((balance * percentage) / 100, unitInfo)
+    return `${Doc.formatBestWeCan(percentage)}% - ${assetValue} ${asset.symbol.toUpperCase()}`
   }
 
   /*
@@ -353,8 +353,8 @@ class Bot extends BotMarket {
         Doc.setVis(mkt?.day, page.cexDataBox)
         if (mkt?.day) {
           const day = mkt.day
-          page.cexPrice.textContent = Doc.formatFourSigFigs(day.lastPrice)
-          page.cexVol.textContent = Doc.formatFourSigFigs(baseFiatRate * day.vol)
+          page.cexPrice.textContent = Doc.formatBestWeCan(day.lastPrice)
+          page.cexVol.textContent = Doc.formatBestWeCan(baseFiatRate * day.vol)
         }
       }
     }
@@ -364,8 +364,8 @@ class Bot extends BotMarket {
     if (spot) {
       Doc.show(page.dexDataBox)
       const c = OrderUtil.RateEncodingFactor / baseFactor * quoteFactor
-      page.dexPrice.textContent = Doc.formatFourSigFigs(spot.rate / c)
-      page.dexVol.textContent = Doc.formatFourSigFigs(spot.vol24 / baseFactor * baseFiatRate)
+      page.dexPrice.textContent = Doc.formatBestWeCan(spot.rate / c)
+      page.dexVol.textContent = Doc.formatBestWeCan(spot.vol24 / baseFactor * baseFiatRate)
     }
 
     this.updateDisplay()
@@ -378,7 +378,7 @@ class Bot extends BotMarket {
     const { running, runStats } = this.status()
     Doc.setVis(running, tmpl.profitLossBox)
     if (runStats) {
-      tmpl.profitLoss.textContent = Doc.formatFourSigFigs(runStats.profitLoss.profit, 2)
+      tmpl.profitLoss.textContent = Doc.formatBestWeCan(runStats.profitLoss.profit, 2)
     }
   }
 

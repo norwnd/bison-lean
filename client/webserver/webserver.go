@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"io"
 	"io/fs"
 	"mime"
@@ -467,14 +468,15 @@ func New(cfg *Config) (*WebServer, error) {
 	}
 
 	// Middleware
+	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{
 		Logger: &chiLogger{ // logs with Trace()
 			Logger: dex.StdOutLogger("MUX", log.Level(), cfg.UTC),
 		},
 		NoColor: runtime.GOOS == "windows",
 	}))
+	mux.Use(middleware.NoCache)
 	mux.Use(s.securityMiddleware)
-	mux.Use(middleware.Recoverer)
 
 	// Compress responses if using tor.
 	if cfg.Tor {
@@ -1403,6 +1405,7 @@ func writeJSONWithStatus(w http.ResponseWriter, thing any, code int) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Errorf("JSON encode error: %v", err)
+		log.Errorf("JSON encode spew object dump: %s", spew.Sdump(thing))
 		return
 	}
 	w.WriteHeader(code)

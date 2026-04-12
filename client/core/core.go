@@ -73,8 +73,8 @@ const (
 	// or a config response field if it should be considered variable.
 	preimageReqTimeout = 20 * time.Second
 
-	// wsMaxAnomalyCount is the maximum websocket connection anomaly after which
-	// a client receives a notification to check their connectivity.
+	// wsMaxAnomalyCount is how many anomalies we tolerate before notifying
+	// user to check if his internet connection is fine(stable).
 	wsMaxAnomalyCount = 3
 	// If a client's websocket connection to a server disconnects before
 	// wsAnomalyDuration since last connect time, the client's websocket
@@ -112,7 +112,7 @@ var (
 	// NOTE: API version may change at any time. Keep this in mind when
 	// updating the API. Long-running operations may start and end with
 	// differing versions.
-	supportedAPIVers = []int32{serverdex.PerMatchAddrVersion}
+	supportedAPIVers = []int32{serverdex.V1APIVersion}
 	// ActiveOrdersLogoutErr is returned from logout when there are active
 	// orders.
 	ActiveOrdersLogoutErr = errors.New("cannot log out with active orders")
@@ -171,6 +171,9 @@ type dexConnection struct {
 
 	booksMtx sync.RWMutex
 	books    map[string]*bookie
+	// obSyncReqCnt counts order book sync requests issued to server
+	// through this dexConnection
+	obSyncReqCnt uint64
 
 	// tradeMtx is used to synchronize access to the trades map.
 	tradeMtx sync.RWMutex
@@ -886,17 +889,6 @@ func (dc *dexConnection) parseMatches(msgMatches []*msgjson.Match, checkSigs boo
 				continue
 			}
 			errs = append(errs, "order "+oid.String()+" not found")
-			continue
-		}
-
-		// Check the fee rate against the maxfeerate recorded at order time.
-		swapRate := msgMatch.FeeRateQuote
-		if tracker.Trade().Sell {
-			swapRate = msgMatch.FeeRateBase
-		}
-		if !isCancel && swapRate > tracker.metaData.MaxFeeRate {
-			errs = append(errs, fmt.Sprintf("rejecting match %s for order %s because assigned rate (%d) is > MaxFeeRate (%d)",
-				msgMatch.MatchID, msgMatch.OrderID, swapRate, tracker.metaData.MaxFeeRate))
 			continue
 		}
 
@@ -1700,6 +1692,10 @@ type Core struct {
 	meshMtx sync.RWMutex
 	mesh    *mesh.Mesh
 	meshCM  *dex.ConnectionMaster
+
+	// previouslyFailedTradeAttempt is used to track last trade user tried to place but
+	// failed to pass all validation rules
+	previouslyFailedTradeAttempt atomic.Pointer[tradeAttempt]
 }
 
 // New is the constructor for a new Core.
@@ -1865,13 +1861,14 @@ func (c *Core) Run(ctx context.Context) {
 	// Store the context as a field, since we will need to spawn new DEX threads
 	// when new accounts are registered.
 	c.ctx = ctx
+
 	err := c.initialize()
-	if err != nil { // connectDEX gets ctx for the wsConn
-		c.log.Critical(err)
+	if err != nil {
+		c.log.Critical(fmt.Errorf("couldn't initialize core: %w", err))
 		close(c.ready) // unblock <-Ready()
 		return
 	}
-	close(c.ready)
+	close(c.ready) // signal that Core has been initialized
 
 	// The DB starts first and stops last.
 	ctxDB, stopDB := context.WithCancel(context.Background())
@@ -1896,13 +1893,13 @@ func (c *Core) Run(ctx context.Context) {
 
 	// Construct enabled fiat rate sources.
 fetchers:
-	for token, rateFetcher := range fiatRateFetchers {
-		for _, v := range disabledSources {
-			if token == v {
+	for sourceName, rateFetcher := range fiatRateFetchers {
+		for _, disabledSourceName := range disabledSources {
+			if sourceName == disabledSourceName {
 				continue fetchers
 			}
 		}
-		c.fiatRateSources[token] = newCommonRateSource(rateFetcher)
+		c.fiatRateSources[sourceName] = newCommonRateSource(rateFetcher)
 	}
 	c.fetchFiatExchangeRates(ctx)
 
@@ -2321,8 +2318,7 @@ func (c *Core) connectAndUpdateWalletResumeTrades(w *xcWallet, resumeTrades bool
 	// because some wallets may not reveal balance until unlocked.
 	_, err = c.updateWalletBalance(w)
 	if err != nil {
-		// Warn because the balances will be stale.
-		c.log.Warnf("Could not retrieve balances from %s wallet: %v", unbip(assetID), err)
+		c.log.Warnf("Could not update balances for %s wallet: %v", unbip(assetID), err)
 	}
 
 	c.notify(newWalletStateNote(w.state()))
@@ -2523,7 +2519,7 @@ func (c *Core) lockedAmounts(assetID uint32) (contractLocked, orderLocked, bondL
 	return
 }
 
-// updateBalances updates the balance for every key in the counter map.
+// updateBalances updates the balance for every wallet in assets map.
 // Notifications are sent.
 func (c *Core) updateBalances(assets assetMap) {
 	if len(assets) == 0 {
@@ -2790,6 +2786,7 @@ func (c *Core) createWallet(crypter encrypt.Crypter, walletPW []byte, form *Wall
 		if err = wallet.ReturnCoins(nil); err != nil {
 			c.log.Errorf("Failed to unlock all %s wallet coins: %v", unbip(wallet.AssetID), err)
 		}
+		// wallet balances will be updated below to account for returning of these coins
 	}
 
 	initErr := func(s string, a ...any) error {
@@ -3236,11 +3233,13 @@ func (c *Core) isActiveBondAsset(assetID uint32, includeLive bool) bool {
 	assetIDs := map[uint32]bool{
 		assetID: true,
 	}
-	if ra := asset.Asset(assetID); ra != nil { // it's a base asset, all tokens need it
+	if ra := asset.Asset(assetID); ra != nil {
+		// it's a base asset, all tokens need it
 		for tknAssetID := range ra.Tokens {
 			assetIDs[tknAssetID] = true
 		}
-	} else { // it's a token and we only care about the parent, not sibling tokens
+	} else {
+		// it's a token and we only care about the parent, not sibling tokens
 		if tkn := asset.TokenInfo(assetID); tkn != nil { // it should be
 			assetIDs[tkn.ParentID] = true
 		}
@@ -5015,6 +5014,13 @@ func (c *Core) connectWallets(crypter encrypt.Crypter) {
 				if err = wallet.ReturnCoins(nil); err != nil {
 					c.log.Errorf("Failed to unlock all %s wallet coins: %v", unbip(wallet.AssetID), err)
 				}
+				// Gotta update balances here (even if we couldn't return all the coins we might have
+				// returned some but not others, hence updating balances in error-case too) because
+				// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
+				// wallet balance update (e.g. blockchain tip change).
+				if _, err = c.updateWalletBalance(wallet); err != nil {
+					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(wallet.AssetID), err)
+				}
 			}
 		}
 		atomic.AddUint32(&connectCount, 1)
@@ -5230,13 +5236,15 @@ func (c *Core) Orders(filter *OrderFilter) ([]*Order, error) {
 	}
 
 	ords, err := c.db.Orders(&db.OrderFilter{
-		N:              filter.N,
-		Offset:         oid,
-		Hosts:          filter.Hosts,
-		Assets:         filter.Assets,
-		Market:         mkt,
-		Statuses:       filter.Statuses,
-		IncludePartial: filter.IncludePartial,
+		N:                 filter.N,
+		Offset:            oid,
+		Hosts:             filter.Hosts,
+		Assets:            filter.Assets,
+		Market:            mkt,
+		Statuses:          filter.Statuses,
+		IncludePartial:    filter.IncludePartial,
+		CompletedOnly:     filter.CompletedOnly,
+		FresherThanUnixMs: filter.FresherThanUnixMs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("UserOrders error: %w", err)
@@ -5356,7 +5364,7 @@ func (c *Core) MaxBuy(host string, baseID, quoteID uint32, rate uint64) (*MaxOrd
 		return nil, fmt.Errorf("quote lot estimate of zero for market %s", mktID)
 	}
 
-	swapFeeSuggestion := c.feeSuggestion(dc, quoteID)
+	swapFeeSuggestion := c.feeSuggestionSwapAny(quoteID)
 	if swapFeeSuggestion == 0 {
 		return nil, fmt.Errorf("failed to get swap fee suggestion for %s at %s", unbip(quoteID), host)
 	}
@@ -5370,7 +5378,7 @@ func (c *Core) MaxBuy(host string, baseID, quoteID uint32, rate uint64) (*MaxOrd
 		LotSize:       quoteLotEst,
 		FeeSuggestion: swapFeeSuggestion,
 		AssetVersion:  quoteAsset.Version, // using the server's asset version, when our wallets support multiple vers
-		MaxFeeRate:    quoteAsset.MaxFeeRate,
+		MaxFeeRate:    swapFeeSuggestion,
 		RedeemVersion: baseAsset.Version,
 		RedeemAssetID: baseWallet.AssetID,
 	})
@@ -5415,7 +5423,7 @@ func (c *Core) MaxSell(host string, base, quote uint32) (*MaxOrderEstimate, erro
 		return nil, fmt.Errorf("cannot divide by lot size zero for max sell estimate on market %s", mktID)
 	}
 
-	swapFeeSuggestion := c.feeSuggestion(dc, base)
+	swapFeeSuggestion := c.feeSuggestionSwapAny(base)
 	if swapFeeSuggestion == 0 {
 		return nil, fmt.Errorf("failed to get swap fee suggestion for %s at %s", unbip(base), host)
 	}
@@ -5429,7 +5437,7 @@ func (c *Core) MaxSell(host string, base, quote uint32) (*MaxOrderEstimate, erro
 		LotSize:       lotSize,
 		FeeSuggestion: swapFeeSuggestion,
 		AssetVersion:  baseAsset.Version, // using the server's asset version, when our wallets support multiple vers
-		MaxFeeRate:    baseAsset.MaxFeeRate,
+		MaxFeeRate:    swapFeeSuggestion,
 		RedeemVersion: quoteAsset.Version,
 		RedeemAssetID: quoteWallet.AssetID,
 	})
@@ -5522,8 +5530,6 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 	if dc.IsDown() || dc.status() != comms.Connected {
 		c.log.Warnf("Connection to %v not available for authorization. "+
 			"It will automatically authorize when it connects.", dc.acct.host)
-		subject, details := c.formatDetails(TopicDEXDisconnected, dc.acct.host)
-		c.notify(newConnEventNote(TopicDEXDisconnected, subject, dc.acct.host, comms.Disconnected, details, db.ErrorLevel))
 		return
 	}
 
@@ -5583,8 +5589,13 @@ func (c *Core) removeWaiter(id string) {
 func (c *Core) feeSuggestionAny(assetID uint32, preferredConns ...*dexConnection) uint64 {
 	// See if the wallet supports fee rates.
 	w, found := c.wallet(assetID)
-	if found && w.connected() {
-		if r := w.feeRate(); r != 0 {
+	if found {
+		if !w.connected() {
+			// wait until wallet connects, refuse to use any other rate than wallet-provided
+			// so we can respect wallet settings (such as max fee)
+			return 0
+		}
+		if r, _ := w.feeRate(); r != 0 {
 			return r
 		}
 	}
@@ -5634,16 +5645,64 @@ func (c *Core) feeSuggestionAny(assetID uint32, preferredConns ...*dexConnection
 	return 0
 }
 
-// feeSuggestion gets the best fee suggestion, first from a synced order book,
-// and if not synced, directly from the server.
-func (c *Core) feeSuggestion(dc *dexConnection, assetID uint32) (feeSuggestion uint64) {
-	// Prepare a fee suggestion based on the last reported fee rate in the
-	// order book feed.
-	feeSuggestion = dc.bestBookFeeSuggestion(assetID)
-	if feeSuggestion > 0 {
-		return
+// feeSuggestionSwapAny is same as feeSuggestionAny but for swaps.
+func (c *Core) feeSuggestionSwapAny(assetID uint32, preferredConns ...*dexConnection) uint64 {
+	// See if the wallet supports fee rates.
+	w, found := c.wallet(assetID)
+	if found {
+		if !w.connected() {
+			// wait until wallet connects, refuse to use any other rate than wallet-provided
+			// so we can respect wallet settings (such as max fee)
+			return 0
+		}
+		if r, _ := w.feeRateSwap(); r != 0 {
+			return r
+		}
 	}
-	return dc.fetchFeeRate(assetID)
+
+	// Look for cached rates from epoch_report messages.
+	conns := append(preferredConns, c.dexConnections()...)
+	for _, dc := range conns {
+		feeSuggestion := dc.bestBookFeeSuggestion(assetID)
+		if feeSuggestion > 0 {
+			return feeSuggestion
+		}
+	}
+
+	// Helper function to determine if a server has an active market that pairs
+	// the requested asset.
+	hasActiveMarket := func(dc *dexConnection) bool {
+		dc.cfgMtx.RLock()
+		cfg := dc.cfg
+		dc.cfgMtx.RUnlock()
+		if cfg == nil {
+			return false
+		}
+		for _, mkt := range cfg.Markets {
+			if mkt.Base == assetID || mkt.Quote == assetID && mkt.Running() {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Request a rate with fee_rate.
+	for _, dc := range conns {
+		// The server should have at least one active market with the asset,
+		// otherwise we might get an outdated rate for an asset whose backend
+		// might be supported but not in active use, e.g. down for maintenance.
+		// The fee_rate endpoint will happily return a very old rate without
+		// indication.
+		if !hasActiveMarket(dc) {
+			continue
+		}
+
+		feeSuggestion := dc.fetchFeeRate(assetID)
+		if feeSuggestion > 0 {
+			return feeSuggestion
+		}
+	}
+	return 0
 }
 
 // Send initiates either send or withdraw from an exchange wallet. if subtract
@@ -6216,34 +6275,13 @@ func (c *Core) SingleLotFees(form *SingleLotFeesForm) (swapFees, redeemFees, ref
 
 	var swapFeeRate, redeemFeeRate uint64
 
-	if form.UseMaxFeeRate {
-		dc.assetsMtx.Lock()
-		swapAsset, redeemAsset := dc.assets[wallets.fromWallet.AssetID], dc.assets[wallets.toWallet.AssetID]
-		dc.assetsMtx.Unlock()
-		if swapAsset == nil {
-			return 0, 0, 0, fmt.Errorf("no asset found for %d", wallets.fromWallet.AssetID)
-		}
-		if redeemAsset == nil {
-			return 0, 0, 0, fmt.Errorf("no asset found for %d", wallets.toWallet.AssetID)
-		}
-		swapFeeRate, redeemFeeRate = swapAsset.MaxFeeRate, redeemAsset.MaxFeeRate
-	} else {
-		// For dynamic swappers, use the wallet rate, because the server sends
-		// the max fee rate. For non-dynamic swappers use the server rates,
-		// because this is what swaps will need to use.
-		_, isDynamicSwapper := wallets.fromWallet.Wallet.(asset.DynamicSwapper)
-		if isDynamicSwapper {
-			swapFeeRate = c.feeSuggestionAny(wallets.fromWallet.AssetID) // wallet rate or server rate
-		} else {
-			swapFeeRate = c.feeSuggestion(dc, wallets.fromWallet.AssetID) // server rates only for the swap init
-		}
-		if swapFeeRate == 0 {
-			return 0, 0, 0, fmt.Errorf("failed to get swap fee suggestion for %s at %s", wallets.fromWallet.Symbol, form.Host)
-		}
-		redeemFeeRate = c.feeSuggestionAny(wallets.toWallet.AssetID) // wallet rate or server rate
-		if redeemFeeRate == 0 {
-			return 0, 0, 0, fmt.Errorf("failed to get redeem fee suggestion for %s at %s", wallets.toWallet.Symbol, form.Host)
-		}
+	swapFeeRate = c.feeSuggestionSwapAny(wallets.fromWallet.AssetID)
+	if swapFeeRate == 0 {
+		return 0, 0, 0, fmt.Errorf("failed to get swap fee suggestion for %s at %s", wallets.fromWallet.Symbol, form.Host)
+	}
+	redeemFeeRate = c.feeSuggestionAny(wallets.toWallet.AssetID)
+	if redeemFeeRate == 0 {
+		return 0, 0, 0, fmt.Errorf("failed to get redeem fee suggestion for %s at %s", wallets.toWallet.Symbol, form.Host)
 	}
 
 	swapFees, refundFees, err = wallets.fromWallet.SingleLotSwapRefundFees(assetConfigs.fromAsset.Version, swapFeeRate, form.UseSafeTxSize)
@@ -6369,12 +6407,12 @@ func (c *Core) PreOrder(form *TradeForm) (*OrderEstimate, error) {
 		}
 	}
 
-	swapFeeSuggestion := c.feeSuggestion(dc, wallets.fromWallet.AssetID) // server rates only for the swap init
+	swapFeeSuggestion := c.feeSuggestionSwapAny(wallets.fromWallet.AssetID)
 	if swapFeeSuggestion == 0 {
 		return nil, fmt.Errorf("failed to get swap fee suggestion for %s at %s", wallets.fromWallet.Symbol, form.Host)
 	}
 
-	redeemFeeSuggestion := c.feeSuggestionAny(wallets.toWallet.AssetID) // wallet rate or server rate
+	redeemFeeSuggestion := c.feeSuggestionAny(wallets.toWallet.AssetID)
 	if redeemFeeSuggestion == 0 {
 		return nil, fmt.Errorf("failed to get redeem fee suggestion for %s at %s", wallets.toWallet.Symbol, form.Host)
 	}
@@ -6388,7 +6426,7 @@ func (c *Core) PreOrder(form *TradeForm) (*OrderEstimate, error) {
 		AssetVersion:    assetConfigs.fromAsset.Version,
 		LotSize:         swapLotSize,
 		Lots:            lots,
-		MaxFeeRate:      assetConfigs.fromAsset.MaxFeeRate,
+		MaxFeeRate:      swapFeeSuggestion,
 		Immediate:       (form.IsLimit && form.TifNow) || !form.IsLimit,
 		FeeSuggestion:   swapFeeSuggestion,
 		SelectedOptions: form.Options,
@@ -6643,9 +6681,27 @@ func (c *Core) prepareForTradeRequestPrep(pw []byte, base, quote uint32, host st
 	return wallets, assetConfigs, dc, mktConf, nil
 }
 
-func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemScripts []dex.Bytes, dc *dexConnection, redeemAddr string,
-	form *TradeForm, redemptionRefundLots uint64, fundingFees, maxFeeRate uint64, assetConfigs *assetSet, mktConf *msgjson.Market,
-	errCloser *dex.ErrorCloser) (*tradeRequest, error) {
+func (c *Core) createTradeRequest(
+	wallets *walletSet,
+	coins asset.Coins,
+	redeemScripts []dex.Bytes,
+	dc *dexConnection,
+	redeemAddr string,
+	form *TradeForm,
+	redemptionRefundLots uint64,
+	fundingFees uint64,
+	assetConfigs *assetSet,
+	mktConf *msgjson.Market,
+	errCloser *dex.ErrorCloser,
+) (result *tradeRequest, err error) {
+	closer := dex.NewErrorCloser()
+	defer func() {
+		if err != nil {
+			closer.Done(c.log) // clean up
+		}
+		// otherwise closer will be devoured by errCloser
+	}()
+
 	coinIDs := make([]order.CoinID, 0, len(coins))
 	for i := range coins {
 		coinIDs = append(coinIDs, []byte(coins[i].ID()))
@@ -6706,7 +6762,7 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 		}
 	}
 
-	err := order.ValidateOrder(ord, order.OrderStatusEpoch, mktConf.LotSize)
+	err = order.ValidateOrder(ord, order.OrderStatusEpoch, mktConf.LotSize)
 	if err != nil {
 		return nil, fmt.Errorf("ValidateOrder error: %w", err)
 	}
@@ -6723,6 +6779,16 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 	// funds.
 	var redemptionReserves uint64
 	if isAccountRedemption {
+		onRedemptionReservesChange := func() {
+			// redemption reserves change should be reflected in wallet balances
+			if _, err := c.updateWalletBalance(toWallet); err != nil {
+				c.log.Errorf("updateWalletBalance error: %v", err)
+			}
+			if toToken := asset.TokenInfo(assetConfigs.toAsset.ID); toToken != nil {
+				c.updateAssetBalance(toToken.ParentID)
+			}
+		}
+
 		pubKeys, sigs, err := toWallet.SignCoinMessage(nil, msgOrder.Serialize())
 		if err != nil {
 			return nil, codedError(signatureErr, fmt.Errorf("SignCoinMessage error: %w", err))
@@ -6761,21 +6827,14 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 		} else if err != nil {
 			return nil, codedError(walletErr, fmt.Errorf("ReserveNRedemptions error: %w", err))
 		}
-
-		defer func() {
-			if _, err := c.updateWalletBalance(toWallet); err != nil {
-				c.log.Errorf("updateWalletBalance error: %v", err)
-			}
-			if toToken := asset.TokenInfo(assetConfigs.toAsset.ID); toToken != nil {
-				c.updateAssetBalance(toToken.ParentID)
-			}
-		}()
+		defer onRedemptionReservesChange()
 
 		msgTrade.RedeemSig = &msgjson.RedeemSig{
 			PubKey: pubKeys[0],
 			Sig:    sigs[0],
 		}
-		errCloser.Add(func() error {
+		closer.Add(func() error {
+			defer onRedemptionReservesChange()
 			accountRedeemer.UnlockRedemptionReserves(redemptionReserves)
 			return nil
 		})
@@ -6784,12 +6843,25 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 	// If the from asset is an AccountLocker, we need to lock up refund funds.
 	var refundReserves uint64
 	if isAccountRefund {
+		onRefundReservesChange := func() {
+			// refund reserves change should be reflected in wallet balances
+			if _, err := c.updateWalletBalance(fromWallet); err != nil {
+				c.log.Errorf("updateWalletBalance error: %v", err)
+			}
+			if fromToken := asset.TokenInfo(assetConfigs.fromAsset.ID); fromToken != nil {
+				c.updateAssetBalance(fromToken.ParentID)
+			}
+		}
+
 		refundReserves, err = accountRefunder.ReserveNRefunds(redemptionRefundLots,
 			assetConfigs.fromAsset.Version, assetConfigs.fromAsset.MaxFeeRate)
 		if err != nil {
 			return nil, codedError(walletErr, fmt.Errorf("ReserveNRefunds error: %w", err))
 		}
-		errCloser.Add(func() error {
+		defer onRefundReservesChange()
+
+		closer.Add(func() error {
+			defer onRefundReservesChange()
 			accountRefunder.UnlockRefundReserves(refundReserves)
 			return nil
 		})
@@ -6817,8 +6889,6 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 			EpochDur:           mktConf.EpochLen, // epochIndex := result.ServerTime / mktConf.EpochLen
 			FromSwapConf:       assetConfigs.fromAsset.SwapConf,
 			ToSwapConf:         assetConfigs.toAsset.SwapConf,
-			MaxFeeRate:         assetConfigs.fromAsset.MaxFeeRate,
-			RedeemMaxFeeRate:   assetConfigs.toAsset.MaxFeeRate,
 			FromVersion:        assetConfigs.fromAsset.Version,
 			ToVersion:          assetConfigs.toAsset.Version, // and we're done with the server's asset configs.
 			Options:            form.Options,
@@ -6830,6 +6900,7 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 		Order: ord,
 	}
 
+	errCloser.Devour(closer)
 	return &tradeRequest{
 		mktID:        marketName(form.Base, form.Quote),
 		route:        route,
@@ -6840,7 +6911,7 @@ func (c *Core) createTradeRequest(wallets *walletSet, coins asset.Coins, redeemS
 		recoveryCoin: recoveryCoin,
 		coins:        coins,
 		wallets:      wallets,
-		errCloser:    errCloser.Copy(),
+		errCloser:    errCloser,
 		preImg:       preImg,
 		commitSig:    commitSig,
 	}, nil
@@ -6863,8 +6934,90 @@ func (c *Core) activeMatchCount(dc *dexConnection) int {
 	return n
 }
 
+// tradeAttempt represents user-initiated trade attempt.
+type tradeAttempt struct {
+	market string
+	rate   uint64
+}
+
+func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexConnection) (err error) {
+	if rate == 0 {
+		return newError(orderParamsErr, "zero rate is invalid")
+	}
+
+	// code below implements a warning for the caller for cases where there is quite large
+	// chance he is about to do something stupid; this is indeed a warning and not an
+	// error because caller can retry same trade-request 2nd time to succeed
+
+	defer func() {
+		if err != nil {
+			// remember this failed attempt to do future trade-requests validation properly
+			c.previouslyFailedTradeAttempt.Store(&tradeAttempt{market: market, rate: rate})
+			return
+		}
+		c.previouslyFailedTradeAttempt.Store(nil) // resetting to default
+		return
+	}()
+
+	prevTradeAttempt := c.previouslyFailedTradeAttempt.Load()
+	if prevTradeAttempt != nil &&
+		market == prevTradeAttempt.market && rate == prevTradeAttempt.rate {
+		// the caller repeated the same trade-request for the 2nd time now, assume it means he
+		// understood the warning and don't perform any strict rate validation (as is done below)
+		// this time around
+		return nil
+	}
+
+	// to prevent accidental placement of orders with unreasonable rates we'll warn
+	// the caller when he is trying to place a trade that:
+	// 1) is immediately matched
+	// 2) will execute and result into slippage of 1% or more
+
+	book := dc.bookie(market)
+	bestBuy, err := book.BestBuy()
+	if err != nil {
+		return newError(walletErr, fmt.Sprintf("couldn't fetch best buy order in Bison book: %v", err))
+	}
+	if sell && bestBuy != nil {
+		bestBisonBuyRate := bestBuy.Rate
+		if rate <= bestBisonBuyRate {
+			return newError(
+				orderParamsErr, fmt.Sprintf(
+					"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
+						"that would immediately match a buy order in Bison book with rate %d",
+					rate,
+					bestBisonBuyRate,
+				),
+			)
+		}
+	}
+	bestSell, err := book.BestSell()
+	if err != nil {
+		return newError(walletErr, fmt.Sprintf("couldn't fetch best sell order in Bison book: %v", err))
+	}
+	if !sell && bestSell != nil {
+		bestBisonSellRate := bestSell.Rate
+		if rate >= bestBisonSellRate {
+			return newError(
+				orderParamsErr, fmt.Sprintf(
+					"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
+						"that would immediately match a sell order in Bison book with rate %d",
+					rate,
+					bestBisonSellRate,
+				),
+			)
+		}
+	}
+
+	return nil
+}
+
 // prepareTradeRequest prepares a trade request.
-func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (*tradeRequest, error) {
+func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (result *tradeRequest, err error) {
+	if !form.IsLimit {
+		return nil, newError(orderParamsErr, "market orders are disabled (for safety reasons)")
+	}
+
 	wallets, assetConfigs, dc, mktConf, err := c.prepareForTradeRequestPrep(pw, form.Base, form.Quote, form.Host, form.Sell)
 	if err != nil {
 		return nil, err
@@ -6886,8 +7039,11 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (*tradeRequest, e
 
 	rate, qty := form.Rate, form.Qty
 	if form.IsLimit {
-		if rate == 0 {
-			return nil, newError(orderParamsErr, "zero-rate order not allowed")
+		if qty == 0 {
+			return nil, newError(orderParamsErr, "zero quantity order not allowed")
+		}
+		if err := c.validateTradeRate(form.Sell, rate, mktID, dc); err != nil {
+			return nil, err
 		}
 		if minRate := dc.minimumMarketRate(assetConfigs.quoteAsset, mktConf.LotSize); rate < minRate {
 			return nil, newError(orderParamsErr, "order's rate is lower than market's minimum rate. %d < %d", rate, minRate)
@@ -6953,23 +7109,18 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (*tradeRequest, e
 			qty, assetConfigs.baseAsset.Symbol, rate, mktConf.LotSize)
 	}
 
-	maxFeeRate := assetConfigs.fromAsset.MaxFeeRate
-	if dynamicSwapper, is := fromWallet.Wallet.(asset.DynamicSwapper); is {
-		localMaxFee := dynamicSwapper.GasFeeLimit()
-		if maxFeeRate > localMaxFee {
-			return nil, codedError(walletErr, fmt.Errorf("%v: server's max fee rate %v higher than configured fee rate limit %v",
-				dex.BipIDSymbol(assetConfigs.fromAsset.ID), maxFeeRate, localMaxFee))
-		}
-		maxFeeRate = localMaxFee
+	swapFeeSuggestion := c.feeSuggestionSwapAny(wallets.fromWallet.AssetID)
+	if swapFeeSuggestion == 0 {
+		return nil, fmt.Errorf("failed to get swap fee suggestion for %s at %s", wallets.fromWallet.Symbol, form.Host)
 	}
 
 	coins, redeemScripts, fundingFees, err := fromWallet.FundOrder(&asset.Order{
 		AssetVersion:  assetConfigs.fromAsset.Version,
 		Value:         fundQty,
 		MaxSwapCount:  lots,
-		MaxFeeRate:    maxFeeRate,
+		MaxFeeRate:    swapFeeSuggestion,
 		Immediate:     isImmediate,
-		FeeSuggestion: c.feeSuggestion(dc, assetConfigs.fromAsset.ID),
+		FeeSuggestion: swapFeeSuggestion,
 		Options:       form.Options,
 		RedeemVersion: assetConfigs.toAsset.Version,
 		RedeemAssetID: assetConfigs.toAsset.ID,
@@ -6990,22 +7141,46 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (*tradeRequest, e
 	// The coins selected for this order will need to be unlocked
 	// if the order does not get to the server successfully.
 	errCloser := dex.NewErrorCloser()
-	defer errCloser.Done(c.log)
+	defer func() {
+		if err != nil {
+			errCloser.Done(c.log) // clean up
+		}
+		// otherwise the resulting trade request will keep track of & resolve errCloser
+	}()
 	errCloser.Add(func() error {
-		err := fromWallet.ReturnCoins(coins)
+		defer func() {
+			// Gotta update balances here (even if we couldn't return all the coins we might have
+			// returned some but not others, hence updating balances in error-case too) because
+			// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
+			// wallet balance update (e.g. blockchain tip change).
+			_, err = c.updateWalletBalance(fromWallet)
+			if err != nil {
+				c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), err)
+			}
+		}()
+		err = fromWallet.ReturnCoins(coins)
 		if err != nil {
 			return fmt.Errorf("Unable to return %s funding coins: %v", unbip(fromWallet.AssetID), err)
 		}
 		return nil
 	})
 
-	tradeRequest, err := c.createTradeRequest(wallets, coins, redeemScripts, dc, redeemAddr, form,
-		redemptionRefundLots, fundingFees, maxFeeRate, assetConfigs, mktConf, errCloser)
+	tradeRequest, err := c.createTradeRequest(
+		wallets,
+		coins,
+		redeemScripts,
+		dc,
+		redeemAddr,
+		form,
+		redemptionRefundLots,
+		fundingFees,
+		assetConfigs,
+		mktConf,
+		errCloser,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	errCloser.Success()
 
 	return tradeRequest, nil
 }
@@ -7016,13 +7191,14 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 		return nil, err
 	}
 	fromWallet, toWallet := wallets.fromWallet, wallets.toWallet
+	mktID := marketName(form.Base, form.Quote)
 
 	for _, trade := range form.Placements {
-		if trade.Rate == 0 {
-			return nil, newError(orderParamsErr, "zero rate is invalid")
-		}
 		if trade.Qty == 0 {
 			return nil, newError(orderParamsErr, "zero quantity is invalid")
+		}
+		if err := c.validateTradeRate(form.Sell, trade.Rate, mktID, dc); err != nil {
+			return nil, err
 		}
 	}
 
@@ -7053,21 +7229,16 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 		})
 	}
 
-	maxFeeRate := assetConfigs.fromAsset.MaxFeeRate
-	if dynamicSwapper, is := fromWallet.Wallet.(asset.DynamicSwapper); is {
-		localMaxFee := dynamicSwapper.GasFeeLimit()
-		if maxFeeRate > localMaxFee {
-			return nil, codedError(walletErr, fmt.Errorf("%v: server's max fee rate %v higher than configured fee rate limit %v",
-				dex.BipIDSymbol(assetConfigs.fromAsset.ID), maxFeeRate, localMaxFee))
-		}
-		maxFeeRate = localMaxFee
+	swapFeeSuggestion := c.feeSuggestionSwapAny(wallets.fromWallet.AssetID)
+	if swapFeeSuggestion == 0 {
+		return nil, fmt.Errorf("failed to get swap fee suggestion for %s at %s", wallets.fromWallet.Symbol, form.Host)
 	}
 
 	allCoins, allRedeemScripts, fundingFees, err := fromWallet.FundMultiOrder(&asset.MultiOrder{
 		AssetVersion:  assetConfigs.fromAsset.Version,
 		Values:        orderValues,
-		MaxFeeRate:    maxFeeRate,
-		FeeSuggestion: c.feeSuggestion(dc, assetConfigs.fromAsset.ID),
+		MaxFeeRate:    swapFeeSuggestion,
+		FeeSuggestion: swapFeeSuggestion,
 		Options:       form.Options,
 		RedeemVersion: assetConfigs.toAsset.Version,
 		RedeemAssetID: assetConfigs.toAsset.ID,
@@ -7092,9 +7263,24 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 	for _, coins := range allCoins {
 		theseCoins := coins
 		errCloser := dex.NewErrorCloser()
-		defer errCloser.Done(c.log)
+		defer func() {
+			if err != nil {
+				errCloser.Done(c.log) // clean up
+			}
+			// otherwise the resulting trade request will keep track of & resolve errCloser
+		}()
 		errCloser.Add(func() error {
-			err := fromWallet.ReturnCoins(theseCoins)
+			defer func() {
+				// Gotta update balances here (even if we couldn't return all the coins we might have
+				// returned some but not others, hence updating balances in error-case too) because
+				// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
+				// wallet balance update (e.g. blockchain tip change).
+				_, err = c.updateWalletBalance(fromWallet)
+				if err != nil {
+					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), err)
+				}
+			}()
+			err = fromWallet.ReturnCoins(theseCoins)
 			if err != nil {
 				return fmt.Errorf("unable to return %s funding coins: %v", unbip(fromWallet.AssetID), err)
 			}
@@ -7120,16 +7306,23 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 		if i == 0 {
 			fees = fundingFees
 		}
-		req, err := c.createTradeRequest(wallets, coins, allRedeemScripts[i], dc, redeemAddresses[i], tradeForm,
-			orderValues[i].MaxSwapCount, fees, maxFeeRate, assetConfigs, mktConf, errClosers[i])
+		req, err := c.createTradeRequest(
+			wallets,
+			coins,
+			allRedeemScripts[i],
+			dc,
+			redeemAddresses[i],
+			tradeForm,
+			orderValues[i].MaxSwapCount,
+			fees,
+			assetConfigs,
+			mktConf,
+			errClosers[i],
+		)
 		if err != nil {
 			return nil, err
 		}
 		tradeRequests = append(tradeRequests, req)
-	}
-
-	for _, errCloser := range errClosers {
-		errCloser.Success()
 	}
 
 	return tradeRequests, nil
@@ -7140,7 +7333,9 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 func (c *Core) sendTradeRequest(tr *tradeRequest) (*Order, error) {
 	dc, dbOrder, wallets, form, route := tr.dc, tr.dbOrder, tr.wallets, tr.form, tr.route
 	mktID, msgOrder, preImg, recoveryCoin, coins := tr.mktID, tr.msgOrder, tr.preImg, tr.recoveryCoin, tr.coins
+
 	defer tr.errCloser.Done(c.log)
+
 	defer close(tr.commitSig) // signals on both success and failure
 
 	// Send and get the result.
@@ -7923,6 +8118,7 @@ func (c *Core) initialize() error {
 	// loadWallet requires dexConnections loaded to set proper locked balances
 	// (contracts and bonds), so we don't wait after the dbWallets loop.
 	wg.Wait()
+
 	c.log.Infof("Connected to %d of %d DEX servers", liveConns, len(accts))
 
 	existingTokenWallets := make(map[uint32]bool)
@@ -7980,7 +8176,7 @@ func (c *Core) initialize() error {
 // connectAccount makes a connection to the DEX for the given account. If a
 // non-nil dexConnection is returned from newDEXConnection, it was inserted into
 // the conns map even if the connection attempt failed (connected == false), and
-// the connect retry / keepalive loop is active. The intial connection attempt
+// the connect retry / keepalive loop is active. The initial connection attempt
 // or keepalive loop will not run if acct is disabled.
 func (c *Core) connectAccount(acct *db.AccountInfo) (dc *dexConnection, connected bool) {
 	host, err := addrHost(acct.Host)
@@ -8939,7 +9135,7 @@ func (c *Core) newDEXConnection(acctInfo *db.AccountInfo, flag connectDEXFlag) (
 
 	wsCfg := comms.WsCfg{
 		URL:      wsURL.String(),
-		PingWait: 20 * time.Second, // larger than server's pingPeriod (server/comms/server.go)
+		PingWait: 50 * time.Second, // larger than server's pingPeriod (server/comms/server.go)
 		Cert:     acctInfo.Cert,
 		Logger:   c.log.SubLogger(wsURL.String()),
 	}
@@ -9279,7 +9475,7 @@ func (c *Core) handleConnectEvent(dc *dexConnection, status comms.ConnectionStat
 			// Increase anomalies count for this connection.
 			count := atomic.AddUint32(&dc.anomaliesCount, 1)
 			if count%wsMaxAnomalyCount == 0 {
-				// Send notification to check connectivity.
+				// Send notification to ask user to check if his internet is fine(stable).
 				subject, details := c.formatDetails(TopicDexConnectivity, dc.acct.host)
 				c.notify(newConnEventNote(TopicDexConnectivity, subject, dc.acct.host, dc.status(), details, db.Poke))
 			}
@@ -9307,7 +9503,7 @@ func (c *Core) handleConnectEvent(dc *dexConnection, status comms.ConnectionStat
 
 	if dc.broadcastingConnect() {
 		subject, details := c.formatDetails(topic, dc.acct.host)
-		dc.notify(newConnEventNote(topic, subject, dc.acct.host, status, details, db.Poke))
+		c.notify(newConnEventNote(topic, subject, dc.acct.host, status, details, db.Poke))
 	}
 }
 
@@ -11634,7 +11830,7 @@ func (c *Core) PreAccelerateOrder(oidB dex.Bytes) (*PreAccelerate, error) {
 		return nil, fmt.Errorf("the %s wallet is not an accelerator", tracker.wallets.fromWallet.Symbol)
 	}
 
-	feeSuggestion := c.feeSuggestionAny(tracker.fromAssetID)
+	feeSuggestion := c.feeSuggestionSwapAny(tracker.fromAssetID)
 
 	tracker.mtx.RLock()
 	defer tracker.mtx.RUnlock()
@@ -11909,7 +12105,7 @@ func (c *Core) findActiveOrder(oid order.OrderID) (*trackedTrade, error) {
 }
 
 // fetchFiatExchangeRates starts the fiat rate fetcher goroutine and schedules
-// refresh cycles. Use under ratesMtx lock.
+// refresh cycles.
 func (c *Core) fetchFiatExchangeRates(ctx context.Context) {
 	c.log.Debug("starting fiat rate fetching")
 

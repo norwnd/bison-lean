@@ -364,11 +364,11 @@ export default class MarketMakerLogsPage extends BasePage {
           parent.insertBefore(el, tmpl.sumUSD)
         }
       }
-      el.textContent = Doc.formatCoinValue(sum, asset.unitInfo)
+      el.textContent = Doc.formatCoinAtom(sum, asset.unitInfo)
       const factor = asset.unitInfo.conventional.conversionFactor
       usd += sum / factor * (this.fiatRates[asset.id] ?? 0)
     }
-    tmpl.sumUSD.textContent = Doc.formatFourSigFigs(usd)
+    tmpl.sumUSD.textContent = Doc.formatBestWeCan(usd)
     Doc.bind(tmpl.details, 'click', () => { this.showEventDetails(event.id) })
   }
 
@@ -451,8 +451,8 @@ export default class MarketMakerLogsPage extends BasePage {
         const explorerID = (tx.isRelay && tx.relayTxID) ? tx.relayTxID : tx.id
         tmpl.explorerLink.href = assetExplorer[net](explorerID)
       }
-      tmpl.amt.textContent = `${Doc.formatCoinValue(tx.amount, asset.unitInfo)} ${asset.unitInfo.conventional.unit.toLowerCase()}`
-      tmpl.fees.textContent = `${Doc.formatCoinValue(tx.fees, asset.unitInfo)} ${asset.unitInfo.conventional.unit.toLowerCase()}`
+      tmpl.amt.textContent = `${Doc.formatCoinAtom(tx.amount, asset.unitInfo)} ${asset.unitInfo.conventional.unit.toLowerCase()}`
+      tmpl.fees.textContent = `${Doc.formatCoinAtom(tx.fees, asset.unitInfo)} ${asset.unitInfo.conventional.unit.toLowerCase()}`
       page.dexOrderTxsTableBody.appendChild(row)
     }
     this.forms.show(page.dexOrderDetailsForm)
@@ -524,7 +524,7 @@ export default class MarketMakerLogsPage extends BasePage {
 
       const feeAsset = app().assets[feeAssetID(event.assetID)]
       const feeUnit = feeAsset.unitInfo.conventional.unit
-      page.depositFees.textContent = `${Doc.formatCoinValue(event.transaction.fees, feeAsset.unitInfo)} ${feeUnit}`
+      page.depositFees.textContent = `${Doc.formatCoinAtom(event.transaction.fees, feeAsset.unitInfo)} ${feeUnit}`
     }
 
     // Handle bridge transaction ID and fees
@@ -550,13 +550,13 @@ export default class MarketMakerLogsPage extends BasePage {
       totalAmount = (event.bridgeTx as any).bridgeCounterpartTx.amountReceived
     }
     if (totalAmount > 0) {
-      page.depositAmt.textContent = `${Doc.formatCoinValue(totalAmount, unitInfo)} ${unit}`
+      page.depositAmt.textContent = `${Doc.formatCoinAtom(totalAmount, unitInfo)} ${unit}`
     }
 
     page.depositStatus.textContent = pending ? intl.prep(intl.ID_PENDING) : intl.prep(intl.ID_COMPLETE)
     Doc.setVis(!pending, page.depositCreditSection)
     if (!pending) {
-      page.depositCredit.textContent = `${Doc.formatCoinValue(event.cexCredit, unitInfo)} ${unit}`
+      page.depositCredit.textContent = `${Doc.formatCoinAtom(event.cexCredit, unitInfo)} ${unit}`
     }
     this.forms.show(page.depositDetailsForm)
   }
@@ -634,8 +634,8 @@ export default class MarketMakerLogsPage extends BasePage {
 
       const feeAsset = app().assets[feeAssetID(event.assetID)]
       const feeUnit = feeAsset.unitInfo.conventional.unit
-      page.withdrawalFees.textContent = `${Doc.formatCoinValue(event.transaction.fees, feeAsset.unitInfo)} ${feeUnit}`
-      page.withdrawalReceived.textContent = `${Doc.formatCoinValue(event.transaction.amount, unitInfo)} ${unit}`
+      page.withdrawalFees.textContent = `${Doc.formatCoinAtom(event.transaction.fees, feeAsset.unitInfo)} ${feeUnit}`
+      page.withdrawalReceived.textContent = `${Doc.formatCoinAtom(event.transaction.amount, unitInfo)} ${unit}`
     }
 
     // Handle bridge transaction ID and fees
@@ -654,7 +654,7 @@ export default class MarketMakerLogsPage extends BasePage {
       this.populateBridgeFees(event.assetID, event.bridgeTx, page.withdrawalBridgeFeesSection)
     }
 
-    page.withdrawalAmt.textContent = `${Doc.formatCoinValue(event.cexDebit, unitInfo)} ${unit}`
+    page.withdrawalAmt.textContent = `${Doc.formatCoinAtom(event.cexDebit, unitInfo)} ${unit}`
     page.withdrawalStatus.textContent = pending ? intl.prep(intl.ID_PENDING) : intl.prep(intl.ID_COMPLETE)
     this.forms.show(page.withdrawalDetailsForm)
   }

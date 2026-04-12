@@ -1149,8 +1149,8 @@ func (w *TXCWallet) RegFeeConfirmations(ctx context.Context, coinID dex.Bytes) (
 	return w.tConfirmations(ctx, coinID)
 }
 
-func (w *TXCWallet) FeesForRemainingSwaps(n, feeRate uint64) uint64 {
-	return n * feeRate * w.swapSize
+func (w *TXCWallet) FeesForRemainingSwaps(n uint64) uint64 {
+	return n * 1 * w.swapSize
 }
 func (w *TXCWallet) AccelerateOrder(swapCoins, accelerationCoins []dex.Bytes, changeCoin dex.Bytes, requiredForRemainingSwaps, newFeeRate uint64) (asset.Coin, string, error) {
 	if w.accelerateOrderErr != nil {
@@ -1361,8 +1361,12 @@ type TFeeRater struct {
 	feeRate uint64
 }
 
-func (w *TFeeRater) FeeRate() uint64 {
-	return w.feeRate
+func (w *TFeeRater) FeeRate() (rate uint64, tooLow bool) {
+	return w.feeRate, false
+}
+
+func (w *TFeeRater) FeeRateSwap() (rate uint64, tooLow bool) {
+	return w.FeeRate()
 }
 
 type TLiveReconfigurer struct {
@@ -6979,7 +6983,6 @@ func makeLimitOrderWithTiF(dc *dexConnection, sell bool, qty, rate uint64, force
 			Proof: db.OrderProof{
 				Preimage: preImg[:],
 			},
-			MaxFeeRate:   tMaxFeeRate,
 			EpochDur:     dc.marketEpochDuration(tDcrBtcMktName),
 			FromSwapConf: fromAsset.SwapConf,
 			ToSwapConf:   toAsset.SwapConf,
@@ -10641,7 +10644,6 @@ func TestDeleteOrderFn(t *testing.T) {
 					Proof:              db.OrderProof{DEXSig: randBytes(73)},
 					SwapFeesPaid:       rand.Uint64(),
 					RedemptionFeesPaid: rand.Uint64(),
-					MaxFeeRate:         rand.Uint64(),
 				},
 				Order: ord,
 			}

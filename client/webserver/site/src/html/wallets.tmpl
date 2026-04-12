@@ -464,6 +464,10 @@
                     </tr>
                   </tbody>
                 </table>
+                <span id="earlierTxs" class="mx-2">[[[load_earlier_transactions]]]</span>
+              </div>
+              <div class="flex-center p-2 mb-3 mx-3 fs18 border d-hide" id="noTxHistory">
+                [[[no_tx_history]]]
               </div>
             </section>
 
@@ -539,7 +543,7 @@
                   </tbody>
                 </table>
               </div>
-              <div class="flex-center p-2 mb-3 mx-3 b-3 fs18 border rounded3 d-hide" id="noActivity">
+              <div class="flex-center p-2 mb-3 mx-3 b-3 fs18 border d-hide" id="noActivity">
                 [[[No Recent Activity]]]
               </div>
             </section>
@@ -954,7 +958,7 @@
       <div class="form-closer hoverbg"><span class="ico-cross"></span></div>
       <div>
         <div class="flex-center">[[[select_vsp_from_list]]]</div>
-        <table id="vspPickerTable" class="row-border row-hover rounded3 mt-2">
+        <table id="vspPickerTable" class="row-border row-hover border-rounded3 mt-2">
           <thead>
             <tr>
               <th>[[[URL]]]</th>
@@ -1028,7 +1032,7 @@
         <span>[[[Ticket History]]]</span>
       </header>
       <div id="ticketHistoryTable">
-        <table class="row-border rounded3">
+        <table class="row-border">
           <thead>
             <tr>
               <th>[[[Age]]]</th>
@@ -1083,7 +1087,7 @@
       </div>
 
       {{- /* TREASURY SPENDS */ -}}
-      <div class="fs26">[[[Treasury Spends]]]</div>
+      <div class="flex-center fs24">[[[Treasury Spends]]]</div>
       <div id="noTspendsMessage" class="flex-stretch-column text-center d-hide">[[[no_treasury_spends_to_show]]]</div>
       <div id="votingTspends" class="flex-stretch-column py-0">
         <div id="tspendTmpl" class="d-flex align-items-stretch py-3 border-bottom">
@@ -1108,7 +1112,7 @@
       </div>
 
       {{- /* TREASURY KEYS */ -}}
-      <div class="fs26">[[[Treasury Keys]]]</div>
+      <div class="flex-center fs24">[[[Treasury Keys]]]</div>
       <div id="votingTKeys" class="flex-stretch-column">
         <div id="tkeyTmpl" class="d-flex justify-content-between align-items-stretch py-2 border-bottom">
           <div class="flex-center flex-grow-1 justify-content-start pe-3">

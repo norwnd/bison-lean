@@ -92,27 +92,23 @@ export function statusString (order: Order): string {
     case StatusEpoch: return intl.prep(intl.ID_EPOCH)
     case StatusBooked:
       if (order.cancelling) return intl.prep(intl.ID_CANCELING)
-      return isLive ? `${intl.prep(intl.ID_BOOKED)}/${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_BOOKED)
+      return isLive ? `${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_BOOKED)
     case StatusExecuted:
       if (isLive) return intl.prep(intl.ID_SETTLING)
       if (filled(order) === 0 && order.type !== Cancel) return intl.prep(intl.ID_NO_MATCH)
       return intl.prep(intl.ID_EXECUTED)
     case StatusCanceled:
-      if (isLive) return `${intl.prep(intl.ID_CANCELED)}/${intl.prep(intl.ID_SETTLING)}`
-      if (filled(order) > 0) return intl.prep(intl.ID_CANCELED_PARTIALLY_FILLED)
-      return intl.prep(intl.ID_CANCELED)
+      return isLive ? `${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_CANCELED)
     case StatusRevoked:
-      if (isLive) return `${intl.prep(intl.ID_REVOKED)}/${intl.prep(intl.ID_SETTLING)}`
-      if (filled(order) > 0) return intl.prep(intl.ID_REVOKED_PARTIALLY_FILLED)
-      return intl.prep(intl.ID_REVOKED)
+      return isLive ? `${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_REVOKED)
   }
   return intl.prep(intl.ID_UNKNOWN)
 }
 
 /* filled sums the quantities of non-cancel matches available. */
-export function filled (order: Order) {
+export function filled (order: Order): number {
   if (!order.matches) return 0
-  const qty = isMarketBuy(order) ? (m: Match) => m.qty * m.rate / RateEncodingFactor : (m: Match) => m.qty
+  const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
   return order.matches.reduce((filled, match) => {
     if (match.isCancel) return filled
     return filled + qty(match)
@@ -120,9 +116,9 @@ export function filled (order: Order) {
 }
 
 /* settled sums the quantities of the matches that have completed. */
-export function settled (order: Order) {
+export function settled (order: Order): number {
   if (!order.matches) return 0
-  const qty = isMarketBuy(order) ? (m: Match) => m.qty * m.rate / RateEncodingFactor : (m: Match) => m.qty
+  const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
   return order.matches.reduce((settled, match) => {
     if (match.isCancel) return settled
     const redeemed = (match.side === Maker && match.status >= MakerRedeemed) ||
@@ -135,7 +131,7 @@ export function settled (order: Order) {
 the matches that have been filled for a market order. */
 export function averageMarketOrderRateString (ord: Order): string {
   if (!ord.matches?.length) return intl.prep(intl.ID_MARKET_ORDER)
-  let rateStr = Doc.formatCoinValue(app().conventionalRate(ord.baseID, ord.quoteID, averageRate(ord)))
+  let rateStr = Doc.formatCoinAtom(app().conventionalRate(ord.baseID, ord.quoteID, averageRate(ord)))
   if (ord.matches.length > 1) rateStr = '~ ' + rateStr // "~" only makes sense if the order has more than one match.
   return rateStr
 }
@@ -155,7 +151,7 @@ export function averageRate (ord: Order): number {
 
 /* baseToQuote returns the quantity of the quote asset. */
 export function baseToQuote (rate: number, base: number) : number {
-  return rate * base / RateEncodingFactor
+  return rate * (base / RateEncodingFactor)
 }
 
 /* orderPortion returns a string stating the percentage of the order a match
@@ -172,7 +168,7 @@ export function orderPortion (order: Order, match: Match) : string {
  * matchStatusString is a string used to create a displayable string describing
  * describing the match status.
  */
-export function matchStatusString (m: Match) {
+export function matchStatusString (m: Match): string {
   if (m.revoked) {
     // When revoked, match status is less important than pending action if still
     // active, or the outcome if inactive.

@@ -700,7 +700,7 @@ export default class WalletsPage extends BasePage {
       page.unapproveTokenErr.textContent = res.msg
       Doc.show(page.unapproveTokenErr)
     } else {
-      let feeText = `${Doc.formatCoinValue(res.txFee, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
+      let feeText = `${Doc.formatCoinAtom(res.txFee, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
       const rate = app().fiatRatesMap[parentAsset.id]
       if (rate) {
         feeText += ` (${Doc.formatFiatConversion(res.txFee, rate, parentAsset.unitInfo)} USD)`
@@ -933,7 +933,7 @@ export default class WalletsPage extends BasePage {
   async showNewWallet (assetID: number) {
     const page = this.page
     const box = page.newWalletForm
-    this.newWalletForm.setAsset(assetID)
+    await this.newWalletForm.setAsset(assetID)
     const defaultsLoaded = this.newWalletForm.loadDefaults()
     await this.forms.show(box)
     await defaultsLoaded
@@ -1366,8 +1366,8 @@ export default class WalletsPage extends BasePage {
     this.stakeStatus = stakeStatus
     page.stakingAgendaCount.textContent = String(stakeStatus.stances.agendas.length)
     page.stakingTspendCount.textContent = String(stakeStatus.stances.tspends.length)
-    page.purchaserCurrentPrice.textContent = Doc.formatFourSigFigs(stakeStatus.ticketPrice / ui.conventional.conversionFactor)
-    page.purchaserBal.textContent = Doc.formatCoinValue(wallet.balance.available, ui)
+    page.purchaserCurrentPrice.textContent = Doc.formatBestWeCan(stakeStatus.ticketPrice / ui.conventional.conversionFactor)
+    page.purchaserBal.textContent = Doc.formatCoinAtom(wallet.balance.available, ui)
     this.updateTicketStats(stakeStatus.stats, ui, stakeStatus.ticketPrice, stakeStatus.votingSubsidy)
     // If this is an extension wallet, we'll might to disable all controls.
     const disableStaking = app().extensionWallet(this.selectedWalletID)?.disableStaking
@@ -1407,10 +1407,10 @@ export default class WalletsPage extends BasePage {
     page.formQueuedTix.textContent = String(stats.queued)
     Doc.setVis(stats.queued > 0, page.formQueueTixBox, page.queuedTicketCountBox)
     page.totalTicketCount.textContent = String(stats.ticketCount)
-    page.totalTicketRewards.textContent = Doc.formatFourSigFigs(stats.totalRewards / ui.conventional.conversionFactor)
+    page.totalTicketRewards.textContent = Doc.formatBestWeCan(stats.totalRewards / ui.conventional.conversionFactor)
     page.totalTicketVotes.textContent = String(stats.votes)
-    if (ticketPrice) page.ticketPrice.textContent = Doc.formatFourSigFigs(ticketPrice / ui.conventional.conversionFactor)
-    if (votingSubsidy) page.votingSubsidy.textContent = Doc.formatFourSigFigs(votingSubsidy / ui.conventional.conversionFactor)
+    if (ticketPrice) page.ticketPrice.textContent = Doc.formatBestWeCan(ticketPrice / ui.conventional.conversionFactor)
+    if (votingSubsidy) page.votingSubsidy.textContent = Doc.formatBestWeCan(votingSubsidy / ui.conventional.conversionFactor)
   }
 
   async showVSPPicker () {
@@ -1547,7 +1547,7 @@ export default class WalletsPage extends BasePage {
       page.ticketHistoryRows.appendChild(tr)
       app().bindUrlHandlers(tr)
       const tmpl = Doc.parseTemplate(tr)
-      tmpl.age.textContent = Doc.timeSince(tx.stamp * 1000)
+      tmpl.age.textContent = Doc.ageSinceFromMs(tx.stamp * 1000)
       tmpl.price.textContent = Doc.formatFullPrecision(tx.ticketPrice, ui)
       tmpl.status.textContent = intl.prep(ticketStatusTranslationKeys[status])
       tmpl.hashStart.textContent = tx.hash.slice(0, 6)
@@ -1676,7 +1676,7 @@ export default class WalletsPage extends BasePage {
           setTspendVote(tspend.hash, opt.value ?? '')
         })
       }
-      if (tspend.value > 0) tmpl.value.textContent = Doc.formatFourSigFigs(tspend.value / ui.conventional.conversionFactor)
+      if (tspend.value > 0) tmpl.value.textContent = Doc.formatBestWeCan(tspend.value / ui.conventional.conversionFactor)
       else Doc.hide(tmpl.value)
       tmpl.hash.textContent = tspend.hash
       tmpl.explorerLink.setAttribute('href', coinLink(tspend.hash))
@@ -1806,11 +1806,11 @@ export default class WalletsPage extends BasePage {
 
       if (spot) {
         const convRate = app().conventionalRate(baseid, quoteid, spot.rate, exchanges[host])
-        tmpl.price.textContent = Doc.formatFourSigFigs(convRate)
+        tmpl.price.textContent = Doc.formatBestWeCan(convRate)
         const fmtSymbol = (s: string) => s.split('.')[0].toUpperCase()
         tmpl.priceQuoteUnit.textContent = fmtSymbol(quotesymbol)
         tmpl.priceBaseUnit.textContent = fmtSymbol(basesymbol)
-        tmpl.volume.textContent = Doc.formatFourSigFigs(spotVolume(ca.assetID, mkt))
+        tmpl.volume.textContent = Doc.formatBestWeCan(spotVolume(ca.assetID, mkt))
         tmpl.volumeUnit.textContent = ca.assetID === baseid ? fmtSymbol(basesymbol) : fmtSymbol(quotesymbol)
       } else Doc.hide(tmpl.priceBox, tmpl.volumeBox)
       Doc.bind(row, 'click', () => app().loadPage('markets', { host, baseID: baseid, quoteID: quoteid }))
@@ -1887,17 +1887,17 @@ export default class WalletsPage extends BasePage {
       const [baseUnitInfo, quoteUnitInfo] = [app().unitInfo(ord.baseID), app().unitInfo(ord.quoteID)]
       if (ord.sell) {
         [from, to] = [app().assets[ord.baseID], app().assets[ord.quoteID]]
-        tmpl.fromQty.textContent = Doc.formatCoinValue(ord.qty, baseUnitInfo)
+        tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
         if (ord.type === OrderUtil.Limit) {
-          tmpl.toQty.textContent = Doc.formatCoinValue(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
+          tmpl.toQty.textContent = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
         }
       } else {
         [from, to] = [app().assets[ord.quoteID], app().assets[ord.baseID]]
         if (ord.type === OrderUtil.Market) {
-          tmpl.fromQty.textContent = Doc.formatCoinValue(ord.qty, baseUnitInfo)
+          tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
         } else {
-          tmpl.fromQty.textContent = Doc.formatCoinValue(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
-          tmpl.toQty.textContent = Doc.formatCoinValue(ord.qty, baseUnitInfo)
+          tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
+          tmpl.toQty.textContent = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
         }
       }
 
@@ -1908,7 +1908,7 @@ export default class WalletsPage extends BasePage {
       tmpl.toSymbol.appendChild(Doc.symbolize(to, true))
       tmpl.status.textContent = OrderUtil.statusString(ord)
       tmpl.filled.textContent = `${(OrderUtil.filled(ord) / ord.qty * 100).toFixed(1)}%`
-      tmpl.age.textContent = Doc.timeSince(ord.submitTime)
+      tmpl.age.textContent = Doc.ageSinceFromMs(ord.submitTime)
       tmpl.link.href = `order/${ord.id}`
       app().bindInternalNavigation(row)
     }
@@ -1929,7 +1929,7 @@ export default class WalletsPage extends BasePage {
     }
     const amtAssetUI = app().unitInfo(amtAssetID)
     const feesAssetUI = app().unitInfo(feesAssetID)
-    tmpl.age.textContent = Doc.timeSince(tx.timestamp * 1000)
+    tmpl.age.textContent = Doc.ageSinceFromMs(tx.timestamp * 1000)
     tmpl.age.dataset.timestamp = String(tx.timestamp * 1000)
     Doc.setVis(tx.timestamp === 0, tmpl.pending)
     Doc.setVis(tx.timestamp !== 0, tmpl.age)
@@ -1942,12 +1942,12 @@ export default class WalletsPage extends BasePage {
     tmpl.type.textContent = txType
     tmpl.id.textContent = trimStringWithEllipsis(tx.id, 12)
     tmpl.id.setAttribute('title', tx.id)
-    tmpl.fees.textContent = Doc.formatCoinValue(tx.fees, feesAssetUI)
+    tmpl.fees.textContent = Doc.formatCoinAtom(tx.fees, feesAssetUI)
     if (noAmtTxTypes.includes(tx.type)) {
       tmpl.amount.textContent = '-'
     } else {
       const [u, c] = txTypeSignAndClass(tx.type)
-      const amt = Doc.formatCoinValue(tx.amount, amtAssetUI)
+      const amt = Doc.formatCoinAtom(tx.amount, amtAssetUI)
       tmpl.amount.textContent = `${u}${amt}`
       if (c !== '') tmpl.amount.classList.add(c)
     }
@@ -1998,7 +1998,7 @@ export default class WalletsPage extends BasePage {
       if (tx.tokenID) amountAssetID = tx.tokenID
       Doc.show(page.txDetailsAmtSection)
       const ui = app().unitInfo(amountAssetID)
-      const amt = Doc.formatCoinValue(tx.amount, ui)
+      const amt = Doc.formatCoinAtom(tx.amount, ui)
       const [s, c] = txTypeSignAndClass(tx.type)
       page.txDetailsAmount.textContent = `${s}${amt} ${ui.conventional.unit}`
       if (c !== '') page.txDetailsAmount.classList.add(c)
@@ -2015,7 +2015,7 @@ export default class WalletsPage extends BasePage {
       }
     }
     const feeUI = app().unitInfo(feeAsset)
-    const fee = Doc.formatCoinValue(tx.fees, feeUI)
+    const fee = Doc.formatCoinAtom(tx.fees, feeUI)
     page.txDetailsFee.textContent = `${fee} ${feeUI.conventional.unit}`
 
     // Time / block number
@@ -2586,12 +2586,11 @@ export default class WalletsPage extends BasePage {
       return
     }
     if (this.data?.goBack) {
-      app().loadPage(this.data.goBack)
+      await app().loadPage(this.data.goBack)
       return
     }
     this.assetUpdated(assetID, page.reconfigForm, intl.prep(intl.ID_RECONFIG_SUCCESS))
     this.updateTicketBuyer()
-    // this.showTxHistory(assetID)
     this.updatePrivacy()
   }
 
@@ -2644,7 +2643,7 @@ export default class WalletsPage extends BasePage {
     loaded()
     if (app().checkResponse(res)) {
       page.exportWalletPW.value = ''
-      this.displayRestoreWalletInfo(res.restorationinfo)
+      await this.displayRestoreWalletInfo(res.restorationinfo)
     } else {
       Doc.showFormError(page.exportWalletErr, res.msg)
     }
