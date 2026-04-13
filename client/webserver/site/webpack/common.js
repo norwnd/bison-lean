@@ -1,5 +1,6 @@
 const path = require('path')
 const MiniCssExtractPlugin = require('mini-css-extract-plugin')
+const HtmlWebpackPlugin = require('html-webpack-plugin')
 const StyleLintPlugin = require('stylelint-webpack-plugin')
 const ESLintPlugin = require('eslint-webpack-plugin')
 
@@ -10,10 +11,35 @@ function git(command) {
 
 module.exports = {
   target: "web",
+  entry: path.resolve(__dirname, '../src/index.tsx'),
   module: {
     rules: [
       {
+        test: /\.module\.s?css$/,
+        use: [
+          MiniCssExtractPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: {
+              modules: {
+                localIdentName: '[name]__[local]--[hash:base64:5]'
+              },
+              url: false,
+              sourceMap: true
+            }
+          },
+          {
+            loader: 'sass-loader',
+            options: {
+              implementation: require("sass"),
+              sourceMap: true
+            }
+          }
+        ]
+      },
+      {
         test: /\.s?[ac]ss$/,
+        exclude: /\.module\.s?css$/,
         use: [
           MiniCssExtractPlugin.loader,
           {
@@ -42,7 +68,7 @@ module.exports = {
             presets: [
               '@babel/preset-env',
               '@babel/preset-typescript',
-              '@babel/preset-react'
+              ['@babel/preset-react', { runtime: 'automatic' }]
             ]
           }
         }
@@ -60,6 +86,11 @@ module.exports = {
       configType: 'flat',
       extensions: ['ts', 'tsx'],
       formatter: 'stylish'
+    }),
+    new HtmlWebpackPlugin({
+      template: path.resolve(__dirname, '../src/index.html'),
+      filename: 'index.html',
+      inject: true
     })
   ],
   output: {
@@ -70,6 +101,9 @@ module.exports = {
   },
   resolve: {
     extensions: ['.tsx', '.ts', '.jsx', '.js'],
+    alias: {
+      '@': path.resolve(__dirname, '../src')
+    }
   },
   // Fixes weird issue with watch script. See
   // https://github.com/webpack/webpack/issues/2297#issuecomment-289291324

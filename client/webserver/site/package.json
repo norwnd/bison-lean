@@ -16,8 +16,13 @@
   "author": "The Decred developers",
   "license": "Blue Oak 1.0.0",
   "dependencies": {
+    "html-webpack-plugin": "^5.6.6",
+    "i18next": "^26.0.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.2",
+    "react-router-dom": "^6.30.3",
+    "zustand": "^5.0.12"
   },
   "//": "Remaining npm audit issues: minimatch <10.2.1 (high) and ajv <8.18.0 (moderate) are transitive deps of eslint 9. Fixes require eslint 10, which neostandard and eslint-webpack-plugin don't support yet. Revisit when neostandard adds eslint 10 support.",
   "devDependencies": {
@@ -26,9 +31,9 @@
     "@babel/preset-env": "^7.21.5",
     "@babel/preset-react": "^7.22.5",
     "@babel/preset-typescript": "^7.21.5",
+    "@babel/runtime": "^7.21.5",
     "@types/react": "^18.2.12",
     "@types/react-dom": "^18.2.6",
-    "@babel/runtime": "^7.21.5",
     "babel-loader": "^9.1.2",
     "bootstrap": "^5.2.3",
     "css-loader": "^6.7.3",

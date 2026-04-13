@@ -2,8 +2,9 @@
   "compilerOptions": {
     "outDir": "./dist/",
     "noImplicitAny": true,
-    "module": "es6",
+    "module": "esnext",
     "target": "es6",
+    "resolveJsonModule": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
     "sourceMap": true,
@@ -11,6 +12,10 @@
     "noUnusedParameters": true,
     "strictNullChecks": true,
     "jsx": "react-jsx",
-    "lib": ["es6", "dom", "dom.iterable"]
+    "lib": ["es6", "dom", "dom.iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   }
 }

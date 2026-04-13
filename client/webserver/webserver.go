@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"embed"
 	"encoding/hex"
+	"runtime/debug"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,7 +39,6 @@ import (
 	"decred.org/dcrdex/client/mm"
 	"decred.org/dcrdex/client/mm/libxc"
 	"decred.org/dcrdex/client/tor"
-	"decred.org/dcrdex/client/webserver/locales"
 	"decred.org/dcrdex/client/websocket"
 	"decred.org/dcrdex/dex"
 	"decred.org/dcrdex/dex/dexnet"
@@ -49,7 +49,6 @@ import (
 	"github.com/decred/dcrd/certgen"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"golang.org/x/text/language"
 )
 
 // contextKey is the key param type used when saving values to a context using
@@ -93,14 +92,21 @@ var (
 	log   dex.Logger
 	unbip = dex.BipIDSymbol
 
-	//go:embed site/src/html/*.tmpl
-	htmlTmplRes    embed.FS
-	htmlTmplSub, _ = fs.Sub(htmlTmplRes, "site/src/html") // unrooted slash separated path as per io/fs.ValidPath
-
 	//go:embed site/dist site/src/img site/src/font
 	staticSiteRes embed.FS
 
 	latestVersionRegex = regexp.MustCompile(`\d+(\.\d+)+`)
+
+	commitHash = func() string {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "vcs.revision" && len(setting.Value) >= 8 {
+					return setting.Value
+				}
+			}
+		}
+		return ""
+	}()
 )
 
 // clientCore is satisfied by core.Core.
@@ -299,8 +305,7 @@ type WebServer struct {
 	addr     string
 	csp      string
 	srv      *http.Server
-	html     atomic.Value // *templates
-	tor      bool
+	tor bool
 	onion    string
 
 	authMtx         sync.RWMutex
@@ -463,10 +468,6 @@ func New(cfg *Config) (*WebServer, error) {
 		s.companionTokenClaimed = true
 	}
 
-	if err := s.buildTemplates(lang); err != nil {
-		return nil, fmt.Errorf("error loading localized html templates: %v", err)
-	}
-
 	// Middleware
 	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{
@@ -503,62 +504,28 @@ func New(cfg *Config) (*WebServer, error) {
 
 	// The WebSocket handler is mounted on /ws in Connect.
 
-	// Webpages
+	// Data-serving web handlers (QR codes, file downloads, CSV export).
+	// All page rendering is handled by the React SPA via the NotFound
+	// catch-all below.
 	mux.Group(func(web chi.Router) {
 		web.Use(s.tokenAuthMiddleware)
-		// Inject user info for handlers that use extractUserInfo, which
-		// includes most of the page handlers that use commonArgs to
-		// inject the User object for page template execution.
 		web.Use(s.authMiddleware)
-		web.Get(settingsRoute, s.handleSettings)
 
 		web.Get("/generateqrcode", s.handleGenerateQRCode)
 
-		web.Group(func(notInit chi.Router) {
-			notInit.Use(s.requireNotInit)
-			notInit.Get(initRoute, s.handleInit)
-		})
-
-		// The rest of the web handlers require initialization.
 		web.Group(func(webInit chi.Router) {
 			webInit.Use(s.requireInit)
 
-			webInit.Route(registerRoute, func(rr chi.Router) {
-				rr.Get("/", s.handleRegister)
-				rr.With(dexHostCtx).Get("/{host}", s.handleRegister)
+			webInit.Group(func(webAuth chi.Router) {
+				webAuth.Use(s.requireLogin)
+				webAuth.Get(walletLogRoute, s.handleWalletLogFile)
+				webAuth.Get("/generatecompanionappqrcode", s.handleGenerateCompanionAppQRCode)
 			})
 
-			webInit.Group(func(webNoAuth chi.Router) {
-				// The login handler requires init but not auth since
-				// it performs the auth.
-				webNoAuth.Get(loginRoute, s.handleLogin)
-
-				// The rest of these handlers require both init and auth.
-				webNoAuth.Group(func(webAuth chi.Router) {
-					webAuth.Use(s.requireLogin)
-					webAuth.Get(homeRoute, s.handleHome)
-					webAuth.Get(walletsRoute, s.handleWallets)
-					webAuth.Get(walletLogRoute, s.handleWalletLogFile)
-					webAuth.With(proposalTokenCtx).Get("/proposal/{token}", s.handleProposal)
-					webAuth.Get(proposalsRoute, s.handleProposals)
-					webAuth.Get("/generatecompanionappqrcode", s.handleGenerateCompanionAppQRCode)
-				})
-			})
-
-			// Handlers requiring a DEX connection.
 			webInit.Group(func(webDC chi.Router) {
 				webDC.Use(s.requireDEXConnection, s.requireLogin)
-				webDC.With(orderIDCtx).Get("/order/{oid}", s.handleOrder)
-				webDC.Get(ordersRoute, s.handleOrders)
 				webDC.Get(exportOrderRoute, s.handleExportOrders)
-				webDC.Get(marketsRoute, s.handleMarkets)
-				webDC.Get(mmSettingsRoute, s.handleMMSettings)
-				webDC.Get(mmArchivesRoute, s.handleMMArchives)
-				webDC.Get(mmLogsRoute, s.handleMMLogs)
-				webDC.Get(marketMakerRoute, s.handleMarketMaking)
-				webDC.With(dexHostCtx).Get("/dexsettings/{host}", s.handleDexSettings)
 			})
-
 		})
 	})
 
@@ -679,8 +646,13 @@ func New(cfg *Config) (*WebServer, error) {
 	// Files
 	fileServer(mux, "/js", siteDir, "dist", "text/javascript")
 	fileServer(mux, "/css", siteDir, "dist", "text/css")
+	fileServer(mux, "/dist", siteDir, "dist", "")
 	fileServer(mux, "/img", siteDir, "src/img", "")
 	fileServer(mux, "/font", siteDir, "src/font", "")
+
+	// SPA catch-all: serve dist/index.html for all unmatched routes so
+	// React Router can handle client-side routing.
+	mux.NotFound(spaHandler(siteDir))
 
 	return s, nil
 }
@@ -718,63 +690,6 @@ func (w *WebServer) fetchLatestVersion(ctx context.Context) {
 	}
 }
 
-// buildTemplates prepares the HTML templates, which are executed and served in
-// sendTemplate. An empty siteDir indicates that the embedded templates in the
-// htmlTmplSub FS should be used. If siteDir is set, the templates will be
-// loaded from disk.
-func (s *WebServer) buildTemplates(lang string) error {
-	// Try to identify language.
-	acceptLang, err := language.Parse(lang)
-	if err != nil {
-		return fmt.Errorf("unable to parse requested language: %v", err)
-	}
-
-	// Find acceptable match with available locales.
-	langTags := make([]language.Tag, 0, len(locales.Locales))
-	localeNames := make([]string, 0, len(locales.Locales))
-	for localeName := range locales.Locales {
-		lang, _ := language.Parse(localeName) // checked in init()
-		langTags = append(langTags, lang)
-		localeNames = append(localeNames, localeName)
-	}
-	_, idx, conf := language.NewMatcher(langTags).Match(acceptLang)
-	localeName := localeNames[idx] // use index because tag may end up as something hyper specific like zh-Hans-u-rg-cnzzzz
-	switch conf {
-	case language.Exact, language.High, language.Low:
-		log.Infof("Using language %v", localeName)
-	case language.No:
-		return fmt.Errorf("no match for %q in recognized languages %v", lang, localeNames)
-	}
-
-	var htmlDir string
-	if s.siteDir == "" {
-		log.Infof("Using embedded HTML templates")
-	} else {
-		htmlDir = filepath.Join(s.siteDir, "src", "html")
-		log.Infof("Using HTML templates in %s", htmlDir)
-	}
-
-	bb := "bodybuilder"
-	html := newTemplates(htmlDir, localeName).
-		addTemplate("login", bb, "forms").
-		addTemplate("register", bb, "forms").
-		addTemplate("markets", bb, "forms").
-		addTemplate("wallets", bb, "forms", "docs").
-		addTemplate("settings", bb, "forms").
-		addTemplate("orders", bb).
-		addTemplate("order", bb, "forms").
-		addTemplate("dexsettings", bb, "forms").
-		addTemplate("init", bb).
-		addTemplate("mm", bb, "forms").
-		addTemplate("mmsettings", bb, "forms").
-		addTemplate("mmarchives", bb).
-		addTemplate("mmlogs", bb).
-		addTemplate("proposals", bb).
-		addTemplate("proposal", bb)
-	s.html.Store(html)
-
-	return html.buildErr()
-}
 
 // Addr gives the address on which WebServer is listening. Use only after
 // Connect.
@@ -1276,6 +1191,35 @@ func serveFile(w http.ResponseWriter, r *http.Request, fullFilePath string) {
 	}
 
 	http.ServeFile(w, r, fullFilePath)
+}
+
+// spaHandler returns an http.HandlerFunc that serves dist/index.html for any
+// request that doesn't match a registered route. This allows the React SPA to
+// handle client-side routing.
+func spaHandler(siteDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Don't serve index.html for API or WebSocket routes.
+		if strings.HasPrefix(r.URL.Path, "/api") || r.URL.Path == "/ws" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html;charset=UTF-8")
+
+		if siteDir != "" {
+			http.ServeFile(w, r, filepath.Join(siteDir, "dist", "index.html"))
+			return
+		}
+
+		// Serve from embedded filesystem.
+		b, err := fs.ReadFile(staticSiteRes, "site/dist/index.html")
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(b)
+	}
 }
 
 // fileServer is a file server for files in subDir with the parent folder
