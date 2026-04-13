@@ -51,14 +51,14 @@ var (
 	binanceURL = "https://api.binance.com/api/v3/avgPrice?symbol=%sUSDT"
 )
 
-// fiatRateFetchers is the list of all supported fiat rate fetchers.
+// fiatRateFetchers is the set of fiat rate sources we actually query.
+//
+// Binance is currently the only enabled source: it serves reasonably fresh
+// prices without strict rate limits. The other fetchers in this file
+// (coinpaprika, dcrdata, messari) remain implemented and can be re-enabled
+// here if Binance ever becomes unsuitable, but they were dropped from the
+// active set due to stale data and/or aggressive rate limiting.
 var fiatRateFetchers = map[string]rateFetcher{
-	// disabling these for now because Binance is the only rate source that provides reasonably fresh
-	// prices (coinpaprika and messari for example have strict rate limits while dcrdataDotOrg probably
-	// has quite stale data)
-	//coinpaprika:   FetchCoinpaprikaRates,
-	//dcrdataDotOrg: FetchDcrdataRates,
-	//messari:       FetchMessariRates,
 	binance: FetchBinanceRates,
 }
 
@@ -229,6 +229,16 @@ func getRates(ctx context.Context, uri string, thing any) error {
 func FetchBinanceRates(ctx context.Context, log dex.Logger, assets map[uint32]*SupportedAsset) map[uint32]float64 {
 	result := make(map[uint32]float64)
 
+	// binanceSlug returns the upper-case ticker Binance uses for sa, applying
+	// any per-asset overrides Binance requires (e.g. POL instead of POLYGON).
+	binanceSlug := func(sa *SupportedAsset) string {
+		slug := strings.ToUpper(dex.TokenSymbol(sa.Symbol))
+		if slug == "POLYGON" {
+			slug = "POL" // Binance uses POL, not POLYGON
+		}
+		return slug
+	}
+
 	fetchRate := func(sa *SupportedAsset) (float64, error) {
 		ctx, cancel := context.WithTimeout(ctx, fiatRequestTimeout)
 		defer cancel()
@@ -239,12 +249,7 @@ func FetchBinanceRates(ctx context.Context, log dex.Logger, assets map[uint32]*S
 			CloseTime int64  `json:"closeTime"`
 		})
 
-		slug := strings.ToUpper(dex.TokenSymbol(sa.Symbol)) // API expects upper-case
-		if slug == "POLYGON" {
-			slug = "POL" // Binance uses POL, not POLYGON
-		}
-
-		reqStr := fmt.Sprintf(binanceURL, slug)
+		reqStr := fmt.Sprintf(binanceURL, binanceSlug(sa))
 		if err := getRates(ctx, reqStr, res); err != nil {
 			return 0.0, fmt.Errorf("get fiat exchange rates from Binance for asset %s: %v", sa.Symbol, err)
 		}
@@ -259,11 +264,14 @@ func FetchBinanceRates(ctx context.Context, log dex.Logger, assets map[uint32]*S
 		return price, nil
 	}
 
-	// Assets Binance has no direct USDT pair for. We skip them in the first
-	// pass and fill them in during the second pass below.
+	// skipDirectFetch reports whether sa has no direct Binance USDT pair and
+	// must be filled in during pass 2 below.
 	skipDirectFetch := func(sa *SupportedAsset) bool {
-		slug := strings.ToUpper(dex.TokenSymbol(sa.Symbol))
-		return slug == "WETH" || slug == "BASE" || slug == "USDT"
+		switch binanceSlug(sa) {
+		case "WETH", "BASE", "USDT":
+			return true
+		}
+		return false
 	}
 
 	// Pass 1: fetch rates directly from Binance for every asset we can.
@@ -295,8 +303,7 @@ func FetchBinanceRates(ctx context.Context, log dex.Logger, assets map[uint32]*S
 	const ethBipID, baseBipID uint32 = 60, 8453
 	ethRate, haveETH := result[ethBipID]
 	for _, sa := range assets {
-		slug := strings.ToUpper(dex.TokenSymbol(sa.Symbol))
-		switch slug {
+		switch binanceSlug(sa) {
 		case "USDT":
 			// We quote everything in USDT on Binance, so 1 USDT = 1 USDT.
 			// This covers every usdt.* token variant (usdt.eth, usdt.base,

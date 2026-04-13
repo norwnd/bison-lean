@@ -9,10 +9,6 @@ import {
 import { BooleanOption, XYRangeOption } from './opts'
 import Doc from './doc'
 
-export const Limit = 1 // TODO: Delete for the versions below
-export const Market = 2 // TODO: Delete for the versions below
-export const Cancel = 3 // TODO: Delete for the versions below
-
 export const OrderTypeLimit = 1
 export const OrderTypeMarket = 2
 export const OrderTypeCancel = 3
@@ -38,9 +34,6 @@ export const MatchComplete = 4
 export const MatchConfirmed = 5
 
 /* The match sides are a mirror of dex/order.MatchSide. */
-export const Maker = 0 // TODO: Delete for the versions below
-export const Taker = 1 // TODO: Delete for the versions below
-
 export const MatchSideMaker = 0
 export const MatchSideTaker = 1
 
@@ -58,12 +51,12 @@ export function sellString (ord: Order) {
 }
 
 export function typeString (ord: Order) {
-  return ord.type === Limit ? (ord.tif === ImmediateTiF ? intl.prep(intl.ID_LIMIT_ORDER_IMMEDIATE_TIF) : intl.prep(intl.ID_LIMIT_ORDER)) : intl.prep(intl.ID_MARKET_ORDER)
+  return ord.type === OrderTypeLimit ? (ord.tif === ImmediateTiF ? intl.prep(intl.ID_LIMIT_ORDER_IMMEDIATE_TIF) : intl.prep(intl.ID_LIMIT_ORDER)) : intl.prep(intl.ID_MARKET_ORDER)
 }
 
 /* isMarketBuy will return true if the order is a market buy order. */
 export function isMarketBuy (ord: Order) {
-  return ord.type === Market && !ord.sell
+  return ord.type === OrderTypeMarket && !ord.sell
 }
 
 /*
@@ -95,7 +88,7 @@ export function statusString (order: Order): string {
       return isLive ? `${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_BOOKED)
     case StatusExecuted:
       if (isLive) return intl.prep(intl.ID_SETTLING)
-      if (filled(order) === 0 && order.type !== Cancel) return intl.prep(intl.ID_NO_MATCH)
+      if (filled(order) === 0 && order.type !== OrderTypeCancel) return intl.prep(intl.ID_NO_MATCH)
       return intl.prep(intl.ID_EXECUTED)
     case StatusCanceled:
       return isLive ? `${intl.prep(intl.ID_SETTLING)}` : intl.prep(intl.ID_CANCELED)
@@ -121,8 +114,8 @@ export function settled (order: Order): number {
   const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
   return order.matches.reduce((settled, match) => {
     if (match.isCancel) return settled
-    const redeemed = (match.side === Maker && match.status >= MakerRedeemed) ||
-      (match.side === Taker && match.status >= MatchComplete)
+    const redeemed = (match.side === MatchSideMaker && match.status >= MakerRedeemed) ||
+      (match.side === MatchSideTaker && match.status >= MatchComplete)
     return redeemed ? settled + qty(match) : settled
   }, 0)
 }
@@ -176,7 +169,7 @@ export function matchStatusString (m: Match): string {
       if (m.redeem) return revokedMatchStatus(intl.ID_MATCH_STATUS_REDEMPTION_SENT) // must require confirmation if active
       // If maker and we have not redeemed, waiting to refund, assuming it's not
       // revoked while waiting for confs on an unspent/unexpired taker swap.
-      if (m.side === Maker) return revokedMatchStatus(intl.ID_MATCH_STATUS_REFUND_PENDING)
+      if (m.side === MatchSideMaker) return revokedMatchStatus(intl.ID_MATCH_STATUS_REFUND_PENDING)
       // As taker, resolution depends on maker's actions while waiting to refund.
       if (m.counterRedeem) return revokedMatchStatus(intl.ID_MATCH_STATUS_REDEEM_PENDING) // this should be very brief if we see the maker's redeem
       return revokedMatchStatus(intl.ID_MATCH_STATUS_REFUND_PENDING) // may switch to redeem if maker redeems on the sly
@@ -198,7 +191,7 @@ export function matchStatusString (m: Match): string {
     case TakerSwapCast:
       return intl.prep(intl.ID_MATCH_STATUS_TAKER_SWAP_CAST)
     case MakerRedeemed:
-      if (m.side === Maker) {
+      if (m.side === MatchSideMaker) {
         return intl.prep(intl.ID_MATCH_STATUS_REDEMPTION_SENT)
       }
       return intl.prep(intl.ID_MATCH_STATUS_MAKER_REDEEMED)
@@ -242,7 +235,7 @@ function dexAssetSymbol (host: string, assetID: number): string {
 }
 
 export function isCancellable (ord: Order): boolean {
-  return ord.type === Limit && ord.tif === StandingTiF && ord.status < StatusExecuted
+  return ord.type === OrderTypeLimit && ord.tif === StandingTiF && ord.status < StatusExecuted
 }
 
 export function orderTypeText (ordType: number): string {

@@ -192,7 +192,7 @@ export default class OrderPage extends BasePage {
 
     tmpl.orderPortion.textContent = orderPortion
 
-    if (match.side === OrderUtil.Maker) {
+    if (match.side === OrderUtil.MatchSideMaker) {
       tmpl.side.textContent = intl.prep(intl.ID_MAKER)
       Doc.show(
         tmpl.makerSwapYou,
@@ -222,8 +222,8 @@ export default class OrderPage extends BasePage {
       )
     }
 
-    if ((match.side === OrderUtil.Maker && this.order.sell) ||
-          (match.side === OrderUtil.Taker && !this.order.sell)) {
+    if ((match.side === OrderUtil.MatchSideMaker && this.order.sell) ||
+          (match.side === OrderUtil.MatchSideTaker && !this.order.sell)) {
       tmpl.makerSwapAsset.textContent = bUnit
       tmpl.takerSwapAsset.textContent = qUnit
       tmpl.makerRedeemAsset.textContent = qUnit
@@ -294,7 +294,7 @@ export default class OrderPage extends BasePage {
     if (!m.refund) {
       // Special messaging for pending refunds.
       let lockTime = lockTimeMakerMs
-      if (m.side === OrderUtil.Taker) {
+      if (m.side === OrderUtil.MatchSideTaker) {
         lockTime = lockTimeTakerMs
       }
       const refundAfter = new Date(m.stamp + lockTime)
@@ -386,7 +386,7 @@ export default class OrderPage extends BasePage {
       // There is no need to wait for anything else, we can show refund placeholder
       // (to inform the user that it is likely to happen) right after match revocation.
       let expectingRefund = Boolean(takerSwapCoin(m)) // as taker
-      if (m.side === OrderUtil.Maker) {
+      if (m.side === OrderUtil.MatchSideMaker) {
         // As maker, show refund placeholder only if we have outstanding swap to refund.
         // If we don't have taker swap there is no need to wait for anything else, we
         // can show refund placeholder (to inform the user that it is likely to happen)
@@ -529,22 +529,22 @@ function confirmationString (coin: Coin) {
 
 // makerSwapCoin return's the maker's swap coin.
 function makerSwapCoin (m: Match) : Coin {
-  return (m.side === OrderUtil.Maker) ? m.swap : m.counterSwap
+  return (m.side === OrderUtil.MatchSideMaker) ? m.swap : m.counterSwap
 }
 
 // takerSwapCoin return's the taker's swap coin.
 function takerSwapCoin (m: Match) {
-  return (m.side === OrderUtil.Maker) ? m.counterSwap : m.swap
+  return (m.side === OrderUtil.MatchSideMaker) ? m.counterSwap : m.swap
 }
 
 // makerRedeemCoin return's the maker's redeem coin.
 function makerRedeemCoin (m: Match) {
-  return (m.side === OrderUtil.Maker) ? m.redeem : m.counterRedeem
+  return (m.side === OrderUtil.MatchSideMaker) ? m.redeem : m.counterRedeem
 }
 
 // takerRedeemCoin return's the taker's redeem coin.
 function takerRedeemCoin (m: Match) {
-  return (m.side === OrderUtil.Maker) ? m.counterRedeem : m.redeem
+  return (m.side === OrderUtil.MatchSideMaker) ? m.counterRedeem : m.redeem
 }
 
 /*
@@ -552,7 +552,7 @@ function takerRedeemCoin (m: Match) {
 * on confirmations for our own redeem.
 */
 function inConfirmingMakerRedeem (m: Match) {
-  return m.status < OrderUtil.MatchConfirmed && m.side === OrderUtil.Maker && m.status >= OrderUtil.MakerRedeemed
+  return m.status < OrderUtil.MatchConfirmed && m.side === OrderUtil.MatchSideMaker && m.status >= OrderUtil.MakerRedeemed
 }
 
 /*
@@ -560,7 +560,7 @@ function inConfirmingMakerRedeem (m: Match) {
 * on confirmations for our own redeem.
 */
 function inConfirmingTakerRedeem (m: Match) {
-  return m.status < OrderUtil.MatchConfirmed && m.side === OrderUtil.Taker && m.status >= OrderUtil.MatchComplete
+  return m.status < OrderUtil.MatchConfirmed && m.side === OrderUtil.MatchSideTaker && m.status >= OrderUtil.MatchComplete
 }
 
 /*

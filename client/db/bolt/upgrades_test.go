@@ -4,7 +4,6 @@
 package bolt
 
 import (
-	"bytes"
 	"compress/gzip"
 	"encoding/hex"
 	"errors"
@@ -107,29 +106,11 @@ func verifyV1Upgrade(t *testing.T, db *bbolt.DB) {
 
 func verifyV2Upgrade(t *testing.T, db *bbolt.DB) {
 	t.Helper()
-	maxFeeB := uint64Bytes(^uint64(0))
-	ordersBucket := []byte("orders")
-
+	// v2Upgrade is a no-op in this fork (the MaxFeeRate field it used to
+	// populate has been removed from OrderMetaData). We only verify the
+	// version bump.
 	err := db.View(func(dbtx *bbolt.Tx) error {
-		err := checkVersion(dbtx, 2)
-		if err != nil {
-			return err
-		}
-
-		master := dbtx.Bucket(ordersBucket)
-		if master == nil {
-			return fmt.Errorf("orders bucket not found")
-		}
-		return master.ForEach(func(oid, _ []byte) error {
-			oBkt := master.Bucket(oid)
-			if oBkt == nil {
-				return fmt.Errorf("order %x bucket is not a bucket", oid)
-			}
-			if !bytes.Equal(oBkt.Get(maxFeeRateKey), maxFeeB) {
-				return fmt.Errorf("max fee not upgraded")
-			}
-			return nil
-		})
+		return checkVersion(dbtx, 2)
 	})
 	if err != nil {
 		t.Error(err)

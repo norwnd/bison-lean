@@ -175,13 +175,13 @@ export default class OrdersPage extends BasePage {
         [fromSymbol, toSymbol] = [ord.baseSymbol, ord.quoteSymbol];
         [fromUnit, toUnit] = [baseUnitInfo.conventional.unit, quoteUnitInfo.conventional.unit]
         fromQty = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
-        if (ord.type === OrderUtil.Limit) {
+        if (ord.type === OrderUtil.OrderTypeLimit) {
           toQty = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
         }
       } else {
         [fromSymbol, toSymbol] = [ord.quoteSymbol, ord.baseSymbol];
         [fromUnit, toUnit] = [quoteUnitInfo.conventional.unit, baseUnitInfo.conventional.unit]
-        if (ord.type === OrderUtil.Market) {
+        if (ord.type === OrderUtil.OrderTypeMarket) {
           fromQty = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
         } else {
           fromQty = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
@@ -200,7 +200,7 @@ export default class OrdersPage extends BasePage {
       tmpl.toSymbol.textContent = toUnit
       tmpl.type.textContent = `${OrderUtil.typeString(ord)} ${OrderUtil.sellString(ord)}`
       let rate = Doc.formatCoinAtom(app().conventionalRate(ord.baseID, ord.quoteID, ord.rate, xc))
-      if (ord.type === OrderUtil.Market) rate = OrderUtil.averageMarketOrderRateString(ord)
+      if (ord.type === OrderUtil.OrderTypeMarket) rate = OrderUtil.averageMarketOrderRateString(ord)
       tmpl.rate.textContent = rate
       tmpl.status.textContent = OrderUtil.statusString(ord)
       tmpl.filled.textContent = `${(OrderUtil.filled(ord) / ord.qty * 100).toFixed(1)}%`

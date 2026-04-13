@@ -107,7 +107,8 @@ var (
 	// every syncTickerPeriod. var instead of const for testing purposes.
 	syncTickerPeriod = 3 * time.Second
 	// supportedAPIVers are the DEX server API versions this client is capable
-	// of communicating with.
+	// of communicating with. It is a var (not a const slice) so tests can
+	// extend it via append; see TestNewAPIVersion in core_test.go.
 	//
 	// NOTE: API version may change at any time. Keep this in mind when
 	// updating the API. Long-running operations may start and end with
@@ -6976,35 +6977,33 @@ func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexC
 	book := dc.bookie(market)
 	bestBuy, err := book.BestBuy()
 	if err != nil {
-		return newError(walletErr, fmt.Sprintf("couldn't fetch best buy order in Bison book: %v", err))
+		return newError(walletErr, "couldn't fetch best buy order in Bison book: %v", err)
 	}
 	if sell && bestBuy != nil {
 		bestBisonBuyRate := bestBuy.Rate
 		if rate <= bestBisonBuyRate {
 			return newError(
-				orderParamsErr, fmt.Sprintf(
-					"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
-						"that would immediately match a buy order in Bison book with rate %d",
-					rate,
-					bestBisonBuyRate,
-				),
+				orderParamsErr,
+				"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
+					"that would immediately match a buy order in Bison book with rate %d",
+				rate,
+				bestBisonBuyRate,
 			)
 		}
 	}
 	bestSell, err := book.BestSell()
 	if err != nil {
-		return newError(walletErr, fmt.Sprintf("couldn't fetch best sell order in Bison book: %v", err))
+		return newError(walletErr, "couldn't fetch best sell order in Bison book: %v", err)
 	}
 	if !sell && bestSell != nil {
 		bestBisonSellRate := bestSell.Rate
 		if rate >= bestBisonSellRate {
 			return newError(
-				orderParamsErr, fmt.Sprintf(
-					"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
-						"that would immediately match a sell order in Bison book with rate %d",
-					rate,
-					bestBisonSellRate,
-				),
+				orderParamsErr,
+				"(1-time warning, retry to proceed) you are trying to place trade with rate %d "+
+					"that would immediately match a sell order in Bison book with rate %d",
+				rate,
+				bestBisonSellRate,
 			)
 		}
 	}

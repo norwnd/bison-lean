@@ -5716,7 +5716,7 @@ func testSend(t *testing.T, assetID uint32) {
 	node.sendTxTx = tx
 	node.tokenContractor.transferTx = tx
 
-	maxFeeRate, _, _ := eth.recommendedMaxFeeRate(eth.ctx)
+	maxFeeRate, _, _, _ := eth.recommendedMaxFeeRate(eth.ctx)
 	ethFees := dexeth.WeiToGwei(maxFeeRate) * defaultSendGasLimit
 	tokenFees := dexeth.WeiToGwei(maxFeeRate) * tokenGasesV1.Transfer
 
@@ -6214,7 +6214,7 @@ func testEstimateSendTxFee(t *testing.T, assetID uint32) {
 	w, eth, node, shutdown := tassetWallet(assetID)
 	defer shutdown()
 
-	maxFeeRate, _, _ := eth.recommendedMaxFeeRate(eth.ctx)
+	maxFeeRate, _, _, _ := eth.recommendedMaxFeeRate(eth.ctx)
 	ethFees := dexeth.WeiToGwei(maxFeeRate) * defaultSendGasLimit
 	tokenFees := dexeth.WeiToGwei(maxFeeRate) * tokenGasesV1.Transfer
 

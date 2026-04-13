@@ -1888,12 +1888,12 @@ export default class WalletsPage extends BasePage {
       if (ord.sell) {
         [from, to] = [app().assets[ord.baseID], app().assets[ord.quoteID]]
         tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
-        if (ord.type === OrderUtil.Limit) {
+        if (ord.type === OrderUtil.OrderTypeLimit) {
           tmpl.toQty.textContent = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)
         }
       } else {
         [from, to] = [app().assets[ord.quoteID], app().assets[ord.baseID]]
-        if (ord.type === OrderUtil.Market) {
+        if (ord.type === OrderUtil.OrderTypeMarket) {
           tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty, baseUnitInfo)
         } else {
           tmpl.fromQty.textContent = Doc.formatCoinAtom(ord.qty / OrderUtil.RateEncodingFactor * ord.rate, quoteUnitInfo)

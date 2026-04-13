@@ -2008,7 +2008,7 @@ export default class MarketsPage extends BasePage {
       details.qty.textContent = Doc.formatCoinAtomToLotSizeBaseCurrency(ord.qty, market.baseUnitInfo, market.cfg.lotsize)
       let headerRateStr = Doc.formatRateAtomToRateStep(ord.rate, market.baseUnitInfo, market.quoteUnitInfo, market.cfg.ratestep, ord.sell)
       let detailsRateStr = Doc.formatRateAtomToRateStep(ord.rate, market.baseUnitInfo, market.quoteUnitInfo, market.cfg.ratestep, ord.sell)
-      if (ord.type === OrderUtil.Market) {
+      if (ord.type === OrderUtil.OrderTypeMarket) {
         headerRateStr = this.marketOrderHeaderRateString(ord, market)
         detailsRateStr = this.marketOrderDetailsRateString(ord, market)
       }
@@ -2169,7 +2169,7 @@ export default class MarketsPage extends BasePage {
       details.qty.textContent = Doc.formatCoinAtomToLotSizeBaseCurrency(ord.qty, market.baseUnitInfo, market.cfg.lotsize)
       let headerRateStr = Doc.formatRateAtomToRateStep(ord.rate, market.baseUnitInfo, market.quoteUnitInfo, market.cfg.ratestep, ord.sell)
       let detailsRateStr = Doc.formatRateAtomToRateStep(ord.rate, market.baseUnitInfo, market.quoteUnitInfo, market.cfg.ratestep, ord.sell)
-      if (ord.type === OrderUtil.Market) {
+      if (ord.type === OrderUtil.OrderTypeMarket) {
         headerRateStr = this.marketOrderHeaderRateString(ord, market)
         detailsRateStr = this.marketOrderDetailsRateString(ord, market)
       }
@@ -2697,7 +2697,7 @@ export default class MarketsPage extends BasePage {
     const mord = this.recentlyActiveUserOrders[note.orderID]
     const match = note.match
     if (!mord) return this.refreshRecentlyActiveOrders()
-    else if (mord.ord.type === OrderUtil.Market && match.status === OrderUtil.NewlyMatched) { // Update the average market rate display.
+    else if (mord.ord.type === OrderUtil.OrderTypeMarket && match.status === OrderUtil.NewlyMatched) { // Update the average market rate display.
       // Fetch and use the updated order.
       const ord = app().order(note.orderID)
       if (ord) {
@@ -2758,13 +2758,13 @@ export default class MarketsPage extends BasePage {
     for (const { ord, details, header } of Object.values(this.recentlyActiveUserOrders)) {
       const alreadyMatched = note.epoch > ord.epoch
       switch (true) {
-        case ord.type === OrderUtil.Limit && ord.status === OrderUtil.StatusEpoch && alreadyMatched: {
+        case ord.type === OrderUtil.OrderTypeLimit && ord.status === OrderUtil.StatusEpoch && alreadyMatched: {
           const status = ord.tif === OrderUtil.ImmediateTiF ? intl.prep(intl.ID_EXECUTED) : intl.prep(intl.ID_BOOKED)
           details.status.textContent = header.status.textContent = status
           ord.status = ord.tif === OrderUtil.ImmediateTiF ? OrderUtil.StatusExecuted : OrderUtil.StatusBooked
           break
         }
-        case ord.type === OrderUtil.Market && ord.status === OrderUtil.StatusEpoch:
+        case ord.type === OrderUtil.OrderTypeMarket && ord.status === OrderUtil.StatusEpoch:
           // Technically don't know if this should be 'executed' or 'settling'.
           details.status.textContent = header.status.textContent = intl.prep(intl.ID_EXECUTED)
           ord.status = OrderUtil.StatusExecuted

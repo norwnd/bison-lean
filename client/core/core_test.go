@@ -226,7 +226,7 @@ func testDexConnection(ctx context.Context, crypter *tCrypter) (*dexConnection, 
 		},
 		books: make(map[string]*bookie),
 		cfg: &msgjson.ConfigResult{
-			APIVersion:       serverdex.PerMatchAddrVersion,
+			APIVersion:       serverdex.V1APIVersion,
 			DEXPubKey:        acct.dexPubKey.SerializeCompressed(),
 			CancelMax:        0.8,
 			BroadcastTimeout: 1000, // 1000 ms for faster expiration, but ticker fires fast

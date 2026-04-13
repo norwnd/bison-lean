@@ -853,6 +853,7 @@ func (dc *dexConnection) refreshServerConfig() (*msgjson.ConfigResult, error) {
 	for _, ver := range supportedAPIVers {
 		if apiVer == ver {
 			supported = true
+			break
 		}
 	}
 	if !supported {

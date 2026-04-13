@@ -428,38 +428,38 @@ func (t *trackedTrade) cacheFeeSuggestions() {
 			return
 		}
 
-		set := func(rate uint64) {
-			fs.rate = rate
-			fs.stamp = now
-		}
-
-		// Use the wallet's rate first. Note that this could make a costly request
-		// to an external fee oracle if an internal estimate is not available and
-		// the wallet settings permit external API requests.
+		// Use the wallet's rate first. Note that this could make a costly
+		// request to an external fee oracle if an internal estimate is not
+		// available and the wallet settings permit external API requests.
+		// tooLow is ignored: caching a "too low" suggestion is still better
+		// than nothing for the redeem/refund estimate use case here.
 		if t.readyToTick && w.connected() {
 			if feeRate, _ := w.feeRate(); feeRate != 0 {
-				set(feeRate)
+				fs.rate = feeRate
+				fs.stamp = now
 				return
 			}
 		}
 
-		// Check any book that might have the fee recorded from an epoch_report note
-		// (requires a book subscription).
+		// Check any book that might have the fee recorded from an epoch_report
+		// note (requires a book subscription).
 		assetID := w.AssetID
-		feeSuggestion := t.dc.bestBookFeeSuggestion(assetID)
-		if feeSuggestion > 0 {
-			set(feeSuggestion)
+		if feeSuggestion := t.dc.bestBookFeeSuggestion(assetID); feeSuggestion > 0 {
+			fs.rate = feeSuggestion
+			fs.stamp = now
 			return
 		}
 
 		// Fetch it from the server. Last resort!
 		go func() {
-			feeSuggestion = t.dc.fetchFeeRate(assetID)
-			if feeSuggestion > 0 {
-				fs.Lock()
-				set(feeSuggestion)
-				fs.Unlock()
+			feeSuggestion := t.dc.fetchFeeRate(assetID)
+			if feeSuggestion == 0 {
+				return
 			}
+			fs.Lock()
+			defer fs.Unlock()
+			fs.rate = feeSuggestion
+			fs.stamp = time.Now()
 		}()
 	}
 
