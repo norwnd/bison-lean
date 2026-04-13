@@ -4,16 +4,13 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
-	"strings"
 	"sync"
 	"time"
 
@@ -92,18 +89,13 @@ func runCore(cfg *app.Config) error {
 		return fmt.Errorf("error creating market maker: %w", err)
 	}
 
-	// Catch interrupt signal (e.g. ctrl+c), prompting to shutdown if the user
-	// is logged in, and there are active orders or matches.
+	// Catch interrupt signal (e.g. ctrl+c) and shut down.
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, os.Interrupt)
 	go func() {
-		for range killChan {
-			if promptShutdown(clientCore) {
-				log.Infof("Shutting down...")
-				cancel()
-				return
-			}
-		}
+		<-killChan
+		log.Infof("Shutting down...")
+		cancel()
 	}()
 
 	var wg sync.WaitGroup
@@ -182,52 +174,3 @@ func runCore(cfg *app.Config) error {
 	return nil
 }
 
-// promptShutdown checks if there are active orders and asks confirmation to
-// shutdown if there are. The return value indicates if it is safe to stop Core
-// or if the user has confirmed they want to shutdown with active orders.
-func promptShutdown(clientCore *core.Core) bool {
-	log.Infof("Attempting to logout...")
-	// Do not allow Logout hanging to prevent shutdown.
-	res := make(chan bool, 1)
-	go func() {
-		// Only block logout if err is ActiveOrdersLogoutErr.
-		var ok bool
-		err := clientCore.Logout()
-		if err == nil {
-			ok = true
-		} else if !errors.Is(err, core.ActiveOrdersLogoutErr) {
-			log.Errorf("Unexpected logout error: %v", err)
-			ok = true
-		} // else not ok => prompt
-		res <- ok
-	}()
-
-	select {
-	case <-time.After(10 * time.Second):
-		log.Errorf("Timeout waiting for Logout. Allowing shutdown, but you likely have active orders!")
-		return true // cancel all the contexts, hopefully breaking whatever deadlock
-	case ok := <-res:
-		if ok {
-			return true
-		}
-	}
-
-	fmt.Print("You have active orders. Shutting down now may result in failed swaps and account penalization.\n" +
-		"Do you want to quit anyway? ('yes' to quit, or enter to abort shutdown): ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan() // waiting for user input
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Input error: %v", err)
-		return false
-	}
-
-	switch resp := strings.ToLower(scanner.Text()); resp {
-	case "y", "yes":
-		return true
-	case "n", "no", "":
-	default: // anything else aborts, but warn about it
-		fmt.Printf("Unrecognized response %q. ", resp)
-	}
-	fmt.Println("Shutdown aborted.")
-	return false
-}

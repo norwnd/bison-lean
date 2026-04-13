@@ -5,7 +5,6 @@ const {
   ipcMain,
   Menu,
   Tray,
-  dialog,
 } = require("electron");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -43,29 +42,6 @@ bisonwProcess.stdout.on("data", async (data) => {
       title: "Active Orders Detected",
       body: "You have active orders. Please cancel them before logging out to avoid failed swaps and account penalization.",
     }).show();
-  }
-
-  // Watch log and handle when user has an active order but wants to shut down.
-  if (message.includes("Do you want to quit anyway?")) {
-    dialog
-      .showMessageBox(BrowserWindow.getFocusedWindow(), {
-        type: "warning",
-        buttons: ["Cancel", "Quit Anyway"],
-        defaultId: 1,
-        cancelId: 0,
-        title: "Active Orders Detected",
-        message:
-          "You have active orders. Shutting down now may result in failed swaps and account penalization.",
-        detail: "Do you still want to quit?",
-      })
-      .then((result) => {
-        if (result.response === 1) {
-          bisonwProcess.stdin.write("yes\n");
-        } else {
-          bisonwProcess.stdin.write("no\n");
-          isShuttingDown = false; // user aborted
-        }
-      });
   }
 
   if (network === "") {
