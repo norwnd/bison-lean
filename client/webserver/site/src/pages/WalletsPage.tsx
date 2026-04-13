@@ -18,7 +18,8 @@ import type {
   BalanceNote, WalletStateNote,
   RateNote,
   WalletTransaction, TxHistoryResult, Order, UnitInfo,
-  CoreNote, TicketStakingStatus, VotingServiceProvider
+  CoreNote, TicketStakingStatus, VotingServiceProvider,
+  Exchange, Spot
 } from '../stores/types'
 
 // ---------------------------------------------------------------------------
@@ -197,6 +198,40 @@ function buildTickerGroups (
   })
 }
 
+/** Collect markets from all exchanges where the selected asset is base or quote. */
+interface MarketRow {
+  host: string
+  name: string
+  baseID: number
+  quoteID: number
+  baseSymbol: string
+  quoteSymbol: string
+  spot: Spot | undefined
+}
+
+function collectMarketsForAsset (
+  exchanges: Record<string, Exchange>,
+  assetID: number
+): MarketRow[] {
+  const rows: MarketRow[] = []
+  for (const xc of Object.values(exchanges)) {
+    if (!xc.markets) continue
+    for (const mkt of Object.values(xc.markets)) {
+      if (mkt.baseid !== assetID && mkt.quoteid !== assetID) continue
+      rows.push({
+        host: xc.host,
+        name: mkt.name,
+        baseID: mkt.baseid,
+        quoteID: mkt.quoteid,
+        baseSymbol: mkt.basesymbol,
+        quoteSymbol: mkt.quotesymbol,
+        spot: mkt.spot
+      })
+    }
+  }
+  return rows
+}
+
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -205,12 +240,12 @@ export default function WalletsPage () {
   const { t } = useTranslation()
   const assets = useAuthStore(s => s.assets)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
+  const exchanges = useAuthStore(s => s.exchanges)
   const user = useAuthStore(s => s.user)
   const fetchUser = useAuthStore(s => s.fetchUser)
 
   const [selectedAssetID, setSelectedAssetID] = useState<number | null>(null)
   const [activeForm, setActiveForm] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
 
   // Force re-render on note arrival so balances refresh.
   const [, setTick] = useState(0)
@@ -268,15 +303,6 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
-  const filteredGroups = useMemo(() => {
-    if (!searchQuery) return tickerGroups
-    const q = searchQuery.toLowerCase()
-    return tickerGroups.filter(g =>
-      g.ticker.toLowerCase().includes(q) ||
-      g.name.toLowerCase().includes(q)
-    )
-  }, [tickerGroups, searchQuery])
-
   // Auto-select the first wallet-bearing asset on mount.
   useEffect(() => {
     if (selectedAssetID !== null) return
@@ -295,78 +321,101 @@ export default function WalletsPage () {
   // -----------------------------------------------------------------------
 
   return (
-    <div className="d-flex" style={{ height: '100%' }}>
-      {/* ---- Sidebar ---- */}
-      <div
-        className="border-end overflow-y-auto flex-shrink-0"
-        style={{ width: 260, minHeight: 0 }}
-      >
-        <div className="p-2">
-          <div className="fs14 text-secondary mb-1">
-            {t('Total')}: ${formatFourSigFigs(totalFiatBalance(assets, fiatRatesMap))}
-          </div>
-          <input
-            type="text"
-            className="form-control form-control-sm mb-2"
-            placeholder={t('Search assets...')}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
+    <div className="d-flex fill-abs">
+      {/* ---- Left Sidebar: Asset List ---- */}
+      <section className="w-auto d-flex flex-column align-items-stretch overflow-y-auto hidden-overflow">
+        {/* Holdings header */}
+        <div className="flex-stretch-column pt-2 px-2 hoverbg pointer" onClick={() => setSelectedAssetID(null)}>
+          <span className="grey fs16 lh1 mb-1">{t('Holdings')}</span>
+          <span className="d-flex align-items-end lh1">
+            <span className="fs20">${formatFourSigFigs(totalFiatBalance(assets, fiatRatesMap))}</span>
+            <span className="fs18 grey ms-1">USD</span>
+          </span>
+          <div className="border-bottom mt-2"></div>
         </div>
-        {filteredGroups.map(g => {
-          const selected = g.assetIDs.includes(selectedAssetID ?? -1)
-          return (
-            <div
-              key={g.ticker}
-              className={`d-flex align-items-center gap-2 px-3 py-2 cursor-pointer ${selected ? 'bg-primary bg-opacity-10' : ''}`}
-              onClick={() => setSelectedAssetID(g.primaryAssetID)}
-            >
-              <img
-                src={logoPath(g.symbol)}
-                alt={g.ticker}
-                width={28}
-                height={28}
-              />
-              <div className="flex-grow-1 overflow-hidden">
-                <div className="fs14 fw-bold text-truncate">{g.ticker}</div>
-                <div className="fs12 text-secondary text-truncate">{g.name}</div>
-              </div>
-              {g.hasWallet && (
-                <div className="text-end fs12 text-secondary">
-                  ${formatFourSigFigs(g.totalFiat, 2)}
+        {/* Ticker balance rows */}
+        <div className="flex-stretch-column border-bottom">
+          {tickerGroups.map(g => {
+            const selected = g.assetIDs.includes(selectedAssetID ?? -1)
+            return (
+              <div
+                key={g.ticker}
+                className={`flex-stretch-column pt-2 px-2 hoverbg pointer ${selected ? 'selected' : ''}`}
+                onClick={() => setSelectedAssetID(g.primaryAssetID)}
+                style={selected ? { backgroundColor: 'var(--body-bg)' } : undefined}
+              >
+                <div className="d-flex justify-content-between align-items-start">
+                  <div className="flex-center me-4 lh1">
+                    <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
+                    <span className="ms-1 fs22">{g.ticker}</span>
+                  </div>
+                  <div className="d-flex flex-column align-items-end">
+                    {g.hasWallet
+                      ? <>
+                          <span className="fs22 lh1">{formatFourSigFigs(g.totalFiat, 2)}</span>
+                          <div className="d-flex align-items-end fs15 grey lh1 pt-1">
+                            <span className="me-1">${formatFourSigFigs(g.totalFiat, 2)}</span>
+                            <span className="ms-1 fs12 grey">USD</span>
+                          </div>
+                        </>
+                      : <span className="grey me-1">—</span>}
+                  </div>
                 </div>
-              )}
-              {!g.hasWallet && (
-                <span className="fs11 text-secondary">{t('No wallet')}</span>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                <div className="border-bottom mt-2"></div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
 
-      {/* ---- Main Content ---- */}
-      <div className="flex-grow-1 overflow-y-auto p-3" style={{ minHeight: 0 }}>
-        {!selectedAsset && (
-          <div className="text-center text-secondary py-5">
-            {t('Select an asset from the sidebar.')}
-          </div>
-        )}
-        {selectedAsset && selectedWallet && (
-          <WalletDetail
-            asset={selectedAsset}
-            wallet={selectedWallet}
-            assets={assets}
-            fiatRatesMap={fiatRatesMap}
-            net={net}
-            setActiveForm={setActiveForm}
-          />
-        )}
-        {selectedAsset && !selectedWallet && (
-          <NoWalletView
-            asset={selectedAsset}
-            onCreated={() => fetchUser()}
-          />
-        )}
+      {/* ---- Two-Column Main Area ---- */}
+      <div className="flex-grow-1 position-relative">
+        <div className="fill-abs d-flex flex-wrap align-items-stretch stylish-overflow">
+          {!selectedAsset && (
+            <div className="text-center grey py-5 p-3 col-24">
+              {t('Select an asset from the sidebar.')}
+            </div>
+          )}
+          {selectedAsset && (
+            <>
+              {/* ---- Center Column: Wallet Detail ---- */}
+              <div className="position-relative col-24 col-xl-12 col-xxl-9 flex-stretch-column">
+                <div className="flex-stretch-column">
+                  {selectedWallet && (
+                    <WalletDetail
+                      asset={selectedAsset}
+                      wallet={selectedWallet}
+                      assets={assets}
+                      fiatRatesMap={fiatRatesMap}
+                      setActiveForm={setActiveForm}
+                    />
+                  )}
+                  {!selectedWallet && (
+                    <NoWalletView
+                      asset={selectedAsset}
+                      onCreated={() => fetchUser()}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* ---- Right Column: Pending Tx, Markets, Recent Orders ---- */}
+              <div className="position-relative col-24 col-xl-12 col-xxl-15 flex-stretch-column">
+                <div className="flex-stretch-column">
+                  {selectedWallet && (
+                    <RightColumn
+                      asset={selectedAsset}
+                      wallet={selectedWallet}
+                      assets={assets}
+                      exchanges={exchanges}
+                      net={net}
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ---- Modals ---- */}
@@ -416,28 +465,6 @@ export default function WalletsPage () {
           )}
         </div>
       </FormOverlay>
-
-      <FormOverlay show={activeForm === 'staking'} onClose={() => setActiveForm(null)}>
-        <div className="bg-body border rounded p-4" style={{ minWidth: 400, maxHeight: '80vh', overflowY: 'auto' }}>
-          {selectedAssetID === DCR_ASSET_ID && (
-            <StakingView
-              assetID={DCR_ASSET_ID}
-              assets={assets}
-            />
-          )}
-        </div>
-      </FormOverlay>
-
-      <FormOverlay show={activeForm === 'orders'} onClose={() => setActiveForm(null)}>
-        <div className="bg-body border rounded p-4" style={{ minWidth: 500, maxHeight: '80vh', overflowY: 'auto' }}>
-          {selectedAssetID !== null && (
-            <RecentOrdersView
-              assetID={selectedAssetID}
-              assets={assets}
-            />
-          )}
-        </div>
-      </FormOverlay>
     </div>
   )
 }
@@ -481,7 +508,7 @@ function NoWalletView ({ asset, onCreated }: {
 }
 
 // ---------------------------------------------------------------------------
-// WalletDetail
+// WalletDetail (Center Column)
 // ---------------------------------------------------------------------------
 
 interface WalletDetailProps {
@@ -489,13 +516,12 @@ interface WalletDetailProps {
   wallet: WalletState
   assets: Record<number, SupportedAsset>
   fiatRatesMap: Record<number, number>
-  net: number
   setActiveForm: (f: string | null) => void
 }
 
 function WalletDetail ({
   asset, wallet, assets, fiatRatesMap,
-  net, setActiveForm
+  setActiveForm
 }: WalletDetailProps) {
   const { t } = useTranslation()
   const bal = wallet.balance
@@ -508,69 +534,72 @@ function WalletDetail ({
   const isTicketBuyer = (wallet.traits & traitTicketBuyer) !== 0 && asset.id === DCR_ASSET_ID
   const isMixer = (wallet.traits & traitFundsMixer) !== 0
 
-  // Pending transactions
-  const pendingTxs = wallet.pendingTxs
-    ? Object.values(wallet.pendingTxs)
-    : []
+  const totalBal = bal.available + bal.locked + bal.immature
 
   return (
     <div>
-      {/* Header */}
-      <div className="d-flex align-items-center gap-3 mb-4">
-        <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} />
-        <div>
-          <div className="fs22 fw-bold">{asset.name}</div>
-          <div className="fs14 text-secondary">
-            {asset.unitInfo.conventional.unit}
-            {wallet.synced
-              ? ''
-              : ` - ${t('Syncing')} ${(wallet.syncProgress * 100).toFixed(1)}%`}
+      {/* ---- Header: Logo + asset name + total balance ---- */}
+      <section>
+        <div className="d-flex justify-content-between align-items-start p-3">
+          <div className="flex-center">
+            <img src={logoPath(asset.symbol)} alt={asset.symbol} className="large-icon" />
+            <div className="fs24 ms-2 demi lh1">{asset.name}</div>
+          </div>
+          <div className="d-flex flex-column justify-content-end">
+            <div className="d-flex align-items-end lh1">
+              <span className="fs28 me-1">{formatCoinValue(totalBal, ui)}</span>
+              <span className="fs20 grey">{ui.conventional.unit}</span>
+            </div>
+            {rate > 0 && (
+              <div className="mt-1 lh1 grey fs15 d-flex justify-content-end align-items-center">
+                ~ <span className="me-1">{formatFiatConversion(totalBal, rate, ui)}</span> USD
+              </div>
+            )}
           </div>
         </div>
-        <div className="ms-auto d-flex align-items-center gap-1">
-          <span className={`badge ${wallet.open ? 'bg-success' : 'bg-secondary'}`}>
-            {wallet.open
-              ? t('Unlocked')
-              : t('Locked')}
-          </span>
-          {wallet.running && wallet.peerCount > 0 && (
-            <span className="badge bg-info">{wallet.peerCount} {t('peers')}</span>
-          )}
-        </div>
-      </div>
 
-      {/* Balance */}
-      <div className="border rounded p-3 mb-3">
-        <div className="row">
-          <div className="col">
-            <div className="fs12 text-secondary">{t('Available')}</div>
-            <div className="fs18 fw-bold">{formatCoinValue(bal.available, ui)}</div>
-            <div className="fs12 text-secondary">${formatFiatConversion(bal.available, rate, ui)}</div>
-          </div>
-          {bal.locked > 0 && (
-            <div className="col">
-              <div className="fs12 text-secondary">{t('Locked')}</div>
-              <div className="fs14">{formatCoinValue(bal.locked, ui)}</div>
-              <div className="fs12 text-secondary">${formatFiatConversion(bal.locked, rate, ui)}</div>
-            </div>
-          )}
-          {bal.immature > 0 && (
-            <div className="col">
-              <div className="fs12 text-secondary">{t('Immature')}</div>
-              <div className="fs14">{formatCoinValue(bal.immature, ui)}</div>
-            </div>
-          )}
-          {bal.reservesDeficit > 0 && (
-            <div className="col">
-              <div className="fs12 text-secondary text-warning">{t('Reserves Deficit')}</div>
-              <div className="fs14 text-warning">{formatCoinValue(bal.reservesDeficit, ui)}</div>
-            </div>
-          )}
+        {/* ---- Balance breakdown table ---- */}
+        <div className="border-top px-2">
+          <table className="compact row-border no-bottom-border">
+            <thead className="unbold fs15">
+              <tr>
+                <th>{t('Available')}</th>
+                <th>{t('Locked')}</th>
+                <th>{t('Immature')}</th>
+                <th>{t('Status')}</th>
+                <th>{t('Sync')}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{formatCoinValue(bal.available, ui)}</td>
+                <td>{formatCoinValue(bal.locked, ui)}</td>
+                <td>{formatCoinValue(bal.immature, ui)}</td>
+                <td className="text-center">
+                  {wallet.open
+                    ? <span className="ico-unlocked fs14" title={t('Ready')}></span>
+                    : <span className="ico-locked fs14" title={t('Locked')}></span>}
+                </td>
+                <td className="text-nowrap fs14">
+                  {wallet.synced
+                    ? '100%'
+                    : `${(wallet.syncProgress * 100).toFixed(1)}%`}
+                </td>
+                <td>
+                  <span
+                    className="ico-settings fs16 pointer hoverbg p-1"
+                    onClick={() => setActiveForm('config')}
+                  ></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         {/* Bond/order locked breakdown */}
         {(bal.orderlocked > 0 || bal.bondlocked > 0 || bal.contractlocked > 0) && (
-          <div className="d-flex flex-wrap gap-3 mt-2 fs12 text-secondary">
+          <div className="d-flex flex-wrap gap-3 px-2 py-1 fs14 grey">
             {bal.orderlocked > 0 && (
               <span>{t('Orders')}: {formatCoinValue(bal.orderlocked, ui)}</span>
             )}
@@ -583,11 +612,17 @@ function WalletDetail ({
           </div>
         )}
 
+        {bal.reservesDeficit > 0 && (
+          <div className="px-2 py-1 fs14 text-warning">
+            {t('Reserves Deficit')}: {formatCoinValue(bal.reservesDeficit, ui)}
+          </div>
+        )}
+
         {/* Parent asset balance for tokens */}
         {parentAsset && parentAsset.wallet && (
-          <div className="mt-2 pt-2 border-top">
-            <div className="d-flex align-items-center gap-2 fs12 text-secondary">
-              <img src={logoPath(parentAsset.symbol)} alt={parentAsset.symbol} width={16} height={16} />
+          <div className="px-2 py-1 border-top">
+            <div className="d-flex align-items-center gap-2 fs14 grey pt-1">
+              <img src={logoPath(parentAsset.symbol)} alt={parentAsset.symbol} className="micro-icon" />
               <span>
                 {parentAsset.unitInfo.conventional.unit}{' '}
                 {t('fee balance')}: {formatCoinValue(parentAsset.wallet.balance.available, parentAsset.unitInfo)}
@@ -598,9 +633,9 @@ function WalletDetail ({
 
         {/* Other/custom balances */}
         {bal.other && Object.keys(bal.other).length > 0 && (
-          <div className="mt-2 pt-2 border-top">
+          <div className="px-2 py-1 border-top">
             {Object.entries(bal.other).map(([label, cb]) => (
-              <div key={label} className="fs12 text-secondary">
+              <div key={label} className="fs14 grey pt-1">
                 {label}: {formatCoinValue(cb.amt, ui)}
                 {cb.locked
                   ? ` (${t('locked')})`
@@ -609,73 +644,161 @@ function WalletDetail ({
             ))}
           </div>
         )}
-      </div>
 
-      {/* Action Buttons */}
-      <div className="d-flex flex-wrap gap-2 mb-3">
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => setActiveForm('send')}
-          disabled={!wallet.open}
-        >
-          {t('Send')}
-        </button>
-        <button
-          className="btn btn-outline-primary btn-sm"
-          onClick={() => setActiveForm('receive')}
-        >
-          {t('Receive')}
-        </button>
-        <button
-          className="btn btn-outline-secondary btn-sm"
-          onClick={() => setActiveForm('config')}
-        >
-          {t('Settings')}
-        </button>
-        <button
-          className="btn btn-outline-secondary btn-sm"
-          onClick={() => setActiveForm('txHistory')}
-        >
-          {t('History')}
-        </button>
-        <button
-          className="btn btn-outline-secondary btn-sm"
-          onClick={() => setActiveForm('orders')}
-        >
-          {t('Orders')}
-        </button>
-        {isTicketBuyer && (
-          <button
-            className="btn btn-outline-secondary btn-sm"
-            onClick={() => setActiveForm('staking')}
+        {/* ---- Receive / Send buttons ---- */}
+        <div className="d-flex align-items-stretch border-top">
+          <div
+            className="flex-grow-1 flex-center p-2 pointer hoverbg border-end"
+            onClick={() => setActiveForm('receive')}
           >
-            {t('Staking')}
+            <span className="ico-qrcode fs15 me-1"></span>
+            <span className="fs20">{t('Receive')}</span>
+          </div>
+          <button
+            className="flex-grow-1 flex-center p-2 noborder"
+            onClick={() => setActiveForm('send')}
+            disabled={!wallet.open}
+          >
+            <span className="ico-send me-1"></span>
+            <span className="fs20">{t('Send')}</span>
           </button>
-        )}
-      </div>
+        </div>
+      </section>
 
-      {/* Mixing toggle (DCR) */}
+      {/* ---- Exchange Rate ---- */}
+      {rate > 0 && (
+        <section className="flex-stretch-column">
+          <div className="flex-center py-2 fs15 demi">{t('Exchange Rate')}</div>
+          <div className="mx-2 border-bottom"></div>
+          <div className="flex-grow-1 flex-center py-2">
+            <span className="fs16 mb-1 demi">$</span>
+            <span className="fs22 me-1 demi lh1">{formatFourSigFigs(rate)}</span>
+          </div>
+        </section>
+      )}
+
+      {/* ---- Transaction Fees ---- */}
+      {wallet.feeState && (
+        <section className="flex-stretch-column">
+          <div className="flex-center py-2 fs18 demi">{t('Transaction Fees')}</div>
+          <div className="mx-2 border-bottom"></div>
+          <div className="d-flex">
+            <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
+              <span className="fs16 demi">{t('Send')}</span>
+              <span className="flex-center lh1">
+                <span className="fs16 mb-1">$</span>
+                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.send, rate, ui) : '—'}</span>
+              </span>
+              <div className="fs14 grey">{formatCoinValue(wallet.feeState.send, ui)}</div>
+            </div>
+            <div className="my-2 border-end"></div>
+            <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
+              <span className="fs16 demi">{t('Sell')}</span>
+              <span className="flex-center lh1">
+                <span className="fs16 mb-1">$</span>
+                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.swap, rate, ui) : '—'}</span>
+              </span>
+              <div className="fs14 grey">{formatCoinValue(wallet.feeState.swap, ui)}</div>
+            </div>
+            <div className="my-2 border-end"></div>
+            <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
+              <span className="fs16 demi">{t('Buy')}</span>
+              <span className="flex-center lh1">
+                <span className="fs16 mb-1">$</span>
+                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.redeem, rate, ui) : '—'}</span>
+              </span>
+              <div className="fs14 grey">{formatCoinValue(wallet.feeState.redeem, ui)}</div>
+            </div>
+            <div className="my-2 border-end"></div>
+            <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
+              <span className="fs16 demi">{t('Rate')}</span>
+              <div className="flex-center">
+                <span className="fs22 me-1">{wallet.feeState.rate}</span>
+                <span className="fs13">atoms/B</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ---- Staking (DCR only, inline) ---- */}
+      {isTicketBuyer && wallet.running && (
+        <StakingView
+          assetID={DCR_ASSET_ID}
+          assets={assets}
+        />
+      )}
+
+      {/* ---- Mixing / Privacy (DCR only, inline) ---- */}
       {isMixer && wallet.running && (
         <MixingToggle assetID={asset.id} />
       )}
 
-      {/* Pending Transactions */}
-      {pendingTxs.length > 0 && (
-        <PendingTransactions
-          txs={pendingTxs}
-          ui={ui}
-          assetID={asset.id}
-          net={net}
-        />
-      )}
+      {/* ---- Transaction History link ---- */}
+      <div className="flex-center p-2 pointer hoverbg border-top" onClick={() => setActiveForm('txHistory')}>
+        <span className="ico-textfile me-1"></span>
+        <span className="fs18">{t('Transaction History')}</span>
+      </div>
 
       {/* Sync status */}
       {!wallet.synced && wallet.syncStatus && (
-        <div className="border rounded p-2 mb-3 fs12 text-secondary">
+        <div className="p-2 fs14 grey border-top">
           {t('Sync progress')}: {(wallet.syncProgress * 100).toFixed(1)}%
           {' '}({wallet.syncStatus.blocks}/{wallet.syncStatus.targetHeight} {t('blocks')})
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// RightColumn: Pending Tx, Markets, Recent Trades
+// ---------------------------------------------------------------------------
+
+interface RightColumnProps {
+  asset: SupportedAsset
+  wallet: WalletState
+  assets: Record<number, SupportedAsset>
+  exchanges: Record<string, Exchange>
+  net: number
+}
+
+function RightColumn ({
+  asset, wallet, assets, exchanges, net
+}: RightColumnProps) {
+  // Pending transactions
+  const pendingTxs = wallet.pendingTxs
+    ? Object.values(wallet.pendingTxs)
+    : []
+
+  // Markets for this asset
+  const marketRows = useMemo(
+    () => collectMarketsForAsset(exchanges, asset.id),
+    [exchanges, asset.id]
+  )
+
+  return (
+    <div>
+      {/* ---- Pending Transactions ---- */}
+      <PendingTransactions
+        txs={pendingTxs}
+        ui={asset.unitInfo}
+        assetID={asset.id}
+        net={net}
+      />
+
+      {/* ---- Markets ---- */}
+      <MarketsSection
+        assetName={asset.name}
+        marketRows={marketRows}
+        assets={assets}
+      />
+
+      {/* ---- Recent Activity / Orders ---- */}
+      <RecentOrdersView
+        assetID={asset.id}
+        assets={assets}
+      />
     </div>
   )
 }
@@ -691,45 +814,146 @@ function PendingTransactions ({ txs, ui, assetID, net }: {
   net: number
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
 
   return (
-    <div className="border rounded p-2 mb-3">
-      <div
-        className="d-flex align-items-center cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="fs14 fw-bold flex-grow-1">
-          {t('Pending Transactions')} ({txs.length})
-        </span>
-        <span className="fs12">{expanded
-          ? '\u25B2'
-          : '\u25BC'}</span>
+    <section>
+      <div className="flex-center py-3 fs18">
+        {txs.length === 0
+          ? <span>{t('no pending transactions')}</span>
+          : <span>
+              <span>{txs.length}</span>{' '}
+              <span>{t('pending transactions')}</span>{' '}
+              <span
+                className="p-1 pointer hoverbg fs11 ico-arrowdown"
+                onClick={() => setExpanded(!expanded)}
+              ></span>
+            </span>}
       </div>
-      {expanded && (
-        <div className="mt-2">
-          {txs.map(tx => {
-            const [sign, cls] = txSignAndClass(tx.type)
-            const label = TX_TYPE_LABELS[tx.type] ?? 'Unknown'
-            const url = explorerURL(assetID, tx.id, net)
-            return (
-              <div key={tx.id} className="d-flex align-items-center gap-2 py-1 border-top fs12">
-                <span className="text-secondary">{label}</span>
-                {!noAmtTxTypes.includes(tx.type) && (
-                  <span className={cls}>{sign}{formatCoinValue(tx.amount, ui)}</span>
-                )}
-                <span className="text-secondary ms-auto">{ageSince(tx.timestamp * 1000)} ago</span>
-                {url && (
-                  <a href={url} target="_blank" rel="noopener noreferrer" className="fs11">
-                    {t('View')}
-                  </a>
-                )}
-              </div>
-            )
-          })}
+      {expanded && txs.length > 0 && (
+        <div className="px-2 pb-3">
+          <table className="compact row-border border-top">
+            <thead className="unbold fs15">
+              <tr>
+                <th>{t('Type')}</th>
+                <th className="d-none d-sm-table-cell">{t('ID')}</th>
+                <th>{t('Age')}</th>
+                <th className="text-end">{t('Amount')}</th>
+                <th>{t('Confirms')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {txs.map(tx => {
+                const [sign, cls] = txSignAndClass(tx.type)
+                const label = TX_TYPE_LABELS[tx.type] ?? 'Unknown'
+                const url = explorerURL(assetID, tx.id, net)
+                return (
+                  <tr key={tx.id}>
+                    <td>{label}</td>
+                    <td className="d-none d-sm-table-cell">
+                      {url
+                        ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">{tx.id.slice(0, 16)}...</a>
+                        : <span>{tx.id.slice(0, 16)}...</span>}
+                    </td>
+                    <td>{ageSince(tx.timestamp * 1000)}</td>
+                    <td className={`text-end ${cls}`}>
+                      {noAmtTxTypes.includes(tx.type)
+                        ? '-'
+                        : `${sign}${formatCoinValue(tx.amount, ui)}`}
+                    </td>
+                    <td>{tx.confirms
+                      ? `${tx.confirms.current}/${tx.confirms.target}`
+                      : '-'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-    </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// MarketsSection
+// ---------------------------------------------------------------------------
+
+function MarketsSection ({ assetName, marketRows, assets }: {
+  assetName: string
+  marketRows: MarketRow[]
+  assets: Record<number, SupportedAsset>
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <section>
+      <h4 className="m-3">{assetName} {t('Markets')}</h4>
+      {marketRows.length === 0 && (
+        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('No markets')}</div>
+      )}
+      {marketRows.length > 0 && (
+        <div>
+          <table className="row-border row-hover border-top">
+            <thead>
+              <tr>
+                <th>{t('Market')}</th>
+                <th className="d-none d-md-table-cell d-lg-none d-xxl-table-cell">{t('Host')}</th>
+                <th>{t('Price')}</th>
+                <th className="text-end">{t('Volume')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {marketRows.map((row, idx) => {
+                const baseAsset = assets[row.baseID]
+                const quoteAsset = assets[row.quoteID]
+                const quoteConv = quoteAsset?.unitInfo?.conventional?.conversionFactor ?? 1e8
+                const baseConv = baseAsset?.unitInfo?.conventional?.conversionFactor ?? 1e8
+                const spotRate = row.spot
+                  ? row.spot.rate / 1e8
+                  : 0
+                const spotPriceConv = spotRate * (baseConv / quoteConv)
+                const vol24 = row.spot
+                  ? row.spot.vol24 / baseConv
+                  : 0
+                return (
+                  <tr key={`${row.host}-${row.name}-${idx}`} className="pointer">
+                    <td>
+                      <img src={logoPath(row.baseSymbol)} alt={row.baseSymbol} className="micro-icon me-1" />
+                      <img src={logoPath(row.quoteSymbol)} alt={row.quoteSymbol} className="micro-icon me-1" />
+                      <span className="demi">
+                        {row.baseSymbol.toUpperCase()}-{row.quoteSymbol.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="d-none d-md-table-cell d-lg-none d-xxl-table-cell">
+                      <div className="short-host text-nowrap overflow-hidden">{row.host}</div>
+                    </td>
+                    <td>
+                      {spotPriceConv > 0
+                        ? <>
+                            <span>{formatFourSigFigs(spotPriceConv)}</span>
+                            <span className="fs13 grey">
+                              <sup>{quoteAsset?.unitInfo?.conventional?.unit}</sup>/<sub>{baseAsset?.unitInfo?.conventional?.unit}</sub>
+                            </span>
+                          </>
+                        : '-'}
+                    </td>
+                    <td className="text-end">
+                      {vol24 > 0
+                        ? <>
+                            <span>{formatFourSigFigs(vol24)}</span>
+                            <span className="fs15 grey ms-1">{baseAsset?.unitInfo?.conventional?.unit}</span>
+                          </>
+                        : '-'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -775,28 +999,46 @@ function MixingToggle ({ assetID }: { assetID: number }) {
 
   if (loading && enabled === null) {
     return (
-      <div className="border rounded p-2 mb-3 fs12 text-secondary">
-        {t('Loading mixing status...')}
-      </div>
+      <section className="position-relative d-flex align-items-stretch flex-column border">
+        <div className="w-100 d-flex align-items-stretch">
+          <div className="flex-center flex-grow-1 p-2">
+            <span className="ico-spinner spinner me-2"></span>
+            <span>{t('loading privacy status')}</span>
+          </div>
+        </div>
+      </section>
     )
   }
 
   return (
-    <div className="border rounded p-2 mb-3 d-flex align-items-center gap-2">
-      <span className="fs14 fw-bold">{t('Fund Mixing')}</span>
-      <div className="form-check form-switch ms-auto">
-        <input
-          className="form-check-input"
-          type="checkbox"
-          checked={enabled ?? false}
-          onChange={toggle}
-          disabled={loading}
-        />
+    <section className="position-relative d-flex align-items-stretch flex-column border">
+      <div className="w-100 d-flex align-items-stretch">
+        <div className="p-2 flex-center fs35 ico-secretagent border-end"></div>
+        <div className="flex-center flex-grow-1">
+          {enabled
+            ? <div className="flex-center fs20">
+                <span className="on-indicator on me-2" style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--indicator-good)', display: 'inline-block' }}></span>
+                <span>{t('Privacy active')}</span>
+              </div>
+            : <div className="flex-center fs20">
+                <span className="on-indicator off me-2" style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--text-grey)', display: 'inline-block' }}></span>
+                <span>{t('Privacy off')}</span>
+              </div>}
+        </div>
+        <div className="p-2 border-start flex-center">
+          <div className="form-check form-switch mb-0">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              checked={enabled ?? false}
+              onChange={toggle}
+              disabled={loading}
+            />
+          </div>
+        </div>
       </div>
-      {enabled && <span className="fs12 text-success">{t('Active')}</span>}
-      {enabled === false && <span className="fs12 text-secondary">{t('Off')}</span>}
-      {error && <span className="fs12 text-danger">{error}</span>}
-    </div>
+      {error && <div className="flex-center p-2 text-danger border-top">{error}</div>}
+    </section>
   )
 }
 
@@ -1296,7 +1538,7 @@ function TxHistoryView ({ assetID, assets, net }: {
 }
 
 // ---------------------------------------------------------------------------
-// RecentOrdersView
+// RecentOrdersView (inline in right column)
 // ---------------------------------------------------------------------------
 
 function RecentOrdersView ({ assetID, assets }: {
@@ -1328,38 +1570,34 @@ function RecentOrdersView ({ assetID, assets }: {
   if (!asset) return null
 
   return (
-    <div>
-      <div className="fs18 mb-3">{t('Recent Orders')}</div>
+    <section className="d-flex flex-column pb-3 border-bottom">
+      <h4 className="m-3">{t('Recent')} {asset.name} {t('Activity')}</h4>
 
       {loading && (
         <div className="text-center py-3">
-          <span className="spinner-border spinner-border-sm" />
+          <span className="ico-spinner spinner me-2"></span>
         </div>
       )}
 
       {!loading && orders.length === 0 && (
-        <div className="text-center py-3 text-secondary fs14">{t('No orders')}</div>
+        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('No Recent Activity')}</div>
       )}
 
       {orders.length > 0 && (
-        <table className="table table-sm table-hover fs12">
+        <table className="row-border border-top">
           <thead>
             <tr>
-              <th>{t('Market')}</th>
-              <th>{t('Type')}</th>
-              <th>{t('Side')}</th>
-              <th>{t('Qty')}</th>
-              <th>{t('Filled')}</th>
+              <th>{t('Trade')}</th>
               <th>{t('Status')}</th>
+              <th className="d-none d-md-table-cell">{t('Filled')}</th>
               <th>{t('Age')}</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {orders.map(ord => {
               const baseAsset = assets[ord.baseID]
-              const quoteAsset = assets[ord.quoteID]
-              const baseSymbol = baseAsset?.unitInfo?.conventional?.unit ?? ord.baseSymbol
-              const quoteSymbol = quoteAsset?.unitInfo?.conventional?.unit ?? ord.quoteSymbol
+              const baseUI = baseAsset?.unitInfo
               const filledPct = ord.qty > 0
                 ? (filled(ord) / ord.qty * 100).toFixed(1)
                 : '0.0'
@@ -1374,28 +1612,41 @@ function RecentOrdersView ({ assetID, assets }: {
                       : ord.status === 5
                         ? 'Revoked'
                         : 'Unknown'
+              const qtyStr = baseUI
+                ? formatCoinValue(ord.qty, baseUI)
+                : String(ord.qty)
               return (
                 <tr key={ord.id || ord.stamp}>
-                  <td>{baseSymbol}-{quoteSymbol}</td>
-                  <td>{ord.type === 1
-                    ? 'Limit'
-                    : 'Market'}</td>
-                  <td>{ord.sell
-                    ? t('Sell')
-                    : t('Buy')}</td>
-                  <td>{baseAsset
-                    ? formatCoinValue(ord.qty, baseAsset.unitInfo)
-                    : String(ord.qty)}</td>
-                  <td>{filledPct}%</td>
+                  <td className="text-nowrap">
+                    {ord.sell
+                      ? <>
+                          <span>{qtyStr}</span>
+                          <img src={logoPath(ord.baseSymbol)} alt={ord.baseSymbol} className="micro-icon mx-1" />
+                          <span className="d-none d-md-inline">{ord.baseSymbol.toUpperCase()}</span>
+                          <span>&rarr;</span>
+                          <img src={logoPath(ord.quoteSymbol)} alt={ord.quoteSymbol} className="micro-icon mx-1" />
+                          <span className="d-none d-md-inline">{ord.quoteSymbol.toUpperCase()}</span>
+                        </>
+                      : <>
+                          <img src={logoPath(ord.quoteSymbol)} alt={ord.quoteSymbol} className="micro-icon mx-1" />
+                          <span className="d-none d-md-inline">{ord.quoteSymbol.toUpperCase()}</span>
+                          <span>&rarr;</span>
+                          <span>{qtyStr}</span>
+                          <img src={logoPath(ord.baseSymbol)} alt={ord.baseSymbol} className="micro-icon mx-1" />
+                          <span className="d-none d-md-inline">{ord.baseSymbol.toUpperCase()}</span>
+                        </>}
+                  </td>
                   <td>{statusStr}</td>
-                  <td>{ageSince(ord.submitTime)}</td>
+                  <td className="d-none d-md-table-cell">{filledPct}%</td>
+                  <td className="text-nowrap">{ageSince(ord.submitTime)}</td>
+                  <td><a className="ico-open fs14 pointer plainlink" href={`/order/${ord.id}`}></a></td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -1566,7 +1817,7 @@ function WalletConfigView ({ asset, wallet, onClose }: {
 }
 
 // ---------------------------------------------------------------------------
-// StakingView (DCR only)
+// StakingView (DCR only, rendered inline in center column)
 // ---------------------------------------------------------------------------
 
 function StakingView ({ assetID, assets }: {
@@ -1655,39 +1906,45 @@ function StakingView ({ assetID, assets }: {
 
   if (loading) {
     return (
-      <div className="text-center py-3">
-        <span className="spinner-border spinner-border-sm" />
-      </div>
+      <section className="position-relative d-flex align-items-stretch border">
+        <div className="flex-center flex-grow-1 p-3">
+          <span className="ico-spinner spinner me-2"></span>
+        </div>
+      </section>
     )
   }
 
   if (error && !stakeStatus) {
-    return <div className="text-danger fs14">{error}</div>
+    return <div className="text-danger fs14 p-2">{error}</div>
   }
 
   if (!stakeStatus) return null
 
   const stats = stakeStatus.stats
+  const stances = stakeStatus.stances
+  const agendaCount = stances?.agendas?.length ?? 0
+  const tspendCount = stances?.tspends?.length ?? 0
+  const tkeyCount = stances?.treasuryKeys?.length ?? 0
 
   if (showVspPicker) {
     return (
-      <div>
-        <div className="d-flex align-items-center mb-3">
-          <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setShowVspPicker(false)}>
-            {t('Back')}
-          </button>
+      <section className="position-relative d-flex align-items-stretch flex-column border">
+        <div className="d-flex align-items-center border-bottom px-3 py-2">
+          <span className="pointer hoverbg p-1" onClick={() => setShowVspPicker(false)}>
+            <span className="ico-arrowleft me-2"></span>
+          </span>
           <span className="fs18">{t('Select VSP')}</span>
         </div>
 
         {vspLoading && (
-          <div className="text-center py-3">
-            <span className="spinner-border spinner-border-sm" />
+          <div className="flex-center p-3">
+            <span className="ico-spinner spinner me-2"></span>
           </div>
         )}
 
         {vsps.length > 0 && (
-          <table className="table table-sm table-hover fs12">
-            <thead>
+          <table className="compact row-border">
+            <thead className="unbold fs15">
               <tr>
                 <th>{t('VSP')}</th>
                 <th>{t('Fee')}</th>
@@ -1698,7 +1955,7 @@ function StakingView ({ assetID, assets }: {
               {vsps.map(vsp => (
                 <tr
                   key={vsp.url}
-                  className="cursor-pointer"
+                  className="pointer hoverbg"
                   onClick={() => selectVSP(vsp)}
                 >
                   <td>{vsp.url}</td>
@@ -1709,115 +1966,108 @@ function StakingView ({ assetID, assets }: {
             </tbody>
           </table>
         )}
-      </div>
+      </section>
     )
   }
 
   return (
-    <div>
-      <div className="fs18 mb-3">{t('Staking')}</div>
-
-      {/* Ticket Price */}
-      <div className="border rounded p-3 mb-3">
-        <div className="row">
-          <div className="col">
-            <div className="fs12 text-secondary">{t('Ticket Price')}</div>
-            <div className="fs16 fw-bold">
-              {formatFourSigFigs(stakeStatus.ticketPrice / conv)} DCR
-            </div>
-          </div>
-          <div className="col">
-            <div className="fs12 text-secondary">{t('Vote Reward')}</div>
-            <div className="fs14">
-              {formatFourSigFigs(stakeStatus.votingSubsidy / conv)} DCR
-            </div>
-          </div>
+    <section className="position-relative d-flex align-items-stretch border">
+      <div className="flex-stretch-column flex-grow-1">
+        <div className="d-flex align-items-center justify-content-start border-bottom px-3 py-2">
+          <span className="ico-ticket me-2 fs20"></span>
+          <span className="fs24">{t('Staking')}</span>
         </div>
-      </div>
+        <div className="d-flex align-items-stretch flex-grow-1">
+          {/* Stats */}
+          <div className="flex-stretch-column justify-content-center fs14 flex-grow-1 p-2">
+            <div className="d-flex justify-content-between align-items-stretch">
+              <div className="flex-center grey">{t('Active tickets')}</div>
+              <div className="flex-center demi">{stats.ticketCount - stats.votes - stats.revokes}</div>
+            </div>
+            <div className="d-flex justify-content-between align-items-stretch">
+              <div className="flex-center grey">{t('Tickets bought')}</div>
+              <div className="flex-center demi">{stats.ticketCount}</div>
+            </div>
+            <div className="d-flex justify-content-between align-items-stretch">
+              <div className="flex-center grey">{t('Total rewards')}</div>
+              <div className="flex-center demi">{formatFourSigFigs(stats.totalRewards / conv)} DCR</div>
+            </div>
+            <div className="d-flex justify-content-between align-items-stretch">
+              <div className="flex-center grey">{t('Votes cast')}</div>
+              <div className="flex-center demi">{stats.votes}</div>
+            </div>
+            <div className="d-flex justify-content-between align-items-stretch">
+              <div className="flex-center grey">{t('VSP')}</div>
+              <div className="flex-center demi pointer hoverbg" onClick={loadVSPs}>
+                <span className="ico-edit me-2"></span>
+                <span>{stakeStatus.vsp || t('None')}</span>
+              </div>
+            </div>
+          </div>
 
-      {/* Stats */}
-      <div className="border rounded p-3 mb-3">
-        <div className="fs14 fw-bold mb-2">{t('Ticket Stats')}</div>
-        <div className="row fs12">
-          <div className="col-6 mb-1">
-            <span className="text-secondary">{t('Total Tickets')}:</span> {stats.ticketCount}
-          </div>
-          <div className="col-6 mb-1">
-            <span className="text-secondary">{t('Votes')}:</span> {stats.votes}
-          </div>
-          <div className="col-6 mb-1">
-            <span className="text-secondary">{t('Revokes')}:</span> {stats.revokes}
-          </div>
-          <div className="col-6 mb-1">
-            <span className="text-secondary">{t('Mempool')}:</span> {stats.mempool}
-          </div>
-          {stats.queued > 0 && (
-            <div className="col-6 mb-1">
-              <span className="text-secondary">{t('Queued')}:</span> {stats.queued}
+          {/* Set Votes sidebar */}
+          {(agendaCount > 0 || tspendCount > 0 || tkeyCount > 0) && (
+            <div className="flex-center p-3 flex-column border-start hoverbg pointer">
+              <div className="flex-center fs18">
+                <span className="fs22 ico-check"></span>
+                <span className="ms-2 fs18">{t('Set Votes')}</span>
+              </div>
+              <hr className="dashed my-1 w-75" />
+              <div className="flex-center flex-column fs14">
+                {agendaCount > 0 && <span>{agendaCount} {t('agendas')}</span>}
+                {tspendCount > 0 && <span>{tspendCount} {t('treasury spends')}</span>}
+              </div>
             </div>
           )}
-          <div className="col-6 mb-1">
-            <span className="text-secondary">{t('Total Rewards')}:</span>{' '}
-            {formatFourSigFigs(stats.totalRewards / conv)} DCR
-          </div>
         </div>
-      </div>
 
-      {/* VSP */}
-      <div className="border rounded p-3 mb-3">
-        <div className="d-flex align-items-center gap-2 mb-2">
-          <span className="fs14 fw-bold">{t('VSP')}</span>
-          <button className="btn btn-sm btn-outline-secondary ms-auto" onClick={loadVSPs}>
-            {stakeStatus.vsp
-              ? t('Change')
-              : t('Select VSP')}
-          </button>
-        </div>
-        {stakeStatus.vsp && (
-          <div className="fs12">{stakeStatus.vsp}</div>
-        )}
         {!stakeStatus.vsp && !stakeStatus.isRPC && (
-          <div className="fs12 text-warning">{t('Please select a VSP to purchase tickets.')}</div>
-        )}
-      </div>
-
-      {/* Purchase Tickets */}
-      {(stakeStatus.vsp || stakeStatus.isRPC) && (
-        <div className="border rounded p-3 mb-3">
-          <div className="fs14 fw-bold mb-2">{t('Purchase Tickets')}</div>
-          <div className="fs12 text-secondary mb-2">
-            {t('Available')}: {formatCoinValue(wallet.balance.available, ui)} DCR
+          <div className="flex-center py-1 px-2 fs14 text-warning">
+            {t('Please select a VSP to purchase tickets.')}
           </div>
-          <div className="d-flex align-items-center gap-2">
+        )}
+
+        {/* Purchase Tickets + Tickets buttons */}
+        {(stakeStatus.vsp || stakeStatus.isRPC) && (
+          <div className="w-100 d-flex align-items-stretch justify-content-stretch border-top p-2">
             <input
               type="number"
-              className="form-control form-control-sm"
-              style={{ width: 80 }}
+              className="form-control form-control-sm me-2"
+              style={{ width: 60 }}
               value={purchaseN}
               onChange={e => {
                 const v = parseInt(e.target.value)
-                setPurchaseN(v >= 1
-                  ? String(v)
-                  : '1')
+                setPurchaseN(v >= 1 ? String(v) : '1')
               }}
               min="1"
             />
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={purchaseTickets}
-              disabled={purchasing}
-            >
-              {purchasing
-                ? '...'
-                : t('Purchase')}
+            <button className="feature flex-grow-1 me-2" onClick={purchaseTickets} disabled={purchasing}>
+              <span className="ico-ticket me-1"></span>
+              {purchasing ? '...' : t('Purchase Tickets')}
             </button>
           </div>
-          {purchaseError && <div className="text-danger fs12 mt-2">{purchaseError}</div>}
-          {purchaseSuccess && <div className="text-success fs12 mt-2">{purchaseSuccess}</div>}
-        </div>
-      )}
+        )}
+        {purchaseError && <div className="text-center p-2 text-danger">{purchaseError}</div>}
+        {purchaseSuccess && <div className="text-center p-2 text-success">{purchaseSuccess}</div>}
+      </div>
 
-      {error && <div className="text-danger fs12 mt-2">{error}</div>}
-    </div>
+      {/* Right sidebar: Ticket Price + Vote Reward */}
+      <div className="flex-stretch-column border-start">
+        <div className="flex-grow-1 flex-center flex-column p-3 border-bottom">
+          <span className="fs14 demi lh1 pb-1">{t('Ticket Price')}</span>
+          <span className="d-flex align-items-end">
+            <span className="fs18">{formatFourSigFigs(stakeStatus.ticketPrice / conv)} DCR</span>
+          </span>
+        </div>
+        <div className="flex-grow-1 flex-center flex-column p-3">
+          <span className="fs14 demi lh1 pb-1">{t('Vote Reward')}</span>
+          <span className="d-flex align-items-end">
+            <span className="fs18">{formatFourSigFigs(stakeStatus.votingSubsidy / conv)} DCR</span>
+          </span>
+        </div>
+      </div>
+
+      {error && <div className="text-danger p-2 border-top">{error}</div>}
+    </section>
   )
 }

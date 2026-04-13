@@ -73,7 +73,7 @@ export function AppLayout () {
   return (
     <>
       <Header />
-      <main id="main">
+      <main id="main" className="flex-grow-1 position-relative" style={{ minHeight: 0 }}>
         <Outlet />
       </main>
     </>
