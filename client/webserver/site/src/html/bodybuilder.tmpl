@@ -79,17 +79,17 @@
     </div>
   </div>
 
-  <div class="mainlinks fs18 pe-2 text-nowrap d-flex align-items-center">
-    <a href="/wallets" class="demi hoverbg{{if not $authed}} d-hide{{end}}" id="walletsMenuEntry">[[[Wallet]]]</a>
-    <a href="/markets" class="demi hoverbg d-hide" id="marketsMenuEntry">[[[Trade]]]</a>
-    <a href="/mm" class="ico-robot lh1 fs32 hoverbg d-hide" id="mmLink"></a>
+  <div class="mainlinks fs18 pe-2 text-nowrap d-flex h-100">
+    <a href="/wallets" class="demi hoverbg d-flex align-items-center{{if not $authed}} d-hide{{end}}" id="walletsMenuEntry">[[[Wallet]]]</a>
+    <a href="/markets" class="demi hoverbg d-flex align-items-center d-hide" id="marketsMenuEntry">[[[Trade]]]</a>
+    <a href="/mm" class="ico-robot lh1 fs32 hoverbg d-flex align-items-center d-hide" id="mmLink"></a>
 
-      <div class="d-inline-block position-relative pointer hoverbg{{if not $authed}} d-hide{{end}}" id="noteBell">
-        <span class="ico-bell fs20 p-2"></span>
-        <div id="noteIndicator" class="d-hide"></div>
-      </div>
+    <div class="d-flex align-items-center position-relative pointer hoverbg{{if not $authed}} d-hide{{end}}" id="noteBell">
+      <span class="ico-bell fs20 p-2"></span>
+      <div id="noteIndicator" class="d-hide"></div>
+    </div>
 
-    <div class="d-inline-block hoverbg position-relative pointer" id="burgerIcon">
+    <div class="d-flex align-items-center hoverbg position-relative pointer" id="burgerIcon">
       <span class="ico-hamburger fs20 p-2"></span>
     </div>
   </div>
