@@ -41,7 +41,7 @@
   {{end}}
 
 {{define "header"}}
-<header id="header" class="d-flex justify-content-between border-bottom">
+<header id="header" class="d-flex align-items-center justify-content-between border-bottom">
   {{$authed := .UserInfo.Authed}}
   {{- /* MM TITLE */ -}}
   <div id="mmTitle" class="flex-center fs28 px-2 d-hide">[[[Market Maker Settings]]]</div>
@@ -79,7 +79,7 @@
     </div>
   </div>
 
-  <div class="mainlinks fs18 pe-2 text-nowrap">
+  <div class="mainlinks fs18 pe-2 text-nowrap d-flex align-items-center">
     <a href="/wallets" class="demi hoverbg{{if not $authed}} d-hide{{end}}" id="walletsMenuEntry">[[[Wallet]]]</a>
     <a href="/markets" class="demi hoverbg d-hide" id="marketsMenuEntry">[[[Trade]]]</a>
     <a href="/mm" class="ico-robot lh1 fs32 hoverbg d-hide" id="mmLink"></a>
