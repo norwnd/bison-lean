@@ -15,9 +15,10 @@ import { Wave } from '../components/charts/Wave'
 import OrderBook from '../components/OrderBook'
 import {
   formatCoinValue, formatRateFullPrecision,
-  formatRateAtomToRateStep, formatCoinAtomToLotSizeBaseCurrency,
+  formatRateAtomToRateStep, formatRateToRateStep,
+  formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  formatFourSigFigs,
+  formatBestWeCan,
   adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor
 } from '../hooks/useFormatters'
 import {
@@ -1202,7 +1203,10 @@ export default function MarketsPage () {
 
     const handleEpochMatchSummary = (data: BookUpdate) => {
       if (!data.payload?.matchSummaries) return
-      setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 50))
+      // Vanilla `addRecentMatches` caps the buffer at 100 entries — match it
+      // for parity with the legacy client's memory footprint and the
+      // `recentMatchesBox` render window.
+      setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 100))
     }
 
     wsSubscribe('book', handleBook)
@@ -1402,6 +1406,16 @@ export default function MarketsPage () {
   }, [allMarkets, marketSearch])
 
   // -------------------------------------------------------------------------
+  // Fiat reference rates and derived external (non-Bison) price.
+  // Declared above `orderBookData` because the memo below reads
+  // `externalPriceConv` to compute per-row rate deltas (MP-01). Shared with
+  // the stats header pill (MP-25) and the order-book mid-section hint (MP-26).
+  // -------------------------------------------------------------------------
+  const baseFiatRate = selected ? (fiatRatesMap[selected.baseID] ?? 0) : 0
+  const quoteFiatRate = selected ? (fiatRatesMap[selected.quoteID] ?? 0) : 0
+  const externalPriceConv = (baseFiatRate && quoteFiatRate) ? baseFiatRate / quoteFiatRate : 0
+
+  // -------------------------------------------------------------------------
   // Order book display data (memoized from bookRef + bookVersion)
   //
   // Produces enriched rows with:
@@ -1416,10 +1430,10 @@ export default function MarketsPage () {
     const book = bookRef.current
     if (!book || !bui || !qui || !currentMkt || !selected) return { buys: [], sells: [] }
 
-    const baseFiat = fiatRatesMap[selected.baseID] ?? 0
-    const quoteFiat = fiatRatesMap[selected.quoteID] ?? 0
-    const externalPrice = (baseFiat && quoteFiat) ? baseFiat / quoteFiat : 0
-
+    // MP-01: Rate-delta reads the component-scoped `externalPriceConv` (hoisted
+    // above) so the value is shared with the stats header and order-book mid
+    // section; this also narrows the memo's re-render trigger from "any fiat
+    // rate change" to "base/quote fiat rate change".
     const userOrderIds = new Set(activeOrders.map(o => o.id))
 
     const buildSide = (orders: MiniOrder[], sell: boolean): OrderBookDisplayRow[] => {
@@ -1452,10 +1466,10 @@ export default function MarketsPage () {
         // Rate delta vs external fiat price (MP-01)
         let deltaText = '(?)'
         let deltaInverted = false
-        if (externalPrice > 0 && firstOrder.rate > 0) {
+        if (externalPriceConv > 0 && firstOrder.rate > 0) {
           const priceDelta = sell
-            ? ((firstOrder.rate - externalPrice) / externalPrice) * 100
-            : ((externalPrice - firstOrder.rate) / externalPrice) * 100
+            ? ((firstOrder.rate - externalPriceConv) / externalPriceConv) * 100
+            : ((externalPriceConv - firstOrder.rate) / externalPriceConv) * 100
           if (priceDelta < 9.94) {
             deltaText = `(${priceDelta.toFixed(1)}%)`
           } else {
@@ -1484,7 +1498,7 @@ export default function MarketsPage () {
       buys: buildSide(book.buys, false),
       sells: buildSide(book.sells, true).reverse()
     }
-  }, [bookVersion, bui, qui, currentMkt, selected, fiatRatesMap, activeOrders])
+  }, [bookVersion, bui, qui, currentMkt, selected, externalPriceConv, activeOrders])
 
   // -------------------------------------------------------------------------
   // Computed market stats
@@ -1519,8 +1533,23 @@ export default function MarketsPage () {
     }
     return [h || sHigh, l || sLow]
   }, [spot, candleCacheVersion])
-  // Fiat-based "external" price for the base asset (if available)
-  const baseFiatRate = selected ? (fiatRatesMap[selected.baseID] ?? 0) : 0
+  // MP-24: Bison-price color (buycolor/sellcolor) and rounding direction are
+  // derived from the most recent match on this market. `RecentMatch.sell` is
+  // expressed from the taker's perspective, so `!sell` === "last match was a
+  // buy". We find the latest stamp without mutating `recentMatches`, which
+  // React owns. Returns null when there are no matches yet.
+  const mostRecentMatchIsBuy = useMemo<boolean | null>(() => {
+    if (recentMatches.length === 0) return null
+    let latest = recentMatches[0]
+    for (let i = 1; i < recentMatches.length; i++) {
+      if (recentMatches[i].stamp > latest.stamp) latest = recentMatches[i]
+    }
+    return !latest.sell
+  }, [recentMatches])
+  // Vanilla `setCurrMarketPrice` shows a bison-price number only when BOTH
+  // `mkt.spot` exists AND there is at least one recent match; otherwise it
+  // falls back to "-" and strips the color classes. We mirror that gate.
+  const hasBisonPrice = !!(spot && spotRate > 0 && mostRecentMatchIsBuy !== null)
 
   // -------------------------------------------------------------------------
   // Trading tier / reputation data
@@ -1602,16 +1631,29 @@ export default function MarketsPage () {
           </div>
 
           <div className="d-flex flex-stretch-column ps-1 border-right">
-            {baseFiatRate > 0 && (
-              <div title="Price on external markets" className="d-flex align-items-center border-bottom pe-2 fs18 text-warning">
-                ${formatFourSigFigs(baseFiatRate)}
+            {/* MP-25: External price shown as the fiat ratio (quote-per-base),
+                 rendered only when both fiat rates are available. Matches
+                 vanilla `setCurrMarketPrice` which hides the pill when the
+                 ratio is unknown. */}
+            {externalPriceConv > 0 && bui && qui && currentMkt && (
+              <div title="Price on external markets such as Binance" className="d-flex align-items-center border-bottom pe-2 fs18 text-warning">
+                {formatRateToRateStep(externalPriceConv, bui, qui, currentMkt.ratestep)}
               </div>
             )}
-            <div title="Bison price" className="d-flex align-items-center pe-2 fs18">
-              {bui && qui && currentMkt && displayRate > 0
-                ? formatRateAtomToRateStep(displayRate, bui, qui, currentMkt.ratestep)
+            {/* MP-24: Bison price matches vanilla `setCurrMarketPrice`:
+                  - source: `spot.rate` (last-trade price), NOT midGap — shows
+                    `-` when no spot or no recent matches;
+                  - color: derived from the most recent match side;
+                  - rounding direction passed to the formatter also tracks
+                    that side;
+                  - no unit suffix — vanilla renders only the raw number. */}
+            <div
+              title="Price last trade executed at"
+              className={`d-flex align-items-center pe-2 fs18${hasBisonPrice && mostRecentMatchIsBuy ? ' buycolor' : hasBisonPrice && mostRecentMatchIsBuy === false ? ' sellcolor' : ''}`}
+            >
+              {hasBisonPrice && bui && qui && currentMkt
+                ? formatRateAtomToRateStep(spotRate, bui, qui, currentMkt.ratestep, !mostRecentMatchIsBuy)
                 : '-'}
-              {quiConv && <span className="grey ms-1 fs14">{quiConv.unit}</span>}
             </div>
           </div>
 
@@ -1624,13 +1666,22 @@ export default function MarketsPage () {
             <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
               {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
             </div>
+            {/* MP-23: 24h volume unit switches between USD (when a fiat rate
+                 for the base asset is available) and the base asset's
+                 conventional unit. Matches vanilla `setCurrMarketPrice`:
+                 vol24 is in base atoms, so divide by the base conversion
+                 factor; multiply by baseFiatRate when displaying USD. */}
             <div className="d-flex justify-content-start align-items-center px-2 border-right">
               <div className="fs14">
-                {spot && bui && qui && currentMkt
-                  ? formatFourSigFigs(vol24)
+                {spot && buiConv
+                  ? baseFiatRate > 0
+                    ? formatBestWeCan(vol24 / buiConv.conversionFactor * baseFiatRate)
+                    : formatBestWeCan(vol24 / buiConv.conversionFactor)
                   : '-'}
               </div>
-              <div className="fs14 grey ms-1">{quiConv?.unit ?? 'USD'}</div>
+              <div className="fs14 grey ms-1">
+                {spot && buiConv && baseFiatRate > 0 ? 'USD' : (buiConv?.unit ?? 'USD')}
+              </div>
             </div>
             <div className="px-2 fs14 border-right">
               {high24 > 0 && bui && qui && currentMkt
@@ -1748,11 +1799,22 @@ export default function MarketsPage () {
                   </table>
                 </div>
 
-                {/* Spread / mid-gap */}
-                <div className="d-flex align-items-center justify-content-center py-1 px-2">
+                {/* Spread / mid-gap + external price hint. MP-26 adds the
+                     vanilla `obExternalPrice` inline under the mid-gap: when
+                     both fiat rates are available, show the external reference
+                     rate prefixed with `~`. */}
+                <div id="obMidSection" className="d-flex flex-stretch-column align-items-center justify-content-center py-1 px-2">
                   {bui && qui && currentMkt && displayRate > 0 && (
                     <span className="text-warning fs17">
                       {formatRateFullPrecision(displayRate, bui, qui, currentMkt.ratestep)}
+                    </span>
+                  )}
+                  {externalPriceConv > 0 && bui && qui && currentMkt && (
+                    <span
+                      title="Price on external markets such as Binance"
+                      className="text-warning fs14"
+                    >
+                      ~{formatRateToRateStep(externalPriceConv, bui, qui, currentMkt.ratestep)}
                     </span>
                   )}
                 </div>
