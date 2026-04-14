@@ -30,12 +30,14 @@ import type {
   Exchange, Market, MiniOrder, MarketOrderBook, CandlesPayload, Order,
   OrderNote, MatchNote, SpotPriceNote, BalanceNote, EpochNote, BookUpdate,
   UnitInfo, Candle, RecentMatch, MaxOrderEstimate, OrderFilter,
-  ConnEventNote, BondNote, WalletStateNote, RemainderUpdate
+  ConnEventNote, BondNote, WalletStateNote, RemainderUpdate, SupportedAsset
 } from '../stores/types'
 import {
   OrderTypeLimit, StatusEpoch, StatusBooked, StatusExecuted,
-  StatusCanceled, StatusRevoked, ImmediateTiF, ConnectionStatus
+  StatusCanceled, StatusRevoked, ImmediateTiF, ConnectionStatus,
+  ApprovalStatus
 } from '../stores/types'
+import { TokenApprovalForm } from '../components/common/TokenApprovalForm'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1032,6 +1034,9 @@ export default function MarketsPage () {
   const [showReputation, setShowReputation] = useState(false)
   const [bookRateAtom, setBookRateAtom] = useState(0)
   const [bookRateVersion, setBookRateVersion] = useState(0)
+  // MP-27/MP-59: ID of the asset currently being approved. null = modal hidden.
+  // When non-null, the `TokenApprovalForm` is rendered inside a `FormOverlay`.
+  const [approveAssetID, setApproveAssetID] = useState<number | null>(null)
 
   // -------------------------------------------------------------------------
   // Active / completed orders state
@@ -1351,7 +1356,14 @@ export default function MarketsPage () {
       fetchUser()
     },
     walletstate: (_note: WalletStateNote) => {
-      // Wallet state updated through auth store
+      // Wallet state updated through auth store (`handleWalletStateNote` in
+      // useMarketStore sets new object references on `assets`/`walletMap`).
+      // Everything that depends on wallet state — `noWalletMsg`,
+      // `tokenApprovalStatus` (MP-27 + MP-61 token approval half),
+      // `OrderForm` max caches — recomputes automatically via memo deps,
+      // mirroring vanilla `handleWalletState` calling
+      // `setTokenApprovalVisibility`. The `resolveOrderVsMMForm` half of
+      // vanilla's handler (order form suppression) stays deferred to Batch 7+.
     },
     conn: (note: ConnEventNote) => {
       if (!selected) return
@@ -1553,14 +1565,80 @@ export default function MarketsPage () {
 
   // -------------------------------------------------------------------------
   // Trading tier / reputation data
+  //
+  // Mirrors vanilla `updateReputation`:
+  //  - parcelSizeLots            = mkt.parcelsize
+  //  - marketLimitBase           = formatBestWeCan(parcelsize * lotsize / buiConv)
+  //  - marketLimitQuote          = formatBestWeCan(parcelsize * qty / quiConv)
+  //    where qty = lotsize * conversionRate and conversionRate comes from
+  //    vanilla `anyRate()` priority order: order-book mid-gap → spot.rate →
+  //    fiat ratio; returns "-" when no rate is available.
+  //  - tradingTier               = strongTier(auth)
+  //  - tradingLimit              = (parcelLimit * parcelsize).toFixed(2)  [MP-35]
+  //  - limitUsage                = (usedParcels / parcelLimit * 100).toFixed(1)
+  //
+  // Visibility (MP-36): the whole box is hidden unless
+  //   effectiveTier > 0 || pendingStrength > 0.
   // -------------------------------------------------------------------------
   const tierData = useMemo(() => {
-    if (!selected || !currentXc || !currentMkt) return null
+    if (!selected || !currentXc || !currentMkt || !bui || !qui) return null
     const auth = currentXc.auth
+    const { effectiveTier, pendingStrength } = auth
+    const visible = effectiveTier > 0 || pendingStrength > 0
+
     const tier = strongTier(auth)
     const [usedParcels, parcelLimit] = tradingLimits(exchanges, selected.host)
-    return { tier, usedParcels, parcelLimit, parcelSize: currentMkt.parcelsize }
-  }, [selected, currentXc, currentMkt, exchanges])
+
+    const parcelsize = currentMkt.parcelsize
+    const lotsize = currentMkt.lotsize
+    const buiConvFactor = bui.conventional.conversionFactor
+    const quiConvFactor = qui.conventional.conversionFactor
+
+    // Parcel size in base (MP-35) — parity with vanilla `marketLimitBase`.
+    const parcelSizeBaseStr = formatBestWeCan(parcelsize * lotsize / buiConvFactor)
+
+    // Conversion rate (conventional quote per conventional base), priority
+    // order mirrors vanilla `anyRate()`: mid-gap → spot.rate → fiat ratio.
+    //   atomicRate / rateConversionFactor == atomicRate * buiConv / (RateEncodingFactor * quiConv)
+    // Fiat fallback already produces a conventional ratio directly.
+    let conversionRate = 0
+    const atomicRate = midGap || spotRate
+    if (atomicRate > 0) {
+      conversionRate = atomicRate * buiConvFactor / (RateEncodingFactor * quiConvFactor)
+    } else if (externalPriceConv > 0) {
+      conversionRate = externalPriceConv
+    }
+
+    // Parcel size in quote (MP-35) — parity with vanilla `marketLimitQuote`.
+    let parcelSizeQuoteStr: string | null = null
+    if (conversionRate > 0) {
+      const qty = lotsize * conversionRate
+      parcelSizeQuoteStr = formatBestWeCan(parcelsize * qty / quiConvFactor)
+    }
+
+    // Trading limit (MP-35): parcelLimit in "lots" units, vanilla multiplies
+    // by parcelsize and renders with 2 decimals.
+    const tradingLimitStr = (parcelLimit * parcelsize).toFixed(2)
+    const limitUsageStr = parcelLimit > 0
+      ? (usedParcels / parcelLimit * 100).toFixed(1)
+      : '0'
+
+    return {
+      visible,
+      effectiveTier,
+      pendingStrength,
+      tier,
+      usedParcels,
+      parcelLimit,
+      parcelSize: parcelsize,
+      parcelSizeBaseStr,
+      parcelSizeQuoteStr,
+      baseUnit: bui.conventional.unit,
+      quoteUnit: qui.conventional.unit,
+      tradingLimitStr,
+      limitUsageStr
+    }
+  }, [selected, currentXc, currentMkt, bui, qui, exchanges, midGap, spotRate, externalPriceConv])
 
   // -------------------------------------------------------------------------
   // Display helpers (available to both render and effects below)
@@ -1569,6 +1647,223 @@ export default function MarketsPage () {
   const quoteSymbol = quoteAsset?.symbol?.toUpperCase() ?? ''
   const buiConv = bui?.conventional
   const quiConv = qui?.conventional
+
+  // -------------------------------------------------------------------------
+  // Rightmost-panel visibility/content computations
+  //
+  // MP-28: `loaderMsgText` — mirrors vanilla `assetsAreSupported` +
+  //   `setLoaderMsgVisibility`. When either base or quote asset version isn't
+  //   in the supported-versions list for this client build, the loaderMsg
+  //   panel is shown with a translated "X (vN) is not supported" message.
+  //   Empty string = supported = panel hidden. When shown, vanilla also hides
+  //   `notRegistered` and `noWallet`, so those panels gate on `!loaderMsgText`.
+  //
+  // MP-33: `noWalletMsg` — mirrors vanilla `displayMessageIfMissingWallet`.
+  //   Branches over missing / disabled / not-running wallet states and picks
+  //   the matching i18n key (NO_WALLET_MSG / CREATE_ASSET_WALLET_MSG /
+  //   ENABLE_ASSET_WALLET_MSG). Empty string = no message = panel hidden.
+  //
+  // MP-34: `hasUnreadyOrders` — mirrors vanilla's `unreadyOrders` flag inside
+  //   `drawRecentlyActiveUserOrders`. True when any active user order is on a
+  //   wallet that isn't ready-to-tick AND has active matches (the combination
+  //   means funds could get stuck). Drives the red banner above Open Orders.
+  //   Note: the per-row `unready-user-order` CSS class (MP-38) is tracked
+  //   separately in Section G and deferred to Batch 7+.
+  // -------------------------------------------------------------------------
+  const loaderMsgText = useMemo<string>(() => {
+    if (!selected || !currentXc || !baseAsset || !quoteAsset || !bui || !qui) return ''
+    const baseXcAsset = currentXc.assets[selected.baseID]
+    const quoteXcAsset = currentXc.assets[selected.quoteID]
+    if (!baseXcAsset || !quoteXcAsset) return ''
+    const versions = (a: SupportedAsset): number[] =>
+      (a.token ? a.token.supportedAssetVersions : a.info?.versions) ?? []
+    const baseSupported = versions(baseAsset).includes(baseXcAsset.version)
+    const quoteSupported = versions(quoteAsset).includes(quoteXcAsset.version)
+    if (!baseSupported) {
+      return t('VERSION_NOT_SUPPORTED', {
+        asset: bui.conventional.unit,
+        version: String(baseXcAsset.version)
+      })
+    }
+    if (!quoteSupported) {
+      // Note: vanilla passes `base.unitInfo.conventional.unit` here too — this
+      // looks like a bug (should be `quote.unitInfo...`), but we preserve parity.
+      return t('VERSION_NOT_SUPPORTED', {
+        asset: bui.conventional.unit,
+        version: String(quoteXcAsset.version)
+      })
+    }
+    return ''
+  }, [selected, currentXc, baseAsset, quoteAsset, bui, qui, t])
+
+  const noWalletMsg = useMemo<string>(() => {
+    if (!selected || !baseAsset || !quoteAsset) return ''
+    const baseSym = baseSymbol
+    const quoteSym = quoteSymbol
+    const baseWallet = baseAsset.wallet
+    const quoteWallet = quoteAsset.wallet
+    if (!baseWallet && !quoteWallet) {
+      return t('NO_WALLET_MSG', { asset1: baseSym, asset2: quoteSym })
+    }
+    if (!baseWallet) {
+      return t('CREATE_ASSET_WALLET_MSG', { asset: baseSym })
+    }
+    if (!quoteWallet) {
+      return t('CREATE_ASSET_WALLET_MSG', { asset: quoteSym })
+    }
+    if (baseWallet.disabled || !baseWallet.running) {
+      return t('ENABLE_ASSET_WALLET_MSG', { asset: baseSym })
+    }
+    if (quoteWallet.disabled || !quoteWallet.running) {
+      return t('ENABLE_ASSET_WALLET_MSG', { asset: quoteSym })
+    }
+    return ''
+  }, [selected, baseAsset, quoteAsset, baseSymbol, quoteSymbol, t])
+
+  const hasUnreadyOrders = useMemo<boolean>(() => {
+    for (const ord of activeOrders) {
+      if (!ord.readyToTick && hasActiveMatches(ord)) return true
+    }
+    return false
+  }, [activeOrders])
+
+  // MP-29..MP-32: Bond / registration status panel selector.
+  // Mirrors vanilla `setRegistrationStatusVisibility` + `updateRegistrationStatusView`:
+  //   1. effectiveTier >= 1   -> 'none'                 (already tradeable, hide all)
+  //   2. viewOnly             -> 'notRegistered'        (MP-Ax, existing panel)
+  //   3. targetTier>0 && penalties > penaltyComps
+  //                           -> 'penaltyCompsRequired' (MP-31)
+  //   4. hasPendingBonds      -> 'registrationStatus'   (MP-30, waiting for confs)
+  //   5. targetTier > 0       -> 'bondCreationPending'  (MP-29)
+  //   6. else                 -> 'bondRequired'         (MP-32, tier 0 + no target)
+  // Vanilla also requires the DEX connection to be Connected before branching
+  // (otherwise it short-circuits — the panel state from the last successful
+  // connection remains). We mirror that: when disconnected we return 'none'
+  // and let the existing chart overlay / loaderMsg surfaces communicate state.
+  const statusPanel = useMemo<{
+    kind: 'none' | 'notRegistered' | 'penaltyCompsRequired' | 'registrationStatus' | 'bondCreationPending' | 'bondRequired'
+    penalties?: number
+    penaltyComps?: number
+    regStatusTitle?: string
+    regStatusConfs?: string
+    effectiveTier?: number
+  }>(() => {
+    if (!currentXc || !selected) return { kind: 'none' }
+    if (currentXc.connectionStatus !== ConnectionStatus.Connected) return { kind: 'none' }
+    const auth = currentXc.auth
+    if (!auth) return { kind: 'none' }
+
+    const effectiveTier = auth.effectiveTier ?? 0
+    if (effectiveTier >= 1) return { kind: 'none' }
+
+    if (currentXc.viewOnly) return { kind: 'notRegistered' }
+
+    const targetTier = auth.targetTier ?? 0
+    const penalties = auth.rep?.penalties ?? 0
+    const penaltyComps = auth.penaltyComps ?? 0
+
+    if (targetTier > 0 && penalties > penaltyComps) {
+      return { kind: 'penaltyCompsRequired', penalties, penaltyComps }
+    }
+
+    // Vanilla `hasPendingBonds` was `Object.keys(auth.pendingBonds || []).length > 0`
+    // — idiosyncratic but works because JS arrays expose numeric keys. Our type
+    // declares `pendingBonds: PendingBondState[]`, so a direct length check is
+    // both correct and clearer.
+    const pendingBonds = auth.pendingBonds ?? []
+    if (pendingBonds.length > 0) {
+      // Vanilla `updateRegistrationStatusView`: when effectiveTier < 1 (the
+      // branch we're on), title is WAITING_FOR_CONFS and confStatusMsg joins
+      // "<confs> / <required>" per pending bond with ", ".
+      const confStatuses = pendingBonds.map((pending) => {
+        const required = currentXc.bondAssets?.[pending.symbol]?.confs ?? 0
+        return `${pending.confs} / ${required}`
+      })
+      return {
+        kind: 'registrationStatus',
+        regStatusTitle: t('WAITING_FOR_CONFS'),
+        regStatusConfs: confStatuses.join(', '),
+      }
+    }
+
+    if (targetTier > 0) return { kind: 'bondCreationPending' }
+
+    return { kind: 'bondRequired', effectiveTier }
+  }, [currentXc, selected, t])
+
+  // MP-27: Token approval panel state.
+  // Mirrors vanilla `tokenAssetApprovalStatuses` (markets.ts L1030–1057) +
+  // `setTokenApprovalVisibility` (L1063–1096). For each of base/quote, if the
+  // asset is a token and its wallet has an `approved[<protocol_version>]`
+  // entry, we use that — otherwise we default to `Approved`. Non-token assets
+  // always read as `Approved`. The panel is visible when either side isn't
+  // fully approved. The notice key switches over which side(s) need approval:
+  //   - base NOT approved, quote approved → 'approval_required_sell'
+  //   - base approved, quote NOT approved → 'approval_required_buy'
+  //   - both NOT approved                  → 'approval_required_both'
+  // MP-61 (token approval half): the memo recomputes automatically whenever
+  // `assets` or `currentXc` change — and `handleWalletStateNote` in
+  // `useMarketStore` bumps those by reference on every walletstate note — so
+  // the panel auto-refreshes on wallet state changes without any explicit
+  // subscription, matching vanilla's `handleWalletState` calling
+  // `setTokenApprovalVisibility`. The `resolveOrderVsMMForm` half of MP-61
+  // (form suppression when assets aren't approved) stays deferred to Batch 7+.
+  const tokenApprovalStatus = useMemo<{
+    visible: boolean
+    baseStatus: ApprovalStatus
+    quoteStatus: ApprovalStatus
+    baseSymbolUpper: string
+    quoteSymbolUpper: string
+    noticeKey: 'approval_required_buy' | 'approval_required_sell' | 'approval_required_both' | null
+  }>(() => {
+    const empty = {
+      visible: false,
+      baseStatus: ApprovalStatus.Approved,
+      quoteStatus: ApprovalStatus.Approved,
+      baseSymbolUpper: '',
+      quoteSymbolUpper: '',
+      noticeKey: null,
+    }
+    if (!selected || !currentXc || !baseAsset || !quoteAsset) return empty
+
+    let baseStatus = ApprovalStatus.Approved
+    let quoteStatus = ApprovalStatus.Approved
+
+    if (baseAsset.token && baseAsset.wallet?.approved) {
+      const baseXcAsset = currentXc.assets[selected.baseID]
+      const baseVersion = baseXcAsset?.version
+      if (baseVersion !== undefined && baseAsset.wallet.approved[baseVersion] !== undefined) {
+        baseStatus = baseAsset.wallet.approved[baseVersion]
+      }
+    }
+    if (quoteAsset.token && quoteAsset.wallet?.approved) {
+      const quoteXcAsset = currentXc.assets[selected.quoteID]
+      const quoteVersion = quoteXcAsset?.version
+      if (quoteVersion !== undefined && quoteAsset.wallet.approved[quoteVersion] !== undefined) {
+        quoteStatus = quoteAsset.wallet.approved[quoteVersion]
+      }
+    }
+
+    if (baseStatus === ApprovalStatus.Approved && quoteStatus === ApprovalStatus.Approved) return empty
+
+    let noticeKey: 'approval_required_buy' | 'approval_required_sell' | 'approval_required_both' | null = null
+    if (baseStatus !== ApprovalStatus.Approved && quoteStatus === ApprovalStatus.Approved) {
+      noticeKey = 'approval_required_sell'
+    } else if (baseStatus === ApprovalStatus.Approved && quoteStatus !== ApprovalStatus.Approved) {
+      noticeKey = 'approval_required_buy'
+    } else {
+      noticeKey = 'approval_required_both'
+    }
+
+    return {
+      visible: true,
+      baseStatus,
+      quoteStatus,
+      baseSymbolUpper: baseAsset.symbol.toUpperCase(),
+      quoteSymbolUpper: quoteAsset.symbol.toUpperCase(),
+      noticeKey,
+    }
+  }, [selected, currentXc, baseAsset, quoteAsset])
 
   // Portal target: render market stats into the header slot.
   // Use state so the portal renders after the DOM element is committed.
@@ -1972,12 +2267,69 @@ export default function MarketsPage () {
             <section className="rightmost-panel pb-3 position-relative">
               <div className="flex-stretch-column">
 
-                {/* Not registered notice */}
-                {selected && currentXc && !isRegistered && (
+                {/* MP-27: Token approval panel. Mirrors vanilla `#tokenApproval`
+                    markup and the 5-way `setTokenApprovalVisibility` branching.
+                    Appears ABOVE `loaderMsg` to match vanilla template order.
+                    Buttons open the `approveTokenForm` modal via FormOverlay. */}
+                {tokenApprovalStatus.visible && selected && (
+                  <div className="fs15 pt-1 pb-3 text-center border-bottom">
+                    {tokenApprovalStatus.noticeKey === 'approval_required_buy' && (
+                      <span className="p-3 flex-center fs17 grey">{t('approval_required_buy')}</span>
+                    )}
+                    {tokenApprovalStatus.noticeKey === 'approval_required_sell' && (
+                      <span className="p-3 flex-center fs17 grey">{t('approval_required_sell')}</span>
+                    )}
+                    {tokenApprovalStatus.noticeKey === 'approval_required_both' && (
+                      <span className="p-3 flex-center fs17 grey">{t('approval_required_both')}</span>
+                    )}
+                    {tokenApprovalStatus.baseStatus === ApprovalStatus.NotApproved && (
+                      <button
+                        type="button"
+                        className="go"
+                        onClick={() => setApproveAssetID(selected.baseID)}
+                      >
+                        {t('Approve')} <span>{tokenApprovalStatus.baseSymbolUpper}</span>
+                      </button>
+                    )}
+                    {tokenApprovalStatus.baseStatus === ApprovalStatus.Pending && (
+                      <div className="flex-center position-relative py-2">
+                        <span className="px-1">{tokenApprovalStatus.baseSymbolUpper}</span> {t('approval_change_pending')}
+                        <div className="px-2 ico-spinner spinner fs15"></div>
+                      </div>
+                    )}
+                    {tokenApprovalStatus.quoteStatus === ApprovalStatus.NotApproved && (
+                      <button
+                        type="button"
+                        className="go"
+                        onClick={() => setApproveAssetID(selected.quoteID)}
+                      >
+                        {t('Approve')} <span>{tokenApprovalStatus.quoteSymbolUpper}</span>
+                      </button>
+                    )}
+                    {tokenApprovalStatus.quoteStatus === ApprovalStatus.Pending && (
+                      <div className="flex-center position-relative py-2">
+                        <span className="px-1">{tokenApprovalStatus.quoteSymbolUpper}</span> {t('approval_change_pending')}
+                        <div className="px-2 ico-spinner spinner fs15"></div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* MP-28: Unsupported-asset-version loader message.
+                    Vanilla's `setLoaderMsgVisibility` also hides `notRegistered`
+                    and `noWallet` (but NOT the 4 bond/registration status
+                    panels — those can co-exist with the loaderMsg). */}
+                {loaderMsgText && (
+                  <div className="fs15 pt-3 text-center">{loaderMsgText}</div>
+                )}
+
+                {/* Not registered notice (viewOnly DEX). Gated on loaderMsgText
+                    per vanilla. */}
+                {!loaderMsgText && statusPanel.kind === 'notRegistered' && selected && (
                   <div>
                     <div className="p-3 flex-center fs17 grey">{t('create_account_to_trade')}</div>
                     <div className="border-top border-bottom flex-center p-2">
-                      <p className="text-center fs14 p-2 m-0">{t('need_to_register_msg')}</p>
+                      <p className="text-center fs14 p-2 m-0">{t('need_to_register_msg', { host: selected.host })}</p>
                       <button
                         type="button"
                         className="text-nowrap"
@@ -1989,8 +2341,79 @@ export default function MarketsPage () {
                   </div>
                 )}
 
-                {/* Reputation & Trading Tier (collapsible) */}
-                {selected && currentXc && isRegistered && (
+                {/* MP-29: Bond creation pending — posting bonds shortly. */}
+                {statusPanel.kind === 'bondCreationPending' && selected && (
+                  <div className="p-2 mt-2">
+                    <div className="p-0 w-100">
+                      <div className="d-flex flex-column justify-content-center align-items-center">
+                        <p className="title">{t('posting_bonds_shortly')}</p>
+                        <p>{t('bond_creation_pending_msg', { host: selected.host })}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MP-30: Registration status — waiting for bond confirmations. */}
+                {statusPanel.kind === 'registrationStatus' && selected && (
+                  <div className="p-2 mt-2 waiting">
+                    <div className="p-0 w-100">
+                      <div className="d-flex flex-column justify-content-center align-items-center">
+                        <span className="title">{statusPanel.regStatusTitle}</span>
+                        <p>{t('reg_status_msg', { host: selected.host })}</p>
+                        <span>{statusPanel.regStatusConfs}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MP-31: Penalty-comps required to trade. */}
+                {statusPanel.kind === 'penaltyCompsRequired' && selected && (
+                  <div className="p-2 mt-2">
+                    <div className="p-3 flex-center fs16 grey">{t('action_required_to_trade')}</div>
+                    <div className="border-top border-bottom flex-center p-2">
+                      <p className="text-center fs14 p-2 m-0">
+                        {t('set_penalty_comps', {
+                          penalties: statusPanel.penalties ?? 0,
+                          penaltyComps: statusPanel.penaltyComps ?? 0,
+                        })}{' '}
+                        <a
+                          className="fs15 hoverbg subtlelink pointer"
+                          onClick={() => navigate(`/dexsettings/${encodeURIComponent(selected.host)}`)}
+                        >
+                          {t('update_penalty_comps')}
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* MP-32: Bond required — tier 0, no target tier set. */}
+                {statusPanel.kind === 'bondRequired' && selected && (
+                  <div className="p-2 mt-2">
+                    <div className="p-3 flex-center fs17 grey">{t('action_required_to_trade')}</div>
+                    <div className="border-top border-bottom flex-center p-2">
+                      <p className="text-center fs16 p-2 m-0">
+                        {t('acct_tier_post_bond', { tier: statusPanel.effectiveTier ?? 0 })}{' '}
+                        <a
+                          className="fs16 hoverbg subtlelink pointer"
+                          onClick={() => navigate(`/dexsettings/${encodeURIComponent(selected.host)}`)}
+                        >
+                          {t('enable_bond_maintenance')}
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* MP-33: No-wallet CTA (missing / disabled / not-running) */}
+                {!loaderMsgText && noWalletMsg && (
+                  <div className="p-3 border-bottom flex-center fs17 grey">{noWalletMsg}</div>
+                )}
+
+                {/* Reputation & Trading Tier (collapsible)
+                    MP-36: visible only when effectiveTier > 0 || pendingStrength > 0
+                    MP-35: parcel size shown in BOTH base and quote amounts */}
+                {selected && currentXc && isRegistered && tierData && tierData.visible && (
                   <div>
                     <div
                       className="p-2 grey fs15 hoverbg pointer"
@@ -1999,12 +2422,24 @@ export default function MarketsPage () {
                       <span className={`ico-${showTradingTier ? 'minus' : 'plus'} fs10 me-2`}></span>
                       <span>{showTradingTier ? t('Hide trading tier info') : t('Show trading tier info')}</span>
                     </div>
-                    {showTradingTier && tierData && (
+                    {showTradingTier && (
                       <div className="d-flex flex-stretch-column fs15 mx-2 mb-2 border">
                         <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1 border-bottom">
                           <div className="d-flex justify-content-between align-items-center">
                             <span>{t('Parcel Size')}</span>
                             <span>{tierData.parcelSize} {t('lots')}</span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span></span>
+                            <span>
+                              {tierData.parcelSizeBaseStr} <span className="grey">{tierData.baseUnit}</span>
+                            </span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span></span>
+                            <span>
+                              ~ {tierData.parcelSizeQuoteStr ?? '-'} <span className="grey">{tierData.quoteUnit}</span>
+                            </span>
                           </div>
                         </div>
                         <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1">
@@ -2014,15 +2449,11 @@ export default function MarketsPage () {
                           </div>
                           <div className="d-flex justify-content-between align-items-center">
                             <span>{t('Trading Limit')}</span>
-                            <span>{tierData.parcelLimit} lots</span>
+                            <span>{tierData.tradingLimitStr} {t('lots')}</span>
                           </div>
                           <div className="d-flex justify-content-between align-items-center">
                             <span>{t('Current Usage')}</span>
-                            <span>
-                              {tierData.parcelLimit > 0
-                                ? (tierData.usedParcels / tierData.parcelLimit * 100).toFixed(1)
-                                : '0'}%
-                            </span>
+                            <span>{tierData.limitUsageStr}%</span>
                           </div>
                         </div>
                       </div>
@@ -2045,6 +2476,14 @@ export default function MarketsPage () {
                 {/* Open Orders */}
                 <div className="my-1 border-top">
                   <div className="text-center demi fs20 p-1">{t('Open Orders')}</div>
+                  {/* MP-34: Unready-wallets warning — shown when any active
+                      user order is on a wallet that isn't ready-to-tick and
+                      has in-flight matches (funds could get stuck). */}
+                  {hasUnreadyOrders && (
+                    <div className="px-3 flex-center fs15 p-1 border-bottom text-danger">
+                      {t('unready_wallets_msg')}
+                    </div>
+                  )}
                   {activeOrders.length === 0
                     ? <div className="flex-center fs15 pb-1 border-bottom grey">no recent activity</div>
                     : (
@@ -2140,6 +2579,31 @@ export default function MarketsPage () {
           </div>{/* closes #mainContent */}
         </div>{/* closes h-100 w-100 */}
       </div>{/* closes flex-grow-1 position-relative */}
+
+      {/* MP-59: Approve token form modal. Opens when `approveAssetID` is set
+          (triggered by the approveBase / approveQuote buttons in MP-27 panel).
+          `TokenApprovalForm` is already ported as a shared component and
+          handles its own fee estimation, balance check, and submission flow. */}
+      <FormOverlay show={approveAssetID !== null} onClose={() => setApproveAssetID(null)}>
+        {approveAssetID !== null && selected && (
+          <div className="form-panel bg-dark-2 p-3 border position-relative" style={{ maxWidth: 500 }}>
+            <div className="form-closer" onClick={() => setApproveAssetID(null)}>
+              <span className="ico-cross"></span>
+            </div>
+            <header className="fs20 mb-2">
+              {t('Approve')}{' '}
+              <span className="d-inline-block">
+                {assets[approveAssetID]?.unitInfo.conventional.unit ?? ''}
+              </span>
+            </header>
+            <TokenApprovalForm
+              assetID={approveAssetID}
+              host={selected.host}
+              onSuccess={() => setApproveAssetID(null)}
+            />
+          </div>
+        )}
+      </FormOverlay>
 
     </div>
   )
