@@ -925,6 +925,14 @@ function OrderForm ({
   // invalid submission. Matches the vanilla highlightOutlineRed animation.
   const priceBoxRef = useRef<HTMLDivElement | null>(null)
   const qtyBoxRef = useRef<HTMLDivElement | null>(null)
+  // MP-70: refs to the actual <input> elements so the wrapper-level click
+  // handlers (which let the user click anywhere in the price/qty box to
+  // focus the input — vanilla `markets.ts` L366-368, L392-394) can call
+  // `.focus()` directly. The visual `.selected` border state is handled
+  // entirely by the SCSS `:focus-within` rule on `.order-form-input`,
+  // so no JS class toggling is needed.
+  const rateInputRef = useRef<HTMLInputElement | null>(null)
+  const qtyInputRef = useRef<HTMLInputElement | null>(null)
   const flashInvalid = useCallback((el: HTMLElement | null) => {
     if (!el) return
     el.classList.remove('flash-invalid')
@@ -1041,9 +1049,29 @@ function OrderForm ({
   }, [bui, qui, currentMkt, isSell])
 
   const handleRateBlur = useCallback(() => {
-    if (!bui || !qui || !currentMkt || !rateAtomRef.current) return
-    setRateInput(formatRateAtomToRateStep(rateAtomRef.current, bui, qui, currentMkt.ratestep, isSell))
-  }, [bui, qui, currentMkt, isSell])
+    if (!bui || !qui || !currentMkt) return
+    // MP-72: vanilla splits rate field handling into 'input' (live, fast
+    // path for "perfect" inputs only) and 'change' (commit, slower path
+    // that handles invalidity and rate-step rounding with an error
+    // animation). React's handleRateChange is the live input path, this
+    // is the commit path. Detect both invalid and rounded-down inputs by
+    // re-parsing the typed value and comparing against the adjusted
+    // value already stored in `rateAtomRef` by handleRateChange — if
+    // they differ, the input was rounded; if it parsed to 0, it was
+    // invalid (vanilla L3030 animates errors in both cases).
+    const typedAtom = parseConvRate(rateInput, bui, qui)
+    if (typedAtom === 0) {
+      // Empty is silent, anything else is a parse error worth flashing.
+      if (rateInput.trim().length > 0) flashInvalid(priceBoxRef.current)
+      return
+    }
+    if (typedAtom !== rateAtomRef.current) {
+      flashInvalid(priceBoxRef.current)
+    }
+    if (rateAtomRef.current > 0) {
+      setRateInput(formatRateAtomToRateStep(rateAtomRef.current, bui, qui, currentMkt.ratestep, isSell))
+    }
+  }, [bui, qui, currentMkt, isSell, rateInput, flashInvalid])
 
   const handleRateStep = useCallback((direction: 1 | -1) => {
     if (!bui || !qui || !currentMkt) return
@@ -1080,10 +1108,25 @@ function OrderForm ({
   }, [bui, currentMkt, syncSlider])
 
   const handleQtyBlur = useCallback(() => {
-    if (!bui || !currentMkt || !qtyAtomRef.current) return
-    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, currentMkt.lotsize))
+    if (!bui || !currentMkt) return
+    // MP-72: same input/change split as the rate field — flash the
+    // outline if the typed value is invalid or got rounded down to a
+    // sub-lot value. Vanilla `qtyField{Buy,Sell}ChangeHandler` calls
+    // `animateErrors(highlightOutlineRed(qtyBox*))` when parseQtyInput
+    // returns invalid or rounded; mirror that here.
+    const typedAtom = parseConvQty(qtyInput, bui)
+    if (typedAtom === 0) {
+      if (qtyInput.trim().length > 0) flashInvalid(qtyBoxRef.current)
+      return
+    }
+    if (typedAtom !== qtyAtomRef.current) {
+      flashInvalid(qtyBoxRef.current)
+    }
+    if (qtyAtomRef.current > 0) {
+      setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, currentMkt.lotsize))
+    }
     syncSlider()
-  }, [bui, currentMkt, syncSlider])
+  }, [bui, currentMkt, syncSlider, qtyInput, flashInvalid])
 
   const handleQtyStep = useCallback((direction: 1 | -1) => {
     if (!bui || !currentMkt) return
@@ -1251,10 +1294,18 @@ function OrderForm ({
     <>
       <section id={isSell ? 'orderFormSell' : 'orderFormBuy'} className="px-1">
         <form className="d-flex flex-stretch-column py-1" autoComplete="off">
-          {/* Price input */}
-          <div ref={priceBoxRef} className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+          {/* Price input. MP-70: clicking anywhere in the wrapper focuses
+              the input (vanilla L366-368). The visual focus border is
+              handled by the SCSS `:focus-within` rule on
+              `.order-form-input`, so no JS class toggling is needed. */}
+          <div
+            ref={priceBoxRef}
+            className="d-flex flex-stretch-row align-items-center order-form-input select m-1"
+            onClick={() => rateInputRef.current?.focus()}
+          >
             <label className="form-label grey fs18 px-2">Price</label>
             <input
+              ref={rateInputRef}
               type="text"
               className="text-end demi fs18 p-0"
               value={rateInput}
@@ -1275,10 +1326,16 @@ function OrderForm ({
               </div>
             </div>
           </div>
-          {/* Quantity input */}
-          <div ref={qtyBoxRef} className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+          {/* Quantity input. MP-70: same focus-on-wrapper-click behavior
+              as the price box (vanilla L392-394). */}
+          <div
+            ref={qtyBoxRef}
+            className="d-flex flex-stretch-row align-items-center order-form-input select m-1"
+            onClick={() => qtyInputRef.current?.focus()}
+          >
             <label className="form-label grey fs18 px-2">Quantity</label>
             <input
+              ref={qtyInputRef}
               type="text"
               className="text-end demi fs18 p-0"
               value={qtyInput}

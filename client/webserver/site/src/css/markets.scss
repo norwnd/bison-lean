@@ -53,8 +53,15 @@ div[data-handler=markets] {
       transition-duration: 300ms;
       transition-timing-function: ease-in-out;
 
+      // MP-70: `:focus-within` is the modern equivalent of vanilla's
+      // JS-managed `.selected` class — it applies the focus border when
+      // any descendant (the rate/qty input) has focus, no JS toggling
+      // needed. `&:focus` and `&.selected` are kept as compatibility
+      // safety nets in case any caller adds `tabindex` to the wrapper or
+      // sets the class manually.
       &:hover,
       &:focus,
+      &:focus-within,
       &.selected {
         border: 1.5px solid var(--text-warning);
       }
