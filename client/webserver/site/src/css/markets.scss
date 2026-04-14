@@ -1,6 +1,30 @@
 @import "mixins";
 
+// Invalid-input outline flash. The color is exposed as a CSS variable so dark
+// mode can override it (see div[data-handler=markets] rules below).
+@keyframes flash-invalid-outline {
+  0% {
+    outline: 2px solid var(--flash-invalid-color);
+  }
+
+  100% {
+    outline: 2px solid transparent;
+  }
+}
+
+body.dark div[data-handler=markets] {
+  --flash-invalid-color: rgb(203 94 94 / 80%);
+}
+
 div[data-handler=markets] {
+  --flash-invalid-color: rgb(153 48 43 / 80%);
+
+  // Transient red-outline flash, triggered from React state to hint at an
+  // invalid input. Matches the vanilla highlightOutlineRed animation.
+  .flash-invalid {
+    animation: flash-invalid-outline 500ms ease-in forwards;
+  }
+
   .ordertable-wrap {
     width: 100%;
 
@@ -470,12 +494,13 @@ div[data-handler=markets] {
       width: 100%; // takes care of stretching to full parent size
       height: 100%; // takes care of stretching to full parent size
 
-      #ownBookOrder{
+      .own-book-order {
         background-color: var(--text-warning);
         border-radius: 50%;
         height: 4px;
         top: 10px;
         width: 4px;
+        position: relative;
       }
     }
   }

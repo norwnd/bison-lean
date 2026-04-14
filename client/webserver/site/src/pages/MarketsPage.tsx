@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
+import { leftMarketDockLK, fetchLocal, storeLocal } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
+import { useUIStore } from '../stores/useUIStore'
 import { useWebSocketStore } from '../stores/useWebSocketStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
@@ -42,6 +44,9 @@ const ORDER_BOOK_SIDE_MAX = 13
 const MAX_ACTIVE_ORDERS = 8
 const MAX_COMPLETED_ORDERS = 100
 const CANDLE_DUR_24H = '24h'
+// Beyond this divergence (10%) an order is treated as completely irrelevant for
+// the row-weight gradient (MP-05) and the rate-delta display is capped (MP-01).
+const MAX_PRICE_DIVERGENCE = 0.10
 
 const COMPLETED_PERIODS: { key: string; label: string; ms: number }[] = [
   { key: 'hide', label: 'Hide', ms: 0 },
@@ -125,6 +130,49 @@ function midGapRate (book: OrderBook | null): number {
   return bestBuy || bestSell || 0
 }
 
+/**
+ * binOrdersByRateAndEpoch groups sorted orders by rate, placing booked and
+ * epoch orders in separate bins (epoch bin comes after non-epoch bin when they
+ * share a rate). Drives the grouped-row display with a .numorders badge.
+ */
+function binOrdersByRateAndEpoch (orders: MiniOrder[]): MiniOrder[][] {
+  if (!orders || !orders.length) return []
+  const bins: MiniOrder[][] = []
+  let currEpochBin: MiniOrder[] = []
+  let currNonEpochBin: MiniOrder[] = []
+  let currRate = orders[0].msgRate
+  if (orders[0].epoch) currEpochBin.push(orders[0])
+  else currNonEpochBin.push(orders[0])
+  for (let i = 1; i < orders.length; i++) {
+    if (orders[i].msgRate !== currRate) {
+      bins.push(currNonEpochBin)
+      bins.push(currEpochBin)
+      currEpochBin = []
+      currNonEpochBin = []
+      currRate = orders[i].msgRate
+    }
+    if (orders[i].epoch) currEpochBin.push(orders[i])
+    else currNonEpochBin.push(orders[i])
+  }
+  bins.push(currNonEpochBin)
+  bins.push(currEpochBin)
+  return bins.filter(bin => bin.length > 0)
+}
+
+interface OrderBookDisplayRow {
+  rate: number
+  msgRate: number
+  qty: number
+  numOrders: number
+  isEpoch: boolean
+  hasOwnOrder: boolean
+  deltaText: string
+  deltaInverted: boolean
+  priceRelevance: number
+  rowWeightRatio: number
+  key: string
+}
+
 /** Parse a decimal string to a rate atom value. Returns 0 on failure. */
 function parseConvRate (s: string, bui: UnitInfo, qui: UnitInfo): number {
   const v = parseFloat(s.replace(',', '.'))
@@ -185,6 +233,76 @@ function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMarket[] 
 // ---------------------------------------------------------------------------
 // UserOrderRow — expandable row matching original .user-order template
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// OrderBookRow — one grouped row in the order book
+// Implements MP-01 (rate delta), MP-02 (own-order marker),
+// MP-03 (epoch check icons), MP-04 (numorders badge),
+// MP-05 (weight gradient background).
+// ---------------------------------------------------------------------------
+interface OrderBookRowProps {
+  row: OrderBookDisplayRow
+  sell: boolean
+  bui: UnitInfo
+  qui: UnitInfo
+  ratestep: number
+  lotsize: number
+  darkMode: boolean
+  onClick: () => void
+}
+
+function OrderBookRow ({ row, sell, bui, qui, ratestep, lotsize, darkMode, onClick }: OrderBookRowProps) {
+  // MP-05: background gradient colors match the pre-migration palette.
+  const buyBg = darkMode ? '#102821' : '#d9f5e1'
+  const sellBg = darkMode ? '#35141D' : '#ffe7e7'
+  const bgColor = sell ? sellBg : buyBg
+  const bgPct = row.priceRelevance * row.rowWeightRatio * 100
+  const bgStyle: React.CSSProperties = {
+    background: `linear-gradient(to left, ${bgColor} ${bgPct}%, transparent 0%)`
+  }
+
+  // MP-01: rate delta color inverts when the order sits on the "wrong" side of
+  // the external price, so the operator can see it at a glance.
+  const baseColor = sell ? 'var(--sell-color)' : 'var(--buy-color)'
+  const invertedColor = sell ? 'var(--buy-color)' : 'var(--sell-color)'
+  const deltaColor = row.deltaInverted ? invertedColor : baseColor
+
+  return (
+    <tr
+      className="d-flex justify-content-between px-2 w-100 pointer"
+      style={bgStyle}
+      onClick={onClick}
+    >
+      <td className="d-flex align-items-center text-nowrap pe-2">
+        <span className="fs17" style={{ color: baseColor }}>
+          {formatRateAtomToRateStep(row.rate, bui, qui, ratestep, sell)}
+        </span>
+        <span className="fs14 ps-1" style={{ color: deltaColor }}>
+          {row.deltaText}
+        </span>
+        {row.hasOwnOrder && <div className="own-book-order fs8 ms-1" />}
+        {row.isEpoch && (
+          sell
+            ? <span className="ico-check-sell fs10 ps-1" />
+            : <span className="ico-check-buy fs10 ps-1" />
+        )}
+      </td>
+      <td className="d-flex justify-content-end align-items-center ps-2">
+        {row.numOrders > 1 && (
+          <small
+            className="numorders lh1 border-rounded3 text-center"
+            title={`quantity is comprised of ${row.numOrders} orders`}
+          >
+            {row.numOrders}
+          </small>
+        )}
+        <div className="fs17 ms-2">
+          {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, lotsize)}
+        </div>
+      </td>
+    </tr>
+  )
+}
 
 interface UserOrderRowProps {
   order: Order
@@ -314,6 +432,19 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
   // Max estimation cache. Buy: keyed by rateAtom. Sell: keyed by 0.
   const maxCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
   const maxReqIdRef = useRef(0)
+
+  // Refs to the price/quantity input boxes so we can flash a red outline on
+  // invalid submission. Matches the vanilla highlightOutlineRed animation.
+  const priceBoxRef = useRef<HTMLDivElement | null>(null)
+  const qtyBoxRef = useRef<HTMLDivElement | null>(null)
+  const flashInvalid = useCallback((el: HTMLElement | null) => {
+    if (!el) return
+    el.classList.remove('flash-invalid')
+    // Force reflow so the animation restarts on repeated triggers.
+    // eslint-disable-next-line no-void
+    void el.offsetWidth
+    el.classList.add('flash-invalid')
+  }, [])
 
   // Invalidate max caches when wallets change (balance updates)
   useEffect(() => {
@@ -504,15 +635,44 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
     return formatCoinAtomToLotSizeQuoteCurrency(total, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
   }, [rateInput, qtyInput, bui, qui, currentMkt])
 
-  // Submit order: step 1 - show confirmation
+  // Submit order: step 1 - show confirmation.
+  // Validation messages/flashes match vanilla validateOrderBuy/validateOrderSell.
   const stepSubmit = useCallback(async () => {
     if (!selected || !currentMkt || !bui || !qui) return
     setOrderError('')
     const rateAtom = rateAtomRef.current
     const qtyAtom = qtyAtomRef.current
-    if (!rateAtom) { setOrderError('Rate is required'); return }
-    if (rateAtom < currentMkt.minimumRate) { setOrderError('Rate below market minimum'); return }
-    if (!qtyAtom) { setOrderError('Quantity is required'); return }
+    if (!rateAtom) {
+      setOrderError('zero rate not allowed')
+      flashInvalid(priceBoxRef.current)
+      return
+    }
+    if (rateAtom < currentMkt.minimumRate) {
+      const rateConv = RateEncodingFactor / bui.conventional.conversionFactor * qui.conventional.conversionFactor
+      const r = rateAtom / rateConv
+      const minRate = currentMkt.minimumRate / rateConv
+      setOrderError(`rate is lower than the market's minimum rate. ${r} < ${minRate}`)
+      flashInvalid(priceBoxRef.current)
+      return
+    }
+    if (!qtyAtom) {
+      setOrderError('zero quantity not allowed')
+      flashInvalid(qtyBoxRef.current)
+      return
+    }
+    // Insufficient-balance gate: the validate effect keeps maxCacheRef in sync
+    // and sets submitEnabled false with submitMsg='Insufficient balance'. If
+    // the user clicks anyway (e.g. due to a stale cache), re-check against the
+    // latest max estimate and flash the quantity box.
+    const maxEst = maxCacheRef.current[isSell ? 0 : rateAtom]
+    if (maxEst) {
+      const maxAtoms = isSell ? maxEst.swap.value : maxEst.swap.lots * currentMkt.lotsize
+      if (qtyAtom > maxAtoms) {
+        setOrderError('not enough funds')
+        flashInvalid(qtyBoxRef.current)
+        return
+      }
+    }
     const baseWallet = walletMap[selected.baseID]
     const quoteWallet = walletMap[selected.quoteID]
     if (!baseWallet || !quoteWallet) { setOrderError('Missing wallet'); return }
@@ -522,7 +682,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
       qty: qtyAtom, rate: rateAtom, tifnow: false, options: {}
     }
     setShowVerify(true)
-  }, [selected, currentMkt, bui, qui, walletMap, isSell])
+  }, [selected, currentMkt, bui, qui, walletMap, isSell, flashInvalid])
 
   // Submit order: step 2 - send to server
   const submitVerifiedOrder = useCallback(async () => {
@@ -550,7 +710,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
       <section id={isSell ? 'orderFormSell' : 'orderFormBuy'} className="px-1">
         <form className="d-flex flex-stretch-column py-1" autoComplete="off">
           {/* Price input */}
-          <div className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+          <div ref={priceBoxRef} className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
             <label className="form-label grey fs18 px-2">Price</label>
             <input
               type="text"
@@ -574,7 +734,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
             </div>
           </div>
           {/* Quantity input */}
-          <div className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+          <div ref={qtyBoxRef} className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
             <label className="form-label grey fs18 px-2">Quantity</label>
             <input
               type="text"
@@ -597,7 +757,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
               </div>
             </div>
           </div>
-          {/* Slider */}
+          {/* Slider with 5 mark indicators (0/25/50/75/100%). */}
           <div id={isSell ? 'qtySliderSell' : 'qtySliderBuy'} className="mt-2 mb-1 mx-2">
             <input
               type="range" min="0" max="1" step="0.01"
@@ -605,6 +765,11 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
               onChange={e => handleSlider(parseFloat(e.target.value))}
               style={{ backgroundSize: `${sliderValue * 100}% 100%` }}
             />
+            <div className="slider-mark slider-mark-0 mark-enabled"></div>
+            <div className={`slider-mark slider-mark-25${sliderValue > 0.25 ? ' mark-enabled' : ''}`}></div>
+            <div className={`slider-mark slider-mark-50${sliderValue > 0.50 ? ' mark-enabled' : ''}`}></div>
+            <div className={`slider-mark slider-mark-75${sliderValue > 0.75 ? ' mark-enabled' : ''}`}></div>
+            <div className={`slider-mark slider-mark-100${sliderValue >= 1.0 ? ' mark-enabled' : ''}`}></div>
           </div>
           {/* Preview total */}
           <div className="d-flex flex-stretch-row m-1">
@@ -736,6 +901,7 @@ export default function MarketsPage () {
   const walletMap = useAuthStore(s => s.walletMap)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const fetchUser = useAuthStore(s => s.fetchUser)
+  const darkMode = useUIStore(s => s.darkMode)
 
   // -------------------------------------------------------------------------
   // Market selector state
@@ -750,7 +916,18 @@ export default function MarketsPage () {
     return null
   })
   const [marketSearch, setMarketSearch] = useState('')
-  const [showMarketList, setShowMarketList] = useState(false)
+  // MP-09: persist dock visibility across reloads via leftMarketDockLK.
+  // Default is "shown" (matches the pre-migration default seeded in state.ts).
+  const [showMarketList, setShowMarketListRaw] = useState<boolean>(() => {
+    return fetchLocal(leftMarketDockLK) === '1'
+  })
+  const setShowMarketList = useCallback((next: boolean | ((prev: boolean) => boolean)) => {
+    setShowMarketListRaw(prev => {
+      const v = typeof next === 'function' ? next(prev) : next
+      storeLocal(leftMarketDockLK, v ? '1' : '0')
+      return v
+    })
+  }, [])
 
   // -------------------------------------------------------------------------
   // Order book state
@@ -1096,7 +1273,6 @@ export default function MarketsPage () {
   const selectMarket = useCallback((host: string, baseID: number, quoteID: number) => {
     setSelected({ host, baseID, quoteID })
     setSearchParams({ host, baseID: String(baseID), quoteID: String(quoteID) })
-    setShowMarketList(false)
     setBookRateAtom(0)
     setBookRateVersion(0)
   }, [setSearchParams])
@@ -1136,27 +1312,88 @@ export default function MarketsPage () {
 
   // -------------------------------------------------------------------------
   // Order book display data (memoized from bookRef + bookVersion)
+  //
+  // Produces enriched rows with:
+  //  - grouped qty + count (MP-04, via binOrdersByRateAndEpoch)
+  //  - rate delta vs external fiat price (MP-01)
+  //  - own-order flag (MP-02) sourced from activeOrders
+  //  - epoch flag (MP-03)
+  //  - priceRelevance + rowWeightRatio for bg gradient (MP-05)
+  //  - capped at ORDER_BOOK_SIDE_MAX=13 per side (MP-06)
   // -------------------------------------------------------------------------
-  const orderBookData = useMemo(() => {
+  const orderBookData = useMemo<{ buys: OrderBookDisplayRow[]; sells: OrderBookDisplayRow[] }>(() => {
     const book = bookRef.current
-    if (!book || !bui || !qui || !currentMkt) return { buys: [] as any[], sells: [] as any[] }
+    if (!book || !bui || !qui || !currentMkt || !selected) return { buys: [], sells: [] }
 
-    const mapSide = (orders: MiniOrder[]) => {
-      const rows: { rate: number; qty: number; cumQty: number; msgRate: number }[] = []
-      let cumQty = 0
-      const slice = orders.slice(0, ORDER_BOOK_SIDE_MAX)
-      for (const ord of slice) {
-        cumQty += ord.qtyAtomic
-        rows.push({ rate: ord.msgRate, qty: ord.qtyAtomic, cumQty, msgRate: ord.msgRate })
-      }
-      return rows
+    const baseFiat = fiatRatesMap[selected.baseID] ?? 0
+    const quoteFiat = fiatRatesMap[selected.quoteID] ?? 0
+    const externalPrice = (baseFiat && quoteFiat) ? baseFiat / quoteFiat : 0
+
+    const userOrderIds = new Set(activeOrders.map(o => o.id))
+
+    const buildSide = (orders: MiniOrder[], sell: boolean): OrderBookDisplayRow[] => {
+      const bestOrder = book.bestOrder(sell)
+      const heaviestOrder = book.heaviestOrder(sell, MAX_PRICE_DIVERGENCE)
+      if (!bestOrder || !heaviestOrder) return []
+
+      const allBins = binOrdersByRateAndEpoch(orders)
+      const bins = allBins.slice(0, ORDER_BOOK_SIDE_MAX)
+
+      return bins.map((bin, idx) => {
+        const firstOrder = bin[0]
+        const msgRate = firstOrder.msgRate
+        const isEpoch = !!firstOrder.epoch
+        const binQtyAtom = bin.reduce((sum, o) => sum + o.qtyAtomic, 0)
+
+        // Row weight gradient inputs (MP-05)
+        let priceDivergence = MAX_PRICE_DIVERGENCE
+        if (sell) {
+          priceDivergence = Math.min((msgRate - bestOrder.msgRate) / bestOrder.msgRate, MAX_PRICE_DIVERGENCE)
+        } else {
+          priceDivergence = Math.min((bestOrder.msgRate - msgRate) / bestOrder.msgRate, MAX_PRICE_DIVERGENCE)
+        }
+        const priceRelevance = (MAX_PRICE_DIVERGENCE - priceDivergence) / MAX_PRICE_DIVERGENCE
+        const rowWeightRatio = Math.min(binQtyAtom / heaviestOrder.qtyAtomic, 1.0)
+
+        // Own-order check (MP-02)
+        const hasOwnOrder = bin.some(o => userOrderIds.has(o.id))
+
+        // Rate delta vs external fiat price (MP-01)
+        let deltaText = '(?)'
+        let deltaInverted = false
+        if (externalPrice > 0 && firstOrder.rate > 0) {
+          const priceDelta = sell
+            ? ((firstOrder.rate - externalPrice) / externalPrice) * 100
+            : ((externalPrice - firstOrder.rate) / externalPrice) * 100
+          if (priceDelta < 9.94) {
+            deltaText = `(${priceDelta.toFixed(1)}%)`
+          } else {
+            deltaText = '(∞)'
+          }
+          deltaInverted = priceDelta < 0
+        }
+
+        return {
+          rate: msgRate,
+          msgRate,
+          qty: binQtyAtom,
+          numOrders: bin.length,
+          isEpoch,
+          hasOwnOrder,
+          deltaText,
+          deltaInverted,
+          priceRelevance,
+          rowWeightRatio,
+          key: `${sell ? 's' : 'b'}-${msgRate}-${isEpoch ? 'e' : 'n'}-${idx}`
+        }
+      })
     }
 
     return {
-      buys: mapSide(book.buys),
-      sells: mapSide(book.sells).reverse()
+      buys: buildSide(book.buys, false),
+      sells: buildSide(book.sells, true).reverse()
     }
-  }, [bookVersion, bui, qui, currentMkt])
+  }, [bookVersion, bui, qui, currentMkt, selected, fiatRatesMap, activeOrders])
 
   // -------------------------------------------------------------------------
   // Computed market stats
@@ -1306,17 +1543,33 @@ export default function MarketsPage () {
                       {filteredMarkets.map(m => {
                         const isSelected = selected?.host === m.host &&
                           selected?.baseID === m.baseID && selected?.quoteID === m.quoteID
+                        // MP-07: disconnected icon when the DEX host for this row is down.
+                        const xcForRow = exchanges[m.host]
+                        const isDisconnected = xcForRow
+                          ? xcForRow.connectionStatus !== ConnectionStatus.Connected
+                          : false
                         return (
                           <div
                             key={`${m.host}-${m.baseID}-${m.quoteID}`}
                             className={`d-flex align-items-stretch p-2 border-bottom lh1 pointer hoverbg${isSelected ? ' selected' : ''}`}
                             style={isSelected ? { backgroundColor: 'var(--tertiary-bg)' } : undefined}
                             onClick={() => selectMarket(m.host, m.baseID, m.quoteID)}
+                            onDoubleClick={() => {
+                              // MP-08: dblclick selects AND collapses the dock in one action.
+                              selectMarket(m.host, m.baseID, m.quoteID)
+                              setShowMarketList(false)
+                            }}
                           >
                             <div className="d-flex flex-column">
                               <div className="d-flex align-items-center justify-content-start flex-grow-1">
                                 <img src={logoPath(m.baseSymbol)} alt="" className="small-icon" />
                                 <img src={logoPath(m.quoteSymbol)} alt="" className="small-icon ms-1" />
+                                {isDisconnected && (
+                                  <span
+                                    className="text-danger ico-disconnected fs11 ps-1"
+                                    title="DEX host disconnected"
+                                  />
+                                )}
                               </div>
                             </div>
                             <div className="d-flex flex-column flex-grow-1 ps-1">
@@ -1339,23 +1592,18 @@ export default function MarketsPage () {
                 <div className="hoveronly overflow-x-hidden flex-stretch-column ordertable-wrap reversible">
                   <table className="compact lh1">
                     <tbody id="sellRows">
-                      {bui && qui && currentMkt && orderBookData.sells.map((row, i) => (
-                        <tr
-                          key={`s-${i}`}
-                          className="d-flex justify-content-between px-2 w-100 pointer"
+                      {bui && qui && currentMkt && orderBookData.sells.map((row) => (
+                        <OrderBookRow
+                          key={row.key}
+                          row={row}
+                          sell
+                          bui={bui}
+                          qui={qui}
+                          ratestep={currentMkt.ratestep}
+                          lotsize={currentMkt.lotsize}
+                          darkMode={darkMode}
                           onClick={() => fillRateFromBook(row.msgRate)}
-                        >
-                          <td className="d-flex align-items-center text-nowrap pe-2">
-                            <span className="fs17" style={{ color: 'var(--sell-color)' }}>
-                              {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep, true)}
-                            </span>
-                          </td>
-                          <td className="d-flex justify-content-end align-items-center ps-2">
-                            <div className="fs17 ms-2">
-                              {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
-                            </div>
-                          </td>
-                        </tr>
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -1374,23 +1622,18 @@ export default function MarketsPage () {
                 <div className="hoveronly overflow-x-hidden flex-stretch-column ordertable-wrap">
                   <table className="compact buys lh1">
                     <tbody id="buyRows">
-                      {bui && qui && currentMkt && orderBookData.buys.map((row, i) => (
-                        <tr
-                          key={`b-${i}`}
-                          className="d-flex justify-content-between px-2 w-100 pointer"
+                      {bui && qui && currentMkt && orderBookData.buys.map((row) => (
+                        <OrderBookRow
+                          key={row.key}
+                          row={row}
+                          sell={false}
+                          bui={bui}
+                          qui={qui}
+                          ratestep={currentMkt.ratestep}
+                          lotsize={currentMkt.lotsize}
+                          darkMode={darkMode}
                           onClick={() => fillRateFromBook(row.msgRate)}
-                        >
-                          <td className="d-flex align-items-center text-nowrap pe-2">
-                            <span className="fs17" style={{ color: 'var(--buy-color)' }}>
-                              {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep)}
-                            </span>
-                          </td>
-                          <td className="d-flex justify-content-end align-items-center ps-2">
-                            <div className="fs17 ms-2">
-                              {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
-                            </div>
-                          </td>
-                        </tr>
+                        />
                       ))}
                     </tbody>
                   </table>
