@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
-import { leftMarketDockLK, lastCandleDurationLK, fetchLocal, storeLocal } from '../services/state'
+import { leftMarketDockLK, lastCandleDurationLK, orderDisclaimerAckedLK, fetchLocal, storeLocal } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useUIStore } from '../stores/useUIStore'
 import { useWebSocketStore } from '../stores/useWebSocketStore'
@@ -18,7 +18,7 @@ import {
   formatRateAtomToRateStep, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  formatBestWeCan,
+  formatBestWeCan, formatFiatConversion,
   adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor
 } from '../hooks/useFormatters'
 import {
@@ -858,12 +858,19 @@ interface OrderFormProps {
   walletMap: Record<number, any>
   baseSymbol: string
   quoteSymbol: string
+  // MP-52: fiat rates for the verify-modal fiat total. Null/0 hides the
+  // total row (vanilla `showFiatValue` hides the parent when rate=0).
+  baseFiatRate: number
+  quoteFiatRate: number
   bookRateAtom: number
   bookRateVersion: number
   onOrderSubmitted: () => void
 }
 
-function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbol, quoteSymbol, bookRateAtom, bookRateVersion, onOrderSubmitted }: OrderFormProps) {
+function OrderForm ({
+  side, selected, currentMkt, bui, qui, walletMap, baseSymbol, quoteSymbol,
+  baseFiatRate, quoteFiatRate, bookRateAtom, bookRateVersion, onOrderSubmitted
+}: OrderFormProps) {
   const { t } = useTranslation()
   const isSell = side === 'sell'
   const buiConv = bui?.conventional
@@ -881,6 +888,24 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
   const [showVerify, setShowVerify] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const verifiedOrderRef = useRef<any>(null)
+
+  // MP-51: disclaimer ack state, persisted to localStorage. Vanilla
+  // `setDisclaimerAckViz` (markets.ts L479-491) hides the disclaimer+ack
+  // block once the user has acknowledged, and shows a "view warnings"
+  // toggle that re-opens it. We mirror that with a single boolean —
+  // initial read from `fetchLocal` runs once at mount via the lazy
+  // initializer so we don't re-read on every render.
+  const [disclaimerAcked, setDisclaimerAcked] = useState<boolean>(
+    () => fetchLocal(orderDisclaimerAckedLK) === true
+  )
+  const ackDisclaimer = useCallback(() => {
+    storeLocal(orderDisclaimerAckedLK, true)
+    setDisclaimerAcked(true)
+  }, [])
+  const unackDisclaimer = useCallback(() => {
+    storeLocal(orderDisclaimerAckedLK, false)
+    setDisclaimerAcked(false)
+  }, [])
 
   // Max estimation cache. Buy: keyed by rateAtom. Sell: keyed by 0.
   const maxCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
@@ -1329,72 +1354,247 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
 
       {/* Order verification modal */}
       <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
-        <form id="verifyForm" className="position-relative" autoComplete="off">
-          <div className="form-closer" onClick={() => setShowVerify(false)}><span className="ico-cross"></span></div>
-          <header className={`fs18 ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}>
-            <span className="me-2">{isSell ? 'Sell' : 'Buy'}</span> <span>{baseSymbol}</span>
-          </header>
-          {verifiedOrderRef.current && bui && qui && currentMkt && (
-            <>
-              <div className="d-flex justify-content-between align-items-center fs14">
-                <span className="grey">Limit Order</span>
-                <span className="grey">{verifiedOrderRef.current.host}</span>
-              </div>
-              <div id="verifyLimit">
-                <div className="d-flex align-items-center justify-content-between">
-                  <span className="grey fs18 flex-grow-1 text-start">{t('Price')}</span>
-                  <span className="fs18 demi">
-                    {formatRateAtomToRateStep(verifiedOrderRef.current.rate, bui, qui, currentMkt.ratestep, isSell)}
-                  </span>
-                  <span className="grey fs18 ms-2">
-                    <sup>{quiConv?.unit ?? ''}</sup>/<sub>{buiConv?.unit ?? ''}</sub>
-                  </span>
-                </div>
-                <div className="d-flex align-items-center mt-1">
-                  <span className="grey fs18 flex-grow-1 text-start">{t('You Spend')}</span>
-                  <span className="fs18 demi">
-                    {isSell
-                      ? formatCoinAtomToLotSizeBaseCurrency(verifiedOrderRef.current.qty, bui, currentMkt.lotsize)
-                      : formatCoinAtomToLotSizeQuoteCurrency(
-                          baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
-                          bui, qui, currentMkt.lotsize, currentMkt.ratestep
-                        )}
-                  </span>
-                  <span className="grey fs18 ms-2">{isSell ? buiConv?.unit : quiConv?.unit}</span>
-                </div>
-                <div className="d-flex align-items-center mt-1">
-                  <span className="grey fs18 flex-grow-1 text-start">{t('You Get')}</span>
-                  <span className="fs18 demi">
-                    {isSell
-                      ? formatCoinAtomToLotSizeQuoteCurrency(
-                          baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
-                          bui, qui, currentMkt.lotsize, currentMkt.ratestep
-                        )
-                      : formatCoinAtomToLotSizeBaseCurrency(verifiedOrderRef.current.qty, bui, currentMkt.lotsize)}
-                  </span>
-                  <span className="grey fs18 ms-2">{isSell ? quiConv?.unit : buiConv?.unit}</span>
-                </div>
-              </div>
-            </>
-          )}
-          <div className="flex-stretch-column">
-            <button
-              id="vSubmit" type="button"
-              className={`justify-content-center fs18 go ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-              disabled={submitting}
-              onClick={submitVerifiedOrder}
-            >
-              {submitting
-                ? <div className="ico-spinner spinner"></div>
-                : <><span>{isSell ? 'Sell' : 'Buy'}</span> <span>{baseSymbol}</span></>}
-            </button>
-          </div>
-          {orderError && (
-            <div className="fs17 p-3 text-center text-danger text-break">{orderError}</div>
-          )}
-        </form>
+        <VerifyOrderForm
+          isSell={isSell}
+          order={verifiedOrderRef.current}
+          bui={bui}
+          qui={qui}
+          currentMkt={currentMkt}
+          baseSymbol={baseSymbol}
+          buiUnit={buiConv?.unit ?? ''}
+          quiUnit={quiConv?.unit ?? ''}
+          baseFiatRate={baseFiatRate}
+          quoteFiatRate={quoteFiatRate}
+          submitting={submitting}
+          orderError={orderError}
+          disclaimerAcked={disclaimerAcked}
+          onAckDisclaimer={ackDisclaimer}
+          onUnackDisclaimer={unackDisclaimer}
+          onClose={() => setShowVerify(false)}
+          onSubmit={submitVerifiedOrder}
+          t={t}
+        />
       </FormOverlay>
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// VerifyOrderForm — the confirmation modal shown after the user clicks the
+// main order-form submit button. Extracted from OrderForm to keep the
+// Batch 9 parity changes (MP-51..MP-55) isolated and independently
+// testable. All inputs are props; no side effects beyond invoking the
+// callbacks passed in.
+// ---------------------------------------------------------------------------
+
+interface VerifyOrderFormProps {
+  isSell: boolean
+  order: {
+    host: string
+    rate: number
+    qty: number
+    tifnow?: boolean
+  } | null
+  bui: UnitInfo | null
+  qui: UnitInfo | null
+  currentMkt: Market | null
+  baseSymbol: string
+  buiUnit: string
+  quiUnit: string
+  baseFiatRate: number
+  quoteFiatRate: number
+  submitting: boolean
+  orderError: string
+  disclaimerAcked: boolean
+  onAckDisclaimer: () => void
+  onUnackDisclaimer: () => void
+  onClose: () => void
+  onSubmit: () => void
+  t: (key: string) => string
+}
+
+function VerifyOrderForm ({
+  isSell, order, bui, qui, currentMkt, baseSymbol, buiUnit, quiUnit,
+  baseFiatRate, quoteFiatRate, submitting, orderError,
+  disclaimerAcked, onAckDisclaimer, onUnackDisclaimer,
+  onClose, onSubmit, t
+}: VerifyOrderFormProps) {
+  // MP-54: order type label. Vanilla (markets.ts L2436-2441) reads:
+  //   const buySellStr = intl.prep(isSell ? ID_SELL : ID_BUY)
+  //   const orderDesc  = `Limit ${buySellStr} Order`
+  //   vOrderType = order.tifnow ? orderDesc + ' (immediate)' : orderDesc
+  const buySellStr = isSell ? t('Sell') : t('Buy')
+  const orderDesc = `Limit ${buySellStr} Order`
+  const orderTypeLabel = order?.tifnow ? `${orderDesc} (immediate)` : orderDesc
+
+  // MP-51: disclaimer HTML interpolation. The `order_disclaimer` i18n key
+  // still contains the Go template's `<span class=brand>` and
+  // `<span data-*-ticker>` placeholders (see en-US.json L137 + app.ts
+  // `updateMarketElements` L909-928). Vanilla populates those at runtime
+  // via a DOM walk; React replaces them at render time with string
+  // substitution before feeding to `dangerouslySetInnerHTML`.
+  const disclaimerHtml = (() => {
+    let raw = t('order_disclaimer')
+    raw = raw.replace(
+      /<span\s+class=("brand"|brand)\s*><\/span>/g,
+      'Bison Wallet'
+    )
+    raw = raw.replace(/<span\s+data-base-ticker\s*><\/span>/g, buiUnit)
+    raw = raw.replace(/<span\s+data-quote-ticker\s*><\/span>/g, quiUnit)
+    return raw
+  })()
+
+  // MP-52: fiat total. Vanilla `showFiatValue` (markets.ts L2507-2513)
+  // multiplies the atomic youGet qty by `fiatRatesMap[youGetAsset.id]` and
+  // hides the parent if rate is 0. We compute `youGetAtom` and pick the
+  // matching fiat rate based on which side of the trade is the `youGet`
+  // asset (non-sell = base is youGet; sell = quote is youGet).
+  let youSpendText = ''
+  let youGetText = ''
+  let youGetAtom = 0
+  let youGetFiatRate = 0
+  let youGetUnitInfo: UnitInfo | null = null
+  let youSpendUnit = ''
+  let youGetUnit = ''
+  let rateDisplay = ''
+  if (order && bui && qui && currentMkt) {
+    rateDisplay = formatRateAtomToRateStep(
+      order.rate, bui, qui, currentMkt.ratestep, isSell
+    )
+    const baseQty = order.qty
+    const quoteQty = baseToQuote(order.rate, order.qty)
+    if (isSell) {
+      // Sell: spend base, get quote.
+      youSpendText = formatCoinAtomToLotSizeBaseCurrency(baseQty, bui, currentMkt.lotsize)
+      youGetText = formatCoinAtomToLotSizeQuoteCurrency(quoteQty, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
+      youSpendUnit = buiUnit
+      youGetUnit = quiUnit
+      youGetAtom = quoteQty
+      youGetFiatRate = quoteFiatRate
+      youGetUnitInfo = qui
+    } else {
+      // Buy: spend quote, get base.
+      youSpendText = formatCoinAtomToLotSizeQuoteCurrency(quoteQty, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
+      youGetText = formatCoinAtomToLotSizeBaseCurrency(baseQty, bui, currentMkt.lotsize)
+      youSpendUnit = quiUnit
+      youGetUnit = buiUnit
+      youGetAtom = baseQty
+      youGetFiatRate = baseFiatRate
+      youGetUnitInfo = bui
+    }
+  }
+
+  // MP-52: only render the fiat row when we have a positive rate. Vanilla
+  // hides the parent via `Doc.hide(display.parentElement)` when rate is 0.
+  const showFiatTotal = youGetFiatRate > 0 && youGetUnitInfo !== null
+  const fiatTotalText = showFiatTotal
+    ? formatFiatConversion(youGetAtom, youGetFiatRate, youGetUnitInfo ?? undefined)
+    : ''
+
+  return (
+    <form id="verifyForm" className="position-relative" autoComplete="off">
+      <div className="form-closer" onClick={onClose}><span className="ico-cross"></span></div>
+      <header id="vHeader" className={`fs18 ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}>
+        {/* vBuySell: vanilla uses the gerund form (Selling/Buying) at
+            markets.ts L2435. */}
+        <span id="vBuySell" className="me-2">{isSell ? t('SELLING') : t('BUYING')}</span>
+        {' '}
+        <span>{baseSymbol}</span>
+      </header>
+      {order && bui && qui && currentMkt && (
+        <>
+          <div className="d-flex justify-content-between align-items-center fs14">
+            {/* MP-54: vOrderType */}
+            <span id="vOrderType" className="grey">{orderTypeLabel}</span>
+            <span id="vOrderHost" className="grey">{order.host}</span>
+          </div>
+          <div id="verifyLimit">
+            <div className="d-flex align-items-center justify-content-between">
+              <span className="grey fs18 flex-grow-1 text-start">{t('Price')}</span>
+              <span id="vRate" className="fs18 demi">{rateDisplay}</span>
+              <span className="grey fs18 ms-2">
+                <sup>{quiUnit}</sup>/<sub>{buiUnit}</sub>
+              </span>
+            </div>
+            <div className="d-flex align-items-center mt-1">
+              <span className="grey fs18 flex-grow-1 text-start">{t('You Spend')}</span>
+              {/* MP-55: prefix with `-`. Vanilla L2484. */}
+              <span id="youSpend" className="fs18 demi">{'-' + youSpendText}</span>
+              <span id="youSpendTicker" className="grey fs18 ms-2">{youSpendUnit}</span>
+            </div>
+            <div className="d-flex align-items-center mt-1">
+              <span className="grey fs18 flex-grow-1 text-start">{t('You Get')}</span>
+              {/* MP-55: prefix with `+`. Vanilla L2486. */}
+              <span id="youGet" className="fs18 demi">{'+' + youGetText}</span>
+              <span id="youGetTicker" className="grey fs18 ms-2">{youGetUnit}</span>
+            </div>
+            {/* MP-52: fiat total — hidden when fiat rate unavailable. */}
+            {showFiatTotal && (
+              <span className="d-flex justify-content-end grey fs14">
+                ~<span id="vFiatTotal" className="mx-1">{fiatTotalText}</span>USD
+              </span>
+            )}
+          </div>
+        </>
+      )}
+      <div className="flex-stretch-column">
+        {/* MP-53: hide submit button entirely while submitting and show a
+            separate loader block. Vanilla submitVerifiedOrder (L2862-2865)
+            does the same: `Doc.hide(vSubmit); Doc.show(vLoader)`. */}
+        {!submitting && (
+          <button
+            id="vSubmit"
+            type="button"
+            className={`justify-content-center fs18 go ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+            onClick={onSubmit}
+          >
+            <span id="vSideSubmit">{buySellStr}</span>
+            {' '}
+            <span>{baseSymbol}</span>
+          </button>
+        )}
+        {submitting && (
+          <div id="vLoader" className="loader flex-center">
+            <div className="ico-spinner spinner"></div>
+          </div>
+        )}
+      </div>
+      {orderError && (
+        <div id="vErr" className="fs17 p-3 text-center text-danger text-break">{orderError}</div>
+      )}
+
+      {/* MP-51: disclaimer block + ack toggle. Vanilla markets.tmpl
+          L510-520 and markets.ts L479-491. When acked, the disclaimer
+          block is hidden and a "view warnings" link is shown; clicking
+          it un-acks and re-opens the block. */}
+      {!disclaimerAcked && (
+        <>
+          <div
+            id="disclaimer"
+            className="disclaimer fs17 pt-3 mt-3 border-top"
+            dangerouslySetInnerHTML={{ __html: disclaimerHtml }}
+          />
+          <div
+            id="disclaimerAck"
+            className="d-flex align-items-center grey text-center pointer hoverbg fs17"
+            onClick={onAckDisclaimer}
+          >
+            <span className="ico-check fs12 me-1"></span>
+            <span>{t('acknowledge_and_hide')}</span>
+          </div>
+        </>
+      )}
+      {disclaimerAcked && (
+        <div
+          id="showDisclaimer"
+          className="d-flex align-items-center grey text-center pointer hoverbg fs17"
+          onClick={onUnackDisclaimer}
+        >
+          <span className="ico-plus fs8 me-1 mt-1"></span>
+          <span>{t('show_disclaimer')}</span>
+        </div>
+      )}
+    </form>
   )
 }
 
@@ -2687,6 +2887,8 @@ export default function MarketsPage () {
                       walletMap={walletMap}
                       baseSymbol={baseSymbol}
                       quoteSymbol={quoteSymbol}
+                      baseFiatRate={baseFiatRate}
+                      quoteFiatRate={quoteFiatRate}
                       bookRateAtom={bookRateAtom}
                       bookRateVersion={bookRateVersion}
                       onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
@@ -2701,6 +2903,8 @@ export default function MarketsPage () {
                       walletMap={walletMap}
                       baseSymbol={baseSymbol}
                       quoteSymbol={quoteSymbol}
+                      baseFiatRate={baseFiatRate}
+                      quoteFiatRate={quoteFiatRate}
                       bookRateAtom={bookRateAtom}
                       bookRateVersion={bookRateVersion}
                       onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
