@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
-import { leftMarketDockLK, fetchLocal, storeLocal } from '../services/state'
+import { leftMarketDockLK, lastCandleDurationLK, fetchLocal, storeLocal } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useUIStore } from '../stores/useUIStore'
 import { useWebSocketStore } from '../stores/useWebSocketStore'
@@ -1005,11 +1005,24 @@ export default function MarketsPage () {
   // Candle / chart state
   // -------------------------------------------------------------------------
   const [candleData, setCandleData] = useState<CandlesPayload | null>(null)
-  const [candleDur, setCandleDur] = useState(CANDLE_DUR_24H)
+  // MP-19: initial candle duration is persisted via localStorage so a user's
+  // last chosen duration survives reloads (matches vanilla drawCandleDurationBttns).
+  const [candleDur, setCandleDurState] = useState<string>(() =>
+    (fetchLocal(lastCandleDurationLK) as string | null) ?? CANDLE_DUR_24H
+  )
+  const setCandleDur = useCallback((dur: string) => {
+    setCandleDurState(dur)
+    storeLocal(lastCandleDurationLK, dur)
+  }, [])
   const [candleLoading, setCandleLoading] = useState(false)
   const [mouseCandle, setMouseCandle] = useState<Candle | null>(null)
   const candleCacheRef = useRef<Record<string, CandlesPayload>>({})
-  const reqCandleDurRef = useRef(CANDLE_DUR_24H)
+  // MP-20: bumped whenever the 5m candle cache changes so the high/low
+  // fallback can reactively pick up new data. Scoped to the 5m dur because
+  // that's the only cache entry the MP-20 fallback reads from — bumping on
+  // other durs would cost a re-render per candle_update for no benefit.
+  const [candleCacheVersion, setCandleCacheVersion] = useState(0)
+  const reqCandleDurRef = useRef(candleDur)
 
   // -------------------------------------------------------------------------
   // Trade form state (each OrderForm owns its own form state)
@@ -1069,6 +1082,13 @@ export default function MarketsPage () {
     ? !currentXc.viewOnly && currentXc.acctID !== ''
     : false
   const isConnected = currentXc?.connectionStatus === ConnectionStatus.Connected
+  // MP-18: Chart overlay message shown when the exchange is disabled or the
+  // WS connection is down. Empty string when the chart should render normally.
+  const chartErrMsg = currentXc?.disabled
+    ? 'DEX server is disabled. Visit the settings page to enable and connect to this server.'
+    : (currentXc && !isConnected)
+      ? 'Connection to dex server failed. You can close bisonw and try again later or wait for it to reconnect.'
+      : ''
 
   // -------------------------------------------------------------------------
   // Default to first available market if none selected
@@ -1091,6 +1111,7 @@ export default function MarketsPage () {
     bookRef.current = null
     setCandleData(null)
     candleCacheRef.current = {}
+    setCandleCacheVersion(0)
     setRecentMatches([])
     bumpBook()
 
@@ -1152,6 +1173,8 @@ export default function MarketsPage () {
       if (!data.payload?.candles) return
       const dur = data.payload.dur
       candleCacheRef.current[dur] = data.payload
+      // MP-20: notify the high/low fallback only when the 5m cache changes.
+      if (dur === '5m') setCandleCacheVersion(v => v + 1)
       if (reqCandleDurRef.current !== dur) return
       setCandleData(data.payload)
       setCandleLoading(false)
@@ -1170,6 +1193,9 @@ export default function MarketsPage () {
         if (last.startStamp === candle.startStamp) candles[candles.length - 1] = candle
         else candles.push(candle)
       }
+      // MP-20: live-update the high/low fallback when the 5m cache mutates
+      // so the stats header reflects drift in real time.
+      if (dur === '5m') setCandleCacheVersion(v => v + 1)
       if (reqCandleDurRef.current !== dur) return
       setCandleData({ ...cache })
     }
@@ -1464,13 +1490,35 @@ export default function MarketsPage () {
   // Computed market stats
   // -------------------------------------------------------------------------
   const spotRate = currentMkt?.spot?.rate ?? 0
+  // `midGap` reads through `bookRef.current`, but the render is already
+  // re-triggered by `bumpBook` (setState) on every book update, so the
+  // recomputed value propagates to downstream useEffects naturally.
   const midGap = midGapRate(bookRef.current)
   const displayRate = midGap || spotRate
   const spot = currentMkt?.spot
   const change24 = spot?.change24 ?? 0
   const vol24 = spot?.vol24 ?? 0
-  const high24 = spot?.high24 ?? 0
-  const low24 = spot?.low24 ?? 0
+  // MP-20: High/low prefer spot values; when missing, fall back to iterating
+  // the 5m candle cache over the last 24h (matches vanilla setHighLowMarketStats).
+  // The fallback is only reachable when the user has previously viewed 5m
+  // candles for this market (the cache is populated via WS on-demand).
+  const [high24, low24] = useMemo<[number, number]>(() => {
+    const sHigh = spot?.high24 ?? 0
+    const sLow = spot?.low24 ?? 0
+    if (sHigh > 0 && sLow > 0) return [sHigh, sLow]
+    const cache = candleCacheRef.current['5m']
+    if (!cache || !cache.candles?.length) return [sHigh, sLow]
+    const aDayAgo = Date.now() - 86400000
+    let h = 0
+    let l = 0
+    for (let i = cache.candles.length - 1; i >= 0; i--) {
+      const c = cache.candles[i]
+      if (c.endStamp < aDayAgo) break
+      if (l === 0 || (c.lowRate > 0 && c.lowRate < l)) l = c.lowRate
+      if (c.highRate > h) h = c.highRate
+    }
+    return [h || sHigh, l || sLow]
+  }, [spot, candleCacheVersion])
   // Fiat-based "external" price for the base asset (if available)
   const baseFiatRate = selected ? (fiatRatesMap[selected.baseID] ?? 0) : 0
 
@@ -1486,13 +1534,8 @@ export default function MarketsPage () {
   }, [selected, currentXc, currentMkt, exchanges])
 
   // -------------------------------------------------------------------------
-  // Render
+  // Display helpers (available to both render and effects below)
   // -------------------------------------------------------------------------
-
-  if (!user) {
-    return <div className="p-3">Loading...</div>
-  }
-
   const baseSymbol = baseAsset?.symbol?.toUpperCase() ?? ''
   const quoteSymbol = quoteAsset?.symbol?.toUpperCase() ?? ''
   const buiConv = bui?.conventional
@@ -1505,6 +1548,37 @@ export default function MarketsPage () {
     setHeaderSlot(document.getElementById('headerSlot'))
     return () => setHeaderSlot(null)
   }, [])
+
+  // MP-22: Browser tab title reflects mid-gap price and base/quote symbols.
+  // Matches vanilla updateTitle: `<midGap> | <base>/<quote> | <ogTitle>` when
+  // a mid-gap is available, else `<base>/<quote> | <ogTitle>`. Saves the
+  // original title on mount and restores it on unmount. Formats the mid-gap
+  // with `formatRateAtomToRateStep` so the title matches the rate-step
+  // precision shown in the stats header and order forms.
+  const ogTitleRef = useRef<string>('')
+  useEffect(() => {
+    ogTitleRef.current = document.title
+    return () => { document.title = ogTitleRef.current }
+  }, [])
+  useEffect(() => {
+    if (!selected) return
+    const symPair = `${baseSymbol}/${quoteSymbol}`
+    const og = ogTitleRef.current || 'Bison'
+    if (midGap && bui && qui && currentMkt) {
+      const midStr = formatRateAtomToRateStep(midGap, bui, qui, currentMkt.ratestep)
+      document.title = `${midStr} | ${symPair} | ${og}`
+    } else {
+      document.title = `${symPair} | ${og}`
+    }
+  }, [midGap, baseSymbol, quoteSymbol, bui, qui, currentMkt, selected])
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
+  if (!user) {
+    return <div className="p-3">Loading...</div>
+  }
 
   return (
     <div data-handler="markets" className="main m-0 flex-nowrap">
@@ -1559,12 +1633,12 @@ export default function MarketsPage () {
               <div className="fs14 grey ms-1">{quiConv?.unit ?? 'USD'}</div>
             </div>
             <div className="px-2 fs14 border-right">
-              {spot && bui && qui && currentMkt
+              {high24 > 0 && bui && qui && currentMkt
                 ? formatRateAtomToRateStep(high24, bui, qui, currentMkt.ratestep)
                 : '-'}
             </div>
             <div className="px-2 fs14">
-              {spot && bui && qui && currentMkt
+              {low24 > 0 && bui && qui && currentMkt
                 ? formatRateAtomToRateStep(low24, bui, qui, currentMkt.ratestep)
                 : '-'}
             </div>
@@ -1723,21 +1797,44 @@ export default function MarketsPage () {
               <section className="d-flex flex-stretch-column">
                 <div className="flex-grow-1 flex-stretch-column position-relative">
                   <div className="market-chart">
-                    <div id="candleDurBttnBox">
-                      {candleDurs.map(dur => (
-                        <button
-                          key={dur}
-                          className={`candle-dur-bttn${candleDur === dur ? ' selected' : ''}`}
-                          onClick={() => setCandleDur(dur)}
-                        >
-                          {dur}
-                        </button>
-                      ))}
-                    </div>
-                    {candleLoading && (
-                      <Wave message="Loading chart..." backgroundColor={true} />
+                    {/* MP-18: Disconnection / disabled overlay. Shown when the
+                        exchange is disabled or the connection is down. Vanilla
+                        maps this to the #chartErrMsg element and uses
+                        CONNECTION_FAILED / DEX_DISABLED_MSG i18n keys. */}
+                    {chartErrMsg && (
+                      <div id="chartErrMsg" className="flex-center text-center fs18 p-3">
+                        {chartErrMsg}
+                      </div>
                     )}
-                    <div style={{ width: '100%', height: '100%', opacity: candleLoading ? 0 : 1 }}>
+                    {/* MP-21: Hide the duration buttons while candles are loading
+                        (matches vanilla Doc.hide(page.candleDurBttnBox)). */}
+                    {!candleLoading && !chartErrMsg && (
+                      <div id="candleDurBttnBox">
+                        {candleDurs.map(dur => (
+                          <button
+                            key={dur}
+                            className={`candle-dur-bttn${candleDur === dur ? ' selected' : ''}`}
+                            onClick={() => setCandleDur(dur)}
+                          >
+                            {dur}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {candleLoading && !chartErrMsg && (
+                      <Wave message={t('waiting for candlesticks')} backgroundColor={true} />
+                    )}
+                    {/* MP-21: Canvas is made `visibility: hidden` (not just
+                        opacity 0) while loading so it doesn't intercept mouse
+                        events or the legend readout. Matches vanilla's
+                        `.invisible` class usage. */}
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        visibility: candleLoading || chartErrMsg ? 'hidden' : 'visible'
+                      }}
+                    >
                       <CandleChart
                         data={candleData}
                         market={currentMkt}
@@ -1748,7 +1845,7 @@ export default function MarketsPage () {
                       />
                     </div>
                   </div>
-                  {mouseCandle && bui && qui && currentMkt && (
+                  {!chartErrMsg && mouseCandle && bui && qui && currentMkt && (
                     <div className="grey p-1 border-bottom border-start" style={{ position: 'absolute', top: 0, right: 0 }}>
                       <div className="d-flex align-items-center">
                         <span className="ico-target fs11 me-1"></span>
