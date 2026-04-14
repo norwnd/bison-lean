@@ -1986,11 +1986,52 @@ export default function MarketsPage () {
       const ord = note.order
       if (ord.host !== selected.host) return
       if (ord.baseID !== selected.baseID || ord.quoteID !== selected.quoteID) return
+      // MP-66: vanilla `handleOrderNote` (markets.ts L2718) branches on the
+      // note topic and on the order's filled/qty equality to imperatively
+      // toggle row visibility, the cancel button, and the meta-order text.
+      // Specifically:
+      //   - 'AsyncOrderFailure' / 'AsyncOrderSubmitted' / 'OrderLoaded'
+      //     (with `readyToTick`) → `refreshRecentlyActiveOrders()`.
+      //   - 'MissedCancel' → `Doc.show(mord.details.cancelBttn)`.
+      //   - `ord.filled === ord.qty` → `Doc.hide(mord.details.cancelBttn)`.
+      //   - epoch→booked or booked→completed transition → `updateReputation`.
+      // React's reactive model collapses every branch into a single
+      // refetch-and-rerender:
+      //   - `loadActiveOrders()` re-runs the `/api/orders` query and feeds
+      //     fresh `Order` records into state, so any new order surfaced by
+      //     `OrderLoaded`/`AsyncOrderSubmitted` arrives automatically.
+      //   - `isCancellable(ord)` (used by the cancel-button conditional in
+      //     `UserOrderRow`) is a pure function of the order's status and
+      //     tif — after the refetch, `MissedCancel` orders that are still
+      //     `status < Executed` keep the button visible, and fully-filled
+      //     orders (`status >= Executed`) hide it. No imperative toggling
+      //     needed.
+      //   - `tierData` recomputes automatically when `currentXc.auth`
+      //     changes. Auth refreshes happen via `bondpost` and via the
+      //     global `feepayment` / `reputation` handlers in `AppLayout.tsx`
+      //     (added in Batch 11), both of which call `fetchUser`. So any
+      //     reputation update triggered server-side by an order status
+      //     transition flows through to React via the same notification
+      //     stream vanilla uses, and the displayed tier refreshes without
+      //     any per-handler `fetchUser` here.
       loadActiveOrders()
     },
     match: (note: MatchNote) => {
       if (!selected) return
       if (note.host !== selected.host) return
+      // MP-65: vanilla `handleMatchNote` (markets.ts L2696) does two things
+      // for matches that affect a user order on the current market:
+      //   (a) for market orders newly matched, replace the row's rate text
+      //       via `marketOrderHeaderRateString` / `marketOrderDetailsRateString`;
+      //   (b) on terminal match status (Maker→MakerRedeemed, Taker→MatchComplete)
+      //       call `updateReputation`.
+      // (a) is covered by `loadActiveOrders` → fresh `ord.matches` → the
+      // `marketOrderRateString` helper at L164 (MP-43) recomputes the
+      // displayed rate on the next render via `averageRate(ord)`. (b) is
+      // covered by the global `feepayment` / `reputation` handlers in
+      // `AppLayout.tsx` calling `fetchUser`, which refreshes
+      // `currentXc.auth` and triggers `tierData` to recompute reactively —
+      // see Batch 11 notes for the full rationale.
       loadActiveOrders()
     },
     epoch: (note: EpochNote) => {
@@ -1998,9 +2039,78 @@ export default function MarketsPage () {
       if (note.host !== selected.host || note.marketID !== currentMktId) return
       if (bookRef.current) bookRef.current.setEpoch(note.epoch)
       bumpBook()
+      // MP-62: optimistically advance user order statuses when the new
+      // epoch index passes their epoch. Vanilla `handleEpochNote`
+      // (markets.ts L2749-2773) updates the row text in-place to feel
+      // snappy without waiting for the server's follow-up `order` note.
+      // Limit orders advance to Booked (Standing tif) or Executed
+      // (Immediate tif); market orders advance to Executed unconditionally
+      // because they always run as immediate-tif and are settled within a
+      // single epoch.
+      //
+      // Race guard: between `setSelected(newMarket)` and the new
+      // `loadActiveOrders` resolving, `activeOrders` still holds entries
+      // from the previous market. Vanilla has the same window in
+      // `recentlyActiveUserOrders` (markets.ts L2758 iterates without a
+      // per-order market filter), so a stale order whose epoch numbering
+      // happens to compare-true against `note.epoch` would be advanced by
+      // mistake. We skip orders whose host/baseID/quoteID don't match the
+      // currently-selected market — `loadActiveOrders` only ever returns
+      // orders for the selected market, so any mismatch is necessarily
+      // stale and not ours to mutate.
+      setActiveOrders(prev => {
+        let changed = false
+        const next = prev.map(ord => {
+          if (
+            ord.host !== selected.host ||
+            ord.baseID !== selected.baseID ||
+            ord.quoteID !== selected.quoteID
+          ) {
+            return ord
+          }
+          const alreadyMatched = note.epoch > ord.epoch
+          if (
+            ord.type === OrderTypeLimit &&
+            ord.status === StatusEpoch &&
+            alreadyMatched
+          ) {
+            changed = true
+            return {
+              ...ord,
+              status: ord.tif === ImmediateTiF ? StatusExecuted : StatusBooked
+            }
+          }
+          if (ord.type === OrderTypeMarket && ord.status === StatusEpoch) {
+            changed = true
+            return { ...ord, status: StatusExecuted }
+          }
+          return ord
+        })
+        return changed ? next : prev
+      })
     },
     balance: (_note: BalanceNote) => {
-      // Max caches invalidated in each OrderForm via walletMap effect
+      // MP-63: vanilla `handleBalanceNote` (markets.ts L2823) does three
+      // things on a balance update:
+      //   (a) flush `mkt.maxBuys` / `mkt.maxSell` whenever the cached
+      //       buy/sell balance differs from the new available balance;
+      //   (b) call `previewMaxBuy` / `previewMaxSell` to refresh the
+      //       displayed max estimate;
+      //   (c) call `this.approveTokenForm.handleBalanceNote(note)` so the
+      //       token-approval modal updates its displayed wallet balance.
+      // All three are covered reactively in React — no imperative call
+      // needed:
+      //   (a) `useMarketStore.handleBalanceNote` (in `AppLayout`'s global
+      //       dispatcher) replaces `walletMap` with a fresh reference. The
+      //       `OrderForm` `maxCacheRef` is wiped by an effect with
+      //       `[walletMap]` deps (L937-940 in this file).
+      //   (b) `requestMax` is a `useCallback` whose deps include
+      //       `walletMap`; when it recreates, the validate `useEffect`
+      //       (L1115-1153) re-runs and calls `requestMax`, which fetches
+      //       a fresh estimate now that the cache is empty.
+      //   (c) `TokenApprovalForm` registers its own `balance` feeder
+      //       (components/common/TokenApprovalForm.tsx L47-52) that
+      //       re-reads the wallet's available balance from the auth store.
     },
     spots: (_note: SpotPriceNote) => {
       // Spot prices updated through auth store
@@ -2018,12 +2128,34 @@ export default function MarketsPage () {
       // `OrderForm` max caches — recomputes automatically via memo deps,
       // mirroring vanilla `handleWalletState` calling
       // `setTokenApprovalVisibility`. The `resolveOrderVsMMForm` half of
-      // vanilla's handler (order form suppression) stays deferred to Batch 7+.
+      // vanilla's handler (order form suppression) stays deferred — see
+      // TASKS.md section K (MP-61) for the gating-design discussion.
     },
     conn: (note: ConnEventNote) => {
       if (!selected) return
       if (note.host !== selected.host) return
-      fetchUser()
+      // MP-64: vanilla `handleConnNote` (markets.ts L3698) calls
+      //   `await app().fetchUser(); await app().loadPage('markets')`
+      // when the DEX server is enabled/disabled or the connection becomes
+      // Connected. `loadPage('markets')` is a full re-init that re-fetches
+      // book / candles / user orders / user info.
+      //
+      // Mirror that here. The useMarketStore fix (replacing the xc object
+      // with a fresh reference instead of mutating in place) makes the
+      // `currentXc` identity change on every conn note, which in turn
+      // re-runs the market-subscription `useEffect` (deps include
+      // `currentXc`) and the candle-load `useEffect`. Book and candles
+      // re-subscribe automatically. Active orders are gated by `selected`
+      // (not `currentXc`), so we explicitly refetch them here for
+      // parity with vanilla's full re-init.
+      if (
+        note.topic === 'DEXDisabled' ||
+        note.topic === 'DEXEnabled' ||
+        note.connectionStatus === ConnectionStatus.Connected
+      ) {
+        fetchUser()
+        loadActiveOrders()
+      }
     }
   }), [selected, currentMktId, bumpBook, loadActiveOrders, fetchUser])
 

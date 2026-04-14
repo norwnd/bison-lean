@@ -65,6 +65,21 @@ export function AppLayout () {
         case 'fiatrateupdate': handleRateNote(note); break
         case 'walletcreation': handleWalletCreationNote(note); break
         case 'conn': handleConnEventNote(note); break
+        // MP-65 / MP-66 reputation refresh — vanilla (markets.ts L544-545)
+        // calls `updateReputation()` from its own per-page `feepayment` and
+        // `reputation` feeders, which is a local re-render against
+        // `app().exchanges[host].auth`. Vanilla's auth is kept fresh by a
+        // global note-dispatcher in `app.ts` (the equivalent of this
+        // switch). We don't have the per-note merge logic for reputation
+        // payloads in the React store yet, so the safest reactive
+        // equivalent is to refetch the user — `fetchUser` re-pulls
+        // `/api/user`, which includes `auth.effectiveTier`,
+        // `auth.pendingStrength`, `auth.rep`, etc. Once the auth state
+        // refreshes, every page's `tierData` / reputation memo
+        // recomputes automatically. This benefits MarketsPage,
+        // DexSettingsPage, MMPage, and any other reputation-aware view.
+        case 'feepayment': fetchUser(); break
+        case 'reputation': fetchUser(); break
         case 'runstats': handleRunStatsNote(note); break
         case 'epochreport': handleEpochReportNote(note); break
         case 'cexproblems': handleCEXProblemsNote(note); break
