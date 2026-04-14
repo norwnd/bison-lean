@@ -11,6 +11,9 @@ export function Header () {
 
   return (
     <header id="header" className="d-flex align-items-center justify-content-between border-bottom">
+      {/* Left side: portal slot for page-specific header content (e.g. market stats) */}
+      <div id="headerSlot" className="d-flex align-items-center flex-grow-1 overflow-hidden" />
+
       <div className="mainlinks fs18 pe-2 text-nowrap d-flex h-100">
         {authed && (
           <Link to={ROUTES.WALLETS} className="demi hoverbg d-flex align-items-center">

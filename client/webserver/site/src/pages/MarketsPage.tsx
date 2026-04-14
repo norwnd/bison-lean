@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
@@ -11,9 +12,10 @@ import { CandleChart, CandleReporters } from '../components/charts/CandleChart'
 import { Wave } from '../components/charts/Wave'
 import OrderBook from '../components/OrderBook'
 import {
-  formatCoinValue, formatRateFullPrecision, formatFourSigFigs,
+  formatCoinValue, formatRateFullPrecision,
   formatRateAtomToRateStep, formatCoinAtomToLotSizeBaseCurrency,
-  formatCoinAtomToLotSizeQuoteCurrency, formatFiatConversion,
+  formatCoinAtomToLotSizeQuoteCurrency,
+  formatFourSigFigs,
   adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor
 } from '../hooks/useFormatters'
 import {
@@ -54,7 +56,7 @@ const COMPLETED_PERIODS: { key: string; label: string; ms: number }[] = [
 // ---------------------------------------------------------------------------
 
 function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
+  let s = symbol.split('.')[0].toLowerCase()
   if (s === 'weth') s = 'eth'
   return `/img/coins/${s}.png`
 }
@@ -181,6 +183,540 @@ function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMarket[] 
 }
 
 // ---------------------------------------------------------------------------
+// UserOrderRow — expandable row matching original .user-order template
+// ---------------------------------------------------------------------------
+
+interface UserOrderRowProps {
+  order: Order
+  bui: UnitInfo | null
+  qui: UnitInfo | null
+  mkt: Market | null
+  navigate: (path: string) => void
+  cancelOrder?: (id: string) => void
+}
+
+function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder }: UserOrderRowProps) {
+  const [expanded, setExpanded] = useState(false)
+  const isBuy = !order.sell
+  const filledPct = order.qty > 0 ? (filled(order) / order.qty * 100).toFixed(1) : '0.0'
+  const settledPct = order.qty > 0 ? (settled(order) / order.qty * 100).toFixed(1) : '0.0'
+
+  return (
+    <div className="user-order border-top border-bottom">
+      <div className="user-order-header pointer" onClick={() => setExpanded(!expanded)}>
+        <div className={`side-indicator ${isBuy ? 'buy' : 'sell'}`}></div>
+        <span className="fs16" style={{ color: isBuy ? 'var(--buy-color)' : 'var(--sell-color)' }}>
+          {isBuy ? 'Buy' : 'Sell'}
+        </span>
+        <span className="ms-1 fs16">
+          {bui && mkt ? formatCoinAtomToLotSizeBaseCurrency(order.qty, bui, mkt.lotsize) : ''}
+        </span>
+        <span className="ms-1 grey fs16">{mkt?.basesymbol?.toUpperCase() ?? ''}</span>
+        <span className="ms-1 fs16">
+          {bui && qui && mkt ? formatRateAtomToRateStep(order.rate, bui, qui, mkt.ratestep, order.sell) : ''}
+        </span>
+        <span className="flex-grow-1 d-flex align-items-center justify-content-end">
+          <span className="fs16">{statusString(order)}</span>
+        </span>
+      </div>
+      {expanded && (
+        <div className="order-details border-top border-bottom">
+          <div className="user-order-datum full-span d-flex flex-row justify-content-start align-items-center border-bottom fs14">
+            {cancelOrder && isCancellable(order) && (
+              <span
+                className="ico-cross pointer hoverbg fs11 py-2 px-3 mx-1"
+                title="Cancel order"
+                onClick={e => { e.stopPropagation(); cancelOrder(order.id) }}
+              ></span>
+            )}
+            {order.id && (
+              <a
+                className="ico-open pointer hoverbg fs13 plainlink py-2 px-3 ms-1"
+                title="Order details"
+                onClick={() => navigate(orderPath(order.id))}
+              ></a>
+            )}
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Type</span>
+            <span>{typeString(order)}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Side</span>
+            <span>{isBuy ? 'Buy' : 'Sell'}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Status</span>
+            <span>{statusString(order)}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Age</span>
+            <span>{ageSince(order.submitTime)}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Quantity</span>
+            <span>{bui && mkt ? formatCoinAtomToLotSizeBaseCurrency(order.qty, bui, mkt.lotsize) : ''}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Rate</span>
+            <span>{bui && qui && mkt ? formatRateAtomToRateStep(order.rate, bui, qui, mkt.ratestep, order.sell) : ''}</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Filled</span>
+            <span>{filledPct}%</span>
+          </div>
+          <div className="user-order-datum fs15">
+            <span>Settled</span>
+            <span>{settledPct}%</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// OrderForm — fully independent buy/sell limit-order form
+// ---------------------------------------------------------------------------
+
+interface OrderFormProps {
+  side: 'buy' | 'sell'
+  selected: SelectedMarket
+  currentMkt: Market | null
+  bui: UnitInfo | null
+  qui: UnitInfo | null
+  walletMap: Record<number, any>
+  baseSymbol: string
+  bookRateAtom: number
+  bookRateVersion: number
+  onOrderSubmitted: () => void
+}
+
+function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbol, bookRateAtom, bookRateVersion, onOrderSubmitted }: OrderFormProps) {
+  const { t } = useTranslation()
+  const isSell = side === 'sell'
+  const buiConv = bui?.conventional
+  const quiConv = qui?.conventional
+
+  // Fully independent form state
+  const [rateInput, setRateInput] = useState('')
+  const [qtyInput, setQtyInput] = useState('')
+  const rateAtomRef = useRef(0)
+  const qtyAtomRef = useRef(0)
+  const [sliderValue, setSliderValue] = useState(0)
+  const [submitEnabled, setSubmitEnabled] = useState(false)
+  const [submitMsg, setSubmitMsg] = useState('')
+  const [orderError, setOrderError] = useState('')
+  const [showVerify, setShowVerify] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const verifiedOrderRef = useRef<any>(null)
+
+  // Max estimation cache. Buy: keyed by rateAtom. Sell: keyed by 0.
+  const maxCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
+  const maxReqIdRef = useRef(0)
+
+  // Invalidate max caches when wallets change (balance updates)
+  useEffect(() => {
+    maxCacheRef.current = {}
+  }, [walletMap])
+
+  // Fill rate from order book click
+  useEffect(() => {
+    if (bookRateVersion === 0 || !bookRateAtom || !bui || !qui || !currentMkt) return
+    const adjusted = isSell
+      ? adjRateAtomsSell(bookRateAtom, currentMkt.ratestep)
+      : adjRateAtomsBuy(bookRateAtom, currentMkt.ratestep)
+    rateAtomRef.current = adjusted
+    setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, currentMkt.ratestep, isSell))
+    if (!isSell) maxCacheRef.current = {}
+  }, [bookRateVersion])
+
+  // Request max estimate for this side
+  const requestMax = useCallback(async (): Promise<MaxOrderEstimate | null> => {
+    if (!selected || !currentMkt || !bui || !qui) return null
+    if (isSell) {
+      const cached = maxCacheRef.current[0]
+      if (cached) return cached
+      const baseWallet = walletMap[selected.baseID]
+      if (!baseWallet?.running) return null
+      const res = await postJSON('/api/maxsell', {
+        host: selected.host, base: selected.baseID, quote: selected.quoteID
+      })
+      if (!checkResponse(res) || !res.maxSell) return null
+      maxCacheRef.current[0] = res.maxSell
+      return res.maxSell as MaxOrderEstimate
+    } else {
+      const rateAtom = rateAtomRef.current
+      if (!rateAtom) return null
+      const cached = maxCacheRef.current[rateAtom]
+      if (cached) return cached
+      const quoteWallet = walletMap[selected.quoteID]
+      if (!quoteWallet?.running) return null
+      const res = await postJSON('/api/maxbuy', {
+        host: selected.host, base: selected.baseID, quote: selected.quoteID, rate: rateAtom
+      })
+      if (!checkResponse(res) || !res.maxBuy) return null
+      maxCacheRef.current[rateAtom] = res.maxBuy
+      return res.maxBuy as MaxOrderEstimate
+    }
+  }, [selected, currentMkt, bui, qui, isSell, walletMap])
+
+  // Sync slider position from current qty vs max estimate
+  const syncSlider = useCallback(async () => {
+    if (!currentMkt) return
+    const lotsize = currentMkt.lotsize
+    const currentLots = Math.floor(qtyAtomRef.current / lotsize)
+    if (currentLots <= 0) { setSliderValue(0); return }
+    const maxEst = await requestMax()
+    if (maxEst && maxEst.swap.lots > 0) {
+      setSliderValue(Math.min(1, currentLots / maxEst.swap.lots))
+    }
+  }, [currentMkt, requestMax])
+
+  const handleRateChange = useCallback((value: string) => {
+    setRateInput(value)
+    if (!bui || !qui || !currentMkt) return
+    const rateAtom = parseConvRate(value, bui, qui)
+    if (!rateAtom) {
+      rateAtomRef.current = 0
+      setSubmitEnabled(false)
+      return
+    }
+    const adjusted = isSell
+      ? adjRateAtomsSell(rateAtom, currentMkt.ratestep)
+      : adjRateAtomsBuy(rateAtom, currentMkt.ratestep)
+    rateAtomRef.current = adjusted
+    if (!isSell) maxCacheRef.current = {}
+  }, [bui, qui, currentMkt, isSell])
+
+  const handleRateBlur = useCallback(() => {
+    if (!bui || !qui || !currentMkt || !rateAtomRef.current) return
+    setRateInput(formatRateAtomToRateStep(rateAtomRef.current, bui, qui, currentMkt.ratestep, isSell))
+  }, [bui, qui, currentMkt, isSell])
+
+  const handleRateStep = useCallback((direction: 1 | -1) => {
+    if (!bui || !qui || !currentMkt) return
+    const step = currentMkt.ratestep
+    let current = rateAtomRef.current || 0
+    current += step * direction
+    if (current < step) current = step
+    const adjusted = isSell
+      ? adjRateAtomsSell(current, step)
+      : adjRateAtomsBuy(current, step)
+    rateAtomRef.current = adjusted
+    setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, step, isSell))
+    if (!isSell) maxCacheRef.current = {}
+  }, [bui, qui, currentMkt, isSell])
+
+  const handleQtyChange = useCallback((value: string) => {
+    setQtyInput(value)
+    if (!bui || !currentMkt) return
+    const qtyAtom = parseConvQty(value, bui)
+    if (!qtyAtom) {
+      qtyAtomRef.current = 0
+      setSubmitEnabled(false)
+      return
+    }
+    const lots = Math.floor(qtyAtom / currentMkt.lotsize)
+    qtyAtomRef.current = lots * currentMkt.lotsize
+    syncSlider()
+  }, [bui, currentMkt, syncSlider])
+
+  const handleQtyBlur = useCallback(() => {
+    if (!bui || !currentMkt || !qtyAtomRef.current) return
+    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, currentMkt.lotsize))
+    syncSlider()
+  }, [bui, currentMkt, syncSlider])
+
+  const handleQtyStep = useCallback((direction: 1 | -1) => {
+    if (!bui || !currentMkt) return
+    const lotsize = currentMkt.lotsize
+    let current = qtyAtomRef.current || 0
+    current += lotsize * direction
+    if (current < lotsize) current = lotsize
+    const lots = Math.floor(current / lotsize)
+    qtyAtomRef.current = lots * lotsize
+    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, lotsize))
+    syncSlider()
+  }, [bui, currentMkt, syncSlider])
+
+  // Slider handler: slider value (0-1) -> qty via max lots estimate
+  const handleSlider = useCallback(async (value: number) => {
+    setSliderValue(value)
+    if (!bui || !currentMkt) return
+    const lotsize = currentMkt.lotsize
+    const maxEst = await requestMax()
+    const maxLots = maxEst?.swap.lots ?? 0
+    if (maxLots <= 0) return
+    const lots = Math.max(1, Math.floor(maxLots * value))
+    const adjQty = lots * lotsize
+    qtyAtomRef.current = adjQty
+    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(adjQty, bui, lotsize))
+  }, [bui, currentMkt, requestMax])
+
+  // Validate and enable submit button
+  useEffect(() => {
+    if (!selected || !currentMkt || !bui || !qui) {
+      setSubmitEnabled(false)
+      return
+    }
+    const rateAtom = rateAtomRef.current
+    const qtyAtom = qtyAtomRef.current
+    if (!rateAtom || !qtyAtom) {
+      setSubmitEnabled(false)
+      setSubmitMsg('')
+      return
+    }
+    let cancelled = false
+    const validate = async () => {
+      setSubmitMsg('Calculating...')
+      setSubmitEnabled(false)
+      maxReqIdRef.current++
+      const reqId = maxReqIdRef.current
+      const maxEst = await requestMax()
+      if (cancelled || reqId !== maxReqIdRef.current) return
+      if (isSell) {
+        if (!maxEst || qtyAtom > maxEst.swap.value) {
+          setSubmitEnabled(false)
+          setSubmitMsg('Insufficient balance')
+          return
+        }
+      } else {
+        if (!maxEst || qtyAtom > maxEst.swap.lots * currentMkt.lotsize) {
+          setSubmitEnabled(false)
+          setSubmitMsg('Insufficient balance')
+          return
+        }
+      }
+      setSubmitEnabled(true)
+      setSubmitMsg('')
+    }
+    validate()
+    return () => { cancelled = true }
+  }, [selected, currentMkt, bui, qui, isSell, rateInput, qtyInput, requestMax])
+
+  // Preview total
+  const previewTotal = useMemo(() => {
+    const rateAtom = rateAtomRef.current
+    const qtyAtom = qtyAtomRef.current
+    if (!rateAtom || !qtyAtom || !bui || !qui || !currentMkt) return ''
+    const total = baseToQuote(rateAtom, qtyAtom)
+    return formatCoinAtomToLotSizeQuoteCurrency(total, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
+  }, [rateInput, qtyInput, bui, qui, currentMkt])
+
+  // Submit order: step 1 - show confirmation
+  const stepSubmit = useCallback(async () => {
+    if (!selected || !currentMkt || !bui || !qui) return
+    setOrderError('')
+    const rateAtom = rateAtomRef.current
+    const qtyAtom = qtyAtomRef.current
+    if (!rateAtom) { setOrderError('Rate is required'); return }
+    if (rateAtom < currentMkt.minimumRate) { setOrderError('Rate below market minimum'); return }
+    if (!qtyAtom) { setOrderError('Quantity is required'); return }
+    const baseWallet = walletMap[selected.baseID]
+    const quoteWallet = walletMap[selected.quoteID]
+    if (!baseWallet || !quoteWallet) { setOrderError('Missing wallet'); return }
+    verifiedOrderRef.current = {
+      host: selected.host, isLimit: true, sell: isSell,
+      base: selected.baseID, quote: selected.quoteID,
+      qty: qtyAtom, rate: rateAtom, tifnow: false, options: {}
+    }
+    setShowVerify(true)
+  }, [selected, currentMkt, bui, qui, walletMap, isSell])
+
+  // Submit order: step 2 - send to server
+  const submitVerifiedOrder = useCallback(async () => {
+    if (!verifiedOrderRef.current) return
+    setSubmitting(true)
+    setOrderError('')
+    const res = await postJSON('/api/tradeasync', { order: verifiedOrderRef.current })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setOrderError(res.msg || 'Order submission failed')
+      return
+    }
+    setShowVerify(false)
+    qtyAtomRef.current = currentMkt?.lotsize ?? 0
+    if (bui && currentMkt) {
+      setQtyInput(formatCoinAtomToLotSizeBaseCurrency(currentMkt.lotsize, bui, currentMkt.lotsize))
+    }
+    setSliderValue(0)
+    maxCacheRef.current = {}
+    onOrderSubmitted()
+  }, [currentMkt, bui, onOrderSubmitted])
+
+  return (
+    <>
+      <section id={isSell ? 'orderFormSell' : 'orderFormBuy'} className="px-1">
+        <form className="d-flex flex-stretch-column py-1" autoComplete="off">
+          {/* Price input */}
+          <div className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+            <label className="form-label grey fs18 px-2">Price</label>
+            <input
+              type="text"
+              className="text-end demi fs18 p-0"
+              value={rateInput}
+              onChange={e => handleRateChange(e.target.value)}
+              onBlur={handleRateBlur}
+              onKeyDown={e => {
+                if (e.key === 'ArrowUp') { e.preventDefault(); handleRateStep(1) }
+                if (e.key === 'ArrowDown') { e.preventDefault(); handleRateStep(-1) }
+              }}
+            />
+            <span className="grey demi fs18 px-1">{quiConv?.unit ?? ''}</span>
+            <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
+              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleRateStep(1)}>
+                <div className="arrow-up"></div>
+              </div>
+              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleRateStep(-1)}>
+                <div className="arrow-down"></div>
+              </div>
+            </div>
+          </div>
+          {/* Quantity input */}
+          <div className="d-flex flex-stretch-row align-items-center order-form-input select m-1">
+            <label className="form-label grey fs18 px-2">Quantity</label>
+            <input
+              type="text"
+              className="text-end demi fs18 p-0"
+              value={qtyInput}
+              onChange={e => handleQtyChange(e.target.value)}
+              onBlur={handleQtyBlur}
+              onKeyDown={e => {
+                if (e.key === 'ArrowUp') { e.preventDefault(); handleQtyStep(1) }
+                if (e.key === 'ArrowDown') { e.preventDefault(); handleQtyStep(-1) }
+              }}
+            />
+            <span className="grey demi fs18 px-1">{buiConv?.unit ?? ''}</span>
+            <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
+              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleQtyStep(1)}>
+                <div className="arrow-up"></div>
+              </div>
+              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleQtyStep(-1)}>
+                <div className="arrow-down"></div>
+              </div>
+            </div>
+          </div>
+          {/* Slider */}
+          <div id={isSell ? 'qtySliderSell' : 'qtySliderBuy'} className="mt-2 mb-1 mx-2">
+            <input
+              type="range" min="0" max="1" step="0.01"
+              value={sliderValue}
+              onChange={e => handleSlider(parseFloat(e.target.value))}
+              style={{ backgroundSize: `${sliderValue * 100}% 100%` }}
+            />
+          </div>
+          {/* Preview total */}
+          <div className="d-flex flex-stretch-row m-1">
+            {isSell
+              ? (
+                <>
+                  <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
+                    {qtyInput && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                  </div>
+                  <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '⇄' : ''}</span>
+                  <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
+                    {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
+                  </div>
+                </>
+              )
+              : (
+                <>
+                  <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
+                    {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
+                  </div>
+                  <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '⇄' : ''}</span>
+                  <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
+                    {qtyInput && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                  </div>
+                </>
+              )}
+          </div>
+          {submitMsg && <div className="m-1 fs14 text-center grey">{submitMsg}</div>}
+          <button
+            type="button"
+            className={`flex-center border pointer hoverbg border-rounded3 m-1 submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+            disabled={!submitEnabled}
+            onClick={stepSubmit}
+          >
+            {isSell ? t('Sell') : t('Buy')} {baseSymbol}
+          </button>
+          {orderError && <div className="m-1 fs17 text-center text-danger text-break">{orderError}</div>}
+        </form>
+      </section>
+
+      {/* Order verification modal */}
+      <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
+        <form id="verifyForm" className="position-relative" autoComplete="off">
+          <div className="form-closer" onClick={() => setShowVerify(false)}><span className="ico-cross"></span></div>
+          <header className={`fs18 ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}>
+            <span className="me-2">{isSell ? 'Sell' : 'Buy'}</span> <span>{baseSymbol}</span>
+          </header>
+          {verifiedOrderRef.current && bui && qui && currentMkt && (
+            <>
+              <div className="d-flex justify-content-between align-items-center fs14">
+                <span className="grey">Limit Order</span>
+                <span className="grey">{verifiedOrderRef.current.host}</span>
+              </div>
+              <div id="verifyLimit">
+                <div className="d-flex align-items-center justify-content-between">
+                  <span className="grey fs18 flex-grow-1 text-start">{t('Price')}</span>
+                  <span className="fs18 demi">
+                    {formatRateAtomToRateStep(verifiedOrderRef.current.rate, bui, qui, currentMkt.ratestep, isSell)}
+                  </span>
+                  <span className="grey fs18 ms-2">
+                    <sup>{quiConv?.unit ?? ''}</sup>/<sub>{buiConv?.unit ?? ''}</sub>
+                  </span>
+                </div>
+                <div className="d-flex align-items-center mt-1">
+                  <span className="grey fs18 flex-grow-1 text-start">{t('You Spend')}</span>
+                  <span className="fs18 demi">
+                    {isSell
+                      ? formatCoinAtomToLotSizeBaseCurrency(verifiedOrderRef.current.qty, bui, currentMkt.lotsize)
+                      : formatCoinAtomToLotSizeQuoteCurrency(
+                          baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
+                          bui, qui, currentMkt.lotsize, currentMkt.ratestep
+                        )}
+                  </span>
+                  <span className="grey fs18 ms-2">{isSell ? buiConv?.unit : quiConv?.unit}</span>
+                </div>
+                <div className="d-flex align-items-center mt-1">
+                  <span className="grey fs18 flex-grow-1 text-start">{t('You Get')}</span>
+                  <span className="fs18 demi">
+                    {isSell
+                      ? formatCoinAtomToLotSizeQuoteCurrency(
+                          baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
+                          bui, qui, currentMkt.lotsize, currentMkt.ratestep
+                        )
+                      : formatCoinAtomToLotSizeBaseCurrency(verifiedOrderRef.current.qty, bui, currentMkt.lotsize)}
+                  </span>
+                  <span className="grey fs18 ms-2">{isSell ? quiConv?.unit : buiConv?.unit}</span>
+                </div>
+              </div>
+            </>
+          )}
+          <div className="flex-stretch-column">
+            <button
+              id="vSubmit" type="button"
+              className={`justify-content-center fs18 go ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+              disabled={submitting}
+              onClick={submitVerifiedOrder}
+            >
+              {submitting
+                ? <div className="ico-spinner spinner"></div>
+                : <><span>{isSell ? 'Sell' : 'Buy'}</span> <span>{baseSymbol}</span></>}
+            </button>
+          </div>
+          {orderError && (
+            <div className="fs17 p-3 text-center text-danger text-break">{orderError}</div>
+          )}
+        </form>
+      </FormOverlay>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -188,7 +724,10 @@ export default function MarketsPage () {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const ws = useWebSocketStore()
+  const isWsConnected = useWebSocketStore(s => s.connected)
+  const wsSubscribe = useWebSocketStore(s => s.subscribe)
+  const wsUnsubscribe = useWebSocketStore(s => s.unsubscribe)
+  const wsRequest = useWebSocketStore(s => s.request)
 
   // Auth store
   const user = useAuthStore(s => s.user)
@@ -231,25 +770,12 @@ export default function MarketsPage () {
   const reqCandleDurRef = useRef(CANDLE_DUR_24H)
 
   // -------------------------------------------------------------------------
-  // Trade form state
+  // Trade form state (each OrderForm owns its own form state)
   // -------------------------------------------------------------------------
-  const [tradeSide, setTradeSide] = useState<'buy' | 'sell'>('buy')
-  const [rateInput, setRateInput] = useState('')
-  const [qtyInput, setQtyInput] = useState('')
-  const [sliderValue, setSliderValue] = useState(0)
-  const rateAtomRef = useRef(0)
-  const qtyAtomRef = useRef(0)
-  const [submitEnabled, setSubmitEnabled] = useState(false)
-  const [submitMsg, setSubmitMsg] = useState('')
-  const [orderError, setOrderError] = useState('')
-  const [showVerify, setShowVerify] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const verifiedOrderRef = useRef<any>(null)
-
-  // Max estimation caches
-  const maxBuyCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
-  const maxSellCacheRef = useRef<MaxOrderEstimate | null>(null)
-  const maxReqIdRef = useRef(0)
+  const [showTradingTier, setShowTradingTier] = useState(false)
+  const [showReputation, setShowReputation] = useState(false)
+  const [bookRateAtom, setBookRateAtom] = useState(0)
+  const [bookRateVersion, setBookRateVersion] = useState(0)
 
   // -------------------------------------------------------------------------
   // Active / completed orders state
@@ -312,116 +838,21 @@ export default function MarketsPage () {
   }, [selected, allMarkets])
 
   // -------------------------------------------------------------------------
-  // Market subscription: subscribe/unsubscribe on market change
+  // Market subscription + WS route handlers (combined so that handlers
+  // are registered BEFORE the loadmarket request is sent — eliminates a
+  // race where the server response could arrive before handlers exist)
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (!selected || !isConnected) return
+    if (!selected) return
+
     // Reset state for new market
     bookRef.current = null
     setCandleData(null)
     candleCacheRef.current = {}
-    maxBuyCacheRef.current = {}
-    maxSellCacheRef.current = null
     setRecentMatches([])
     bumpBook()
 
-    // Subscribe to market
-    ws.request('loadmarket', {
-      host: selected.host,
-      base: selected.baseID,
-      quote: selected.quoteID
-    })
-
-    return () => {
-      ws.request('unmarket', {})
-    }
-  }, [selected, isConnected])
-
-  // -------------------------------------------------------------------------
-  // Load candles when market or duration changes
-  // -------------------------------------------------------------------------
-  const loadCandles = useCallback(() => {
-    if (!selected || !isConnected || !currentXc) return
-    const cache = candleCacheRef.current[candleDur]
-    if (cache) {
-      setCandleData(cache)
-      setCandleLoading(false)
-      return
-    }
-    reqCandleDurRef.current = candleDur
-    setCandleLoading(true)
-    ws.request('loadcandles', {
-      host: selected.host,
-      base: selected.baseID,
-      quote: selected.quoteID,
-      dur: candleDur
-    })
-  }, [selected, isConnected, currentXc, candleDur, ws])
-
-  useEffect(() => {
-    loadCandles()
-  }, [loadCandles])
-
-  // -------------------------------------------------------------------------
-  // Load active orders
-  // -------------------------------------------------------------------------
-  const loadActiveOrders = useCallback(async () => {
-    if (!selected) return
-    const filter: OrderFilter = {
-      hosts: [selected.host],
-      market: { baseID: selected.baseID, quoteID: selected.quoteID },
-      n: MAX_ACTIVE_ORDERS
-    }
-    const res = await postJSON('/api/orders', filter)
-    if (!checkResponse(res) || !res.orders) {
-      setActiveOrders([])
-      return
-    }
-    const active = (res.orders as Order[]).filter(ord => {
-      return ord.status < StatusExecuted || hasActiveMatches(ord)
-    })
-    setActiveOrders(active.slice(0, MAX_ACTIVE_ORDERS))
-  }, [selected])
-
-  useEffect(() => {
-    loadActiveOrders()
-  }, [loadActiveOrders])
-
-  // -------------------------------------------------------------------------
-  // Load completed orders
-  // -------------------------------------------------------------------------
-  const loadCompletedOrders = useCallback(async (period: string) => {
-    if (!selected) return
-    const entry = COMPLETED_PERIODS.find(p => p.key === period)
-    if (!entry || entry.ms === 0) {
-      setCompletedOrders([])
-      return
-    }
-    const filter: OrderFilter = {
-      hosts: [selected.host],
-      market: { baseID: selected.baseID, quoteID: selected.quoteID },
-      statuses: [StatusExecuted, StatusCanceled, StatusRevoked],
-      fresherThanUnixMs: Date.now() - entry.ms,
-      n: MAX_COMPLETED_ORDERS
-    }
-    const res = await postJSON('/api/orders', filter)
-    if (!checkResponse(res) || !res.orders) {
-      setCompletedOrders([])
-      return
-    }
-    setCompletedOrders(res.orders)
-  }, [selected])
-
-  useEffect(() => {
-    loadCompletedOrders(completedPeriod)
-  }, [completedPeriod, loadCompletedOrders])
-
-  // -------------------------------------------------------------------------
-  // WS route handlers
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    if (!selected) return
-
+    // 1) Subscribe WS handlers FIRST
     const handleBook = (data: BookUpdate) => {
       const mktBook: MarketOrderBook = data.payload
       if (!currentXc) return
@@ -437,6 +868,14 @@ export default function MarketsPage () {
       bookRef.current = book
       setRecentMatches(mktBook.book.recentMatches ?? [])
       bumpBook()
+
+      // Auto-fill initial rate into order forms (mirrors vanilla reInitOrderForms).
+      const bestBuy = book.bestBuyRateAtom()
+      const bestSell = book.bestSellRateAtom()
+      const initRate = (bestBuy && bestSell)
+        ? Math.round((bestBuy + bestSell) / 2)
+        : (bestBuy || bestSell)
+      if (initRate) fillRateFromBook(initRate)
     }
 
     const handleBookOrder = (data: BookUpdate) => {
@@ -498,26 +937,113 @@ export default function MarketsPage () {
       setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 50))
     }
 
-    ws.subscribe('book', handleBook)
-    ws.subscribe('book_order', handleBookOrder)
-    ws.subscribe('unbook_order', handleUnbookOrder)
-    ws.subscribe('update_remaining', handleUpdateRemaining)
-    ws.subscribe('epoch_order', handleEpochOrder)
-    ws.subscribe('candles', handleCandles)
-    ws.subscribe('candle_update', handleCandleUpdate)
-    ws.subscribe('epoch_match_summary', handleEpochMatchSummary)
+    wsSubscribe('book', handleBook)
+    wsSubscribe('book_order', handleBookOrder)
+    wsSubscribe('unbook_order', handleUnbookOrder)
+    wsSubscribe('update_remaining', handleUpdateRemaining)
+    wsSubscribe('epoch_order', handleEpochOrder)
+    wsSubscribe('candles', handleCandles)
+    wsSubscribe('candle_update', handleCandleUpdate)
+    wsSubscribe('epoch_match_summary', handleEpochMatchSummary)
+
+    // 2) THEN send loadmarket (handlers are guaranteed to be ready)
+    wsRequest('loadmarket', {
+      host: selected.host,
+      base: selected.baseID,
+      quote: selected.quoteID
+    })
 
     return () => {
-      ws.unsubscribe('book')
-      ws.unsubscribe('book_order')
-      ws.unsubscribe('unbook_order')
-      ws.unsubscribe('update_remaining')
-      ws.unsubscribe('epoch_order')
-      ws.unsubscribe('candles')
-      ws.unsubscribe('candle_update')
-      ws.unsubscribe('epoch_match_summary')
+      wsUnsubscribe('book')
+      wsUnsubscribe('book_order')
+      wsUnsubscribe('unbook_order')
+      wsUnsubscribe('update_remaining')
+      wsUnsubscribe('epoch_order')
+      wsUnsubscribe('candles')
+      wsUnsubscribe('candle_update')
+      wsUnsubscribe('epoch_match_summary')
+      wsRequest('unmarket', {})
     }
-  }, [selected, currentXc, currentMktId, ws, bumpBook])
+  }, [selected, isWsConnected, currentXc, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest, bumpBook])
+
+  // -------------------------------------------------------------------------
+  // Load candles when market or duration changes
+  // -------------------------------------------------------------------------
+  const loadCandles = useCallback(() => {
+    if (!selected || !currentXc) return
+    const cache = candleCacheRef.current[candleDur]
+    if (cache) {
+      setCandleData(cache)
+      setCandleLoading(false)
+      return
+    }
+    reqCandleDurRef.current = candleDur
+    setCandleLoading(true)
+    wsRequest('loadcandles', {
+      host: selected.host,
+      base: selected.baseID,
+      quote: selected.quoteID,
+      dur: candleDur
+    })
+  }, [selected, currentXc, isWsConnected, candleDur, wsRequest])
+
+  useEffect(() => {
+    loadCandles()
+  }, [loadCandles])
+
+  // -------------------------------------------------------------------------
+  // Load active orders
+  // -------------------------------------------------------------------------
+  const loadActiveOrders = useCallback(async () => {
+    if (!selected) return
+    const filter: OrderFilter = {
+      hosts: [selected.host],
+      market: { baseID: selected.baseID, quoteID: selected.quoteID },
+      n: MAX_ACTIVE_ORDERS
+    }
+    const res = await postJSON('/api/orders', filter)
+    if (!checkResponse(res) || !res.orders) {
+      setActiveOrders([])
+      return
+    }
+    const active = (res.orders as Order[]).filter(ord => {
+      return ord.status < StatusExecuted || hasActiveMatches(ord)
+    })
+    setActiveOrders(active.slice(0, MAX_ACTIVE_ORDERS))
+  }, [selected])
+
+  useEffect(() => {
+    loadActiveOrders()
+  }, [loadActiveOrders])
+
+  // -------------------------------------------------------------------------
+  // Load completed orders
+  // -------------------------------------------------------------------------
+  const loadCompletedOrders = useCallback(async (period: string) => {
+    if (!selected) return
+    const entry = COMPLETED_PERIODS.find(p => p.key === period)
+    if (!entry || entry.ms === 0) {
+      setCompletedOrders([])
+      return
+    }
+    const filter: OrderFilter = {
+      hosts: [selected.host],
+      market: { baseID: selected.baseID, quoteID: selected.quoteID },
+      statuses: [StatusExecuted, StatusCanceled, StatusRevoked],
+      fresherThanUnixMs: Date.now() - entry.ms,
+      n: MAX_COMPLETED_ORDERS
+    }
+    const res = await postJSON('/api/orders', filter)
+    if (!checkResponse(res) || !res.orders) {
+      setCompletedOrders([])
+      return
+    }
+    setCompletedOrders(res.orders)
+  }, [selected])
+
+  useEffect(() => {
+    loadCompletedOrders(completedPeriod)
+  }, [completedPeriod, loadCompletedOrders])
 
   // -------------------------------------------------------------------------
   // Note handlers (order, match, epoch, balance, spots, bond, walletstate)
@@ -542,9 +1068,7 @@ export default function MarketsPage () {
       bumpBook()
     },
     balance: (_note: BalanceNote) => {
-      // Invalidate max caches when balances change
-      maxBuyCacheRef.current = {}
-      maxSellCacheRef.current = null
+      // Max caches invalidated in each OrderForm via walletMap effect
     },
     spots: (_note: SpotPriceNote) => {
       // Spot prices updated through auth store
@@ -573,257 +1097,15 @@ export default function MarketsPage () {
     setSelected({ host, baseID, quoteID })
     setSearchParams({ host, baseID: String(baseID), quoteID: String(quoteID) })
     setShowMarketList(false)
-    setRateInput('')
-    setQtyInput('')
-    setSliderValue(0)
-    rateAtomRef.current = 0
-    qtyAtomRef.current = 0
-    setSubmitEnabled(false)
-    setOrderError('')
+    setBookRateAtom(0)
+    setBookRateVersion(0)
   }, [setSearchParams])
 
-  // -------------------------------------------------------------------------
-  // Trade form logic
-  // -------------------------------------------------------------------------
-  const isSell = tradeSide === 'sell'
-
-  const handleRateChange = useCallback((value: string) => {
-    setRateInput(value)
-    if (!bui || !qui || !currentMkt) return
-    const rateAtom = parseConvRate(value, bui, qui)
-    if (!rateAtom) {
-      rateAtomRef.current = 0
-      setSubmitEnabled(false)
-      return
-    }
-    const adjusted = isSell
-      ? adjRateAtomsSell(rateAtom, currentMkt.ratestep)
-      : adjRateAtomsBuy(rateAtom, currentMkt.ratestep)
-    rateAtomRef.current = adjusted
-    // Invalidate buy cache when rate changes (buy depends on rate)
-    if (!isSell) maxBuyCacheRef.current = {}
-  }, [bui, qui, currentMkt, isSell])
-
-  const handleRateBlur = useCallback(() => {
-    if (!bui || !qui || !currentMkt || !rateAtomRef.current) return
-    setRateInput(formatRateAtomToRateStep(rateAtomRef.current, bui, qui, currentMkt.ratestep, isSell))
-  }, [bui, qui, currentMkt, isSell])
-
-  const handleRateStep = useCallback((direction: 1 | -1) => {
-    if (!bui || !qui || !currentMkt) return
-    const step = currentMkt.ratestep
-    let current = rateAtomRef.current || 0
-    current += step * direction
-    if (current < step) current = step
-    const adjusted = isSell
-      ? adjRateAtomsSell(current, step)
-      : adjRateAtomsBuy(current, step)
-    rateAtomRef.current = adjusted
-    setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, step, isSell))
-    if (!isSell) maxBuyCacheRef.current = {}
-  }, [bui, qui, currentMkt, isSell])
-
-  const handleQtyChange = useCallback((value: string) => {
-    setQtyInput(value)
-    if (!bui || !currentMkt) return
-    const qtyAtom = parseConvQty(value, bui)
-    if (!qtyAtom) {
-      qtyAtomRef.current = 0
-      setSubmitEnabled(false)
-      return
-    }
-    const lots = Math.floor(qtyAtom / currentMkt.lotsize)
-    qtyAtomRef.current = lots * currentMkt.lotsize
-  }, [bui, currentMkt])
-
-  const handleQtyBlur = useCallback(() => {
-    if (!bui || !currentMkt || !qtyAtomRef.current) return
-    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, currentMkt.lotsize))
-  }, [bui, currentMkt])
-
-  const handleQtyStep = useCallback((direction: 1 | -1) => {
-    if (!bui || !currentMkt) return
-    const lotsize = currentMkt.lotsize
-    let current = qtyAtomRef.current || 0
-    current += lotsize * direction
-    if (current < lotsize) current = lotsize
-    const lots = Math.floor(current / lotsize)
-    qtyAtomRef.current = lots * lotsize
-    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, lotsize))
-  }, [bui, currentMkt])
-
-  // Slider handler
-  const handleSlider = useCallback((value: number) => {
-    setSliderValue(value)
-    if (!bui || !currentMkt) return
-    const lotsize = currentMkt.lotsize
-    let maxLots = 0
-    if (isSell) {
-      const ms = maxSellCacheRef.current
-      if (ms) maxLots = ms.swap.lots
-    } else {
-      const mb = maxBuyCacheRef.current[rateAtomRef.current]
-      if (mb) maxLots = mb.swap.lots
-    }
-    if (maxLots <= 0) return
-    const lots = Math.max(1, Math.floor(maxLots * value))
-    const adjQty = lots * lotsize
-    qtyAtomRef.current = adjQty
-    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(adjQty, bui, lotsize))
-  }, [bui, currentMkt, isSell])
-
-  // Max estimate: buy
-  const requestMaxBuy = useCallback(async () => {
-    if (!selected || !currentMkt || !bui || !qui) return
-    const rateAtom = rateAtomRef.current
-    if (!rateAtom) return
-    const cached = maxBuyCacheRef.current[rateAtom]
-    if (cached) return cached
-
-    const quoteWallet = walletMap[selected.quoteID]
-    if (!quoteWallet?.running) return null
-
-    const res = await postJSON('/api/maxbuy', {
-      host: selected.host, base: selected.baseID, quote: selected.quoteID, rate: rateAtom
-    })
-    if (!checkResponse(res) || !res.maxBuy) return null
-    maxBuyCacheRef.current[rateAtom] = res.maxBuy
-    return res.maxBuy as MaxOrderEstimate
-  }, [selected, currentMkt, bui, qui, walletMap])
-
-  // Max estimate: sell
-  const requestMaxSell = useCallback(async () => {
-    if (!selected || !currentMkt) return
-    if (maxSellCacheRef.current) return maxSellCacheRef.current
-
-    const baseWallet = walletMap[selected.baseID]
-    if (!baseWallet?.running) return null
-
-    const res = await postJSON('/api/maxsell', {
-      host: selected.host, base: selected.baseID, quote: selected.quoteID
-    })
-    if (!checkResponse(res) || !res.maxSell) return null
-    maxSellCacheRef.current = res.maxSell
-    return res.maxSell as MaxOrderEstimate
-  }, [selected, currentMkt, walletMap])
-
-  // Validate and update submit button on each render cycle when inputs change
-  useEffect(() => {
-    if (!selected || !currentMkt || !bui || !qui) {
-      setSubmitEnabled(false)
-      return
-    }
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
-    if (!rateAtom || !qtyAtom) {
-      setSubmitEnabled(false)
-      setSubmitMsg('')
-      return
-    }
-
-    let cancelled = false
-    const validate = async () => {
-      setSubmitMsg('Calculating...')
-      setSubmitEnabled(false)
-      maxReqIdRef.current++
-      const reqId = maxReqIdRef.current
-
-      if (isSell) {
-        const maxSell = await requestMaxSell()
-        if (cancelled || reqId !== maxReqIdRef.current) return
-        if (!maxSell || qtyAtom > maxSell.swap.value) {
-          setSubmitEnabled(false)
-          setSubmitMsg('Insufficient balance')
-          return
-        }
-      } else {
-        const maxBuy = await requestMaxBuy()
-        if (cancelled || reqId !== maxReqIdRef.current) return
-        if (!maxBuy || qtyAtom > maxBuy.swap.lots * currentMkt.lotsize) {
-          setSubmitEnabled(false)
-          setSubmitMsg('Insufficient balance')
-          return
-        }
-      }
-      setSubmitEnabled(true)
-      setSubmitMsg('')
-    }
-    validate()
-    return () => { cancelled = true }
-  }, [selected, currentMkt, bui, qui, isSell, rateInput, qtyInput, requestMaxBuy, requestMaxSell])
-
-  // Fill rate from order book click
+  // Fill rate from order book click (propagated to both OrderForm instances)
   const fillRateFromBook = useCallback((msgRate: number) => {
-    if (!bui || !qui || !currentMkt) return
-    const adjusted = isSell
-      ? adjRateAtomsSell(msgRate, currentMkt.ratestep)
-      : adjRateAtomsBuy(msgRate, currentMkt.ratestep)
-    rateAtomRef.current = adjusted
-    setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, currentMkt.ratestep, isSell))
-    if (!isSell) maxBuyCacheRef.current = {}
-  }, [bui, qui, currentMkt, isSell])
-
-  // Submit order: step 1 - validate and show confirmation
-  const stepSubmit = useCallback(async () => {
-    if (!selected || !currentMkt || !bui || !qui) return
-    setOrderError('')
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
-    if (!rateAtom) {
-      setOrderError('Rate is required')
-      return
-    }
-    if (rateAtom < currentMkt.minimumRate) {
-      setOrderError('Rate below market minimum')
-      return
-    }
-    if (!qtyAtom) {
-      setOrderError('Quantity is required')
-      return
-    }
-    const baseWallet = walletMap[selected.baseID]
-    const quoteWallet = walletMap[selected.quoteID]
-    if (!baseWallet || !quoteWallet) {
-      setOrderError('Missing wallet')
-      return
-    }
-    verifiedOrderRef.current = {
-      host: selected.host,
-      isLimit: true,
-      sell: isSell,
-      base: selected.baseID,
-      quote: selected.quoteID,
-      qty: qtyAtom,
-      rate: rateAtom,
-      tifnow: false,
-      options: {}
-    }
-    setShowVerify(true)
-  }, [selected, currentMkt, bui, qui, walletMap, isSell])
-
-  // Submit order: step 2 - send to server
-  const submitVerifiedOrder = useCallback(async () => {
-    if (!verifiedOrderRef.current) return
-    setSubmitting(true)
-    setOrderError('')
-    const res = await postJSON('/api/tradeasync', { order: verifiedOrderRef.current })
-    setSubmitting(false)
-    if (!checkResponse(res)) {
-      setOrderError(res.msg || 'Order submission failed')
-      return
-    }
-    setShowVerify(false)
-    // Reset form
-    qtyAtomRef.current = currentMkt?.lotsize ?? 0
-    if (bui && currentMkt) {
-      setQtyInput(formatCoinAtomToLotSizeBaseCurrency(currentMkt.lotsize, bui, currentMkt.lotsize))
-    }
-    setSliderValue(0)
-    maxBuyCacheRef.current = {}
-    maxSellCacheRef.current = null
-    // Reload active orders after brief delay
-    setTimeout(() => loadActiveOrders(), 1000)
-  }, [currentMkt, bui, loadActiveOrders])
+    setBookRateAtom(msgRate)
+    setBookRateVersion(v => v + 1)
+  }, [])
 
   // Cancel order
   const cancelOrder = useCallback(async (orderID: string) => {
@@ -876,22 +1158,19 @@ export default function MarketsPage () {
     }
   }, [bookVersion, bui, qui, currentMkt])
 
-  // Compute max cumulative for gradient backgrounds
-  const maxCumBuy = orderBookData.buys.length > 0
-    ? orderBookData.buys[orderBookData.buys.length - 1]?.cumQty ?? 1
-    : 1
-  const maxCumSell = orderBookData.sells.length > 0
-    ? orderBookData.sells[0]?.cumQty ?? 1
-    : 1
-
   // -------------------------------------------------------------------------
   // Computed market stats
   // -------------------------------------------------------------------------
   const spotRate = currentMkt?.spot?.rate ?? 0
-  const spot24Change = currentMkt?.spot?.change24 ?? 0
-  const spot24Vol = currentMkt?.spot?.vol24 ?? 0
   const midGap = midGapRate(bookRef.current)
   const displayRate = midGap || spotRate
+  const spot = currentMkt?.spot
+  const change24 = spot?.change24 ?? 0
+  const vol24 = spot?.vol24 ?? 0
+  const high24 = spot?.high24 ?? 0
+  const low24 = spot?.low24 ?? 0
+  // Fiat-based "external" price for the base asset (if available)
+  const baseFiatRate = selected ? (fiatRatesMap[selected.baseID] ?? 0) : 0
 
   // -------------------------------------------------------------------------
   // Trading tier / reputation data
@@ -903,15 +1182,6 @@ export default function MarketsPage () {
     const [usedParcels, parcelLimit] = tradingLimits(exchanges, selected.host)
     return { tier, usedParcels, parcelLimit, parcelSize: currentMkt.parcelsize }
   }, [selected, currentXc, currentMkt, exchanges])
-
-  // Preview total for trade form
-  const previewTotal = useMemo(() => {
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
-    if (!rateAtom || !qtyAtom || !bui || !qui || !currentMkt) return ''
-    const total = baseToQuote(rateAtom, qtyAtom)
-    return formatCoinAtomToLotSizeQuoteCurrency(total, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
-  }, [rateInput, qtyInput, bui, qui, currentMkt])
 
   // -------------------------------------------------------------------------
   // Render
@@ -926,666 +1196,482 @@ export default function MarketsPage () {
   const buiConv = bui?.conventional
   const quiConv = qui?.conventional
 
+  // Portal target: render market stats into the header slot.
+  // Use state so the portal renders after the DOM element is committed.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setHeaderSlot(document.getElementById('headerSlot'))
+    return () => setHeaderSlot(null)
+  }, [])
+
   return (
-    <div className="page-wrapper d-flex flex-column" style={{ height: '100%', overflow: 'hidden' }}>
-      {/* ================================================================= */}
-      {/* Market stats bar */}
-      {/* ================================================================= */}
-      <div className="d-flex align-items-center gap-3 px-3 py-2 border-bottom fs14" style={{ minHeight: 44, flexShrink: 0 }}>
-        <button
-          className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
-          onClick={() => setShowMarketList(!showMarketList)}
-        >
-          {baseSymbol && (
-            <img src={logoPath(baseAsset?.symbol ?? '')} alt="" className="micro-icon" />
-          )}
-          <span className="fw-bold">{baseSymbol || '---'}/{quoteSymbol || '---'}</span>
-        </button>
-        {displayRate > 0 && bui && qui && currentMkt && (
-          <span className="fw-bold">
-            {formatRateFullPrecision(displayRate, bui, qui, currentMkt.ratestep)}
-          </span>
-        )}
-        {spot24Change !== 0 && (
-          <span style={{ color: spot24Change >= 0 ? '#2e9f67' : '#d10e0e' }}>
-            {spot24Change >= 0 ? '+' : ''}{(spot24Change * 100).toFixed(2)}%
-          </span>
-        )}
-        {spot24Vol > 0 && bui && (
-          <span className="text-secondary">
-            24h Vol: {formatCoinValue(spot24Vol, bui)} {buiConv?.unit ?? ''}
-          </span>
-        )}
-        {selected && fiatRatesMap[selected.baseID] > 0 && displayRate > 0 && bui && qui && (
-          <span className="text-secondary ms-auto">
-            ${formatFiatConversion(displayRate, fiatRatesMap[selected.quoteID], qui)}
-          </span>
-        )}
-      </div>
+    <div data-handler="markets" className="main m-0 flex-nowrap">
 
       {/* ================================================================= */}
-      {/* Main grid */}
+      {/* Market stats — portalled into the header bar */}
       {/* ================================================================= */}
-      <div className="d-flex flex-grow-1" style={{ overflow: 'hidden', minHeight: 0 }}>
-        {/* --------------------------------------------------------------- */}
-        {/* Market list sidebar */}
-        {/* --------------------------------------------------------------- */}
-        {showMarketList && (
-          <div className="border-end d-flex flex-column" style={{ width: 260, flexShrink: 0, overflow: 'hidden' }}>
-            <div className="p-2">
-              <input
-                type="text"
-                className="form-control form-control-sm"
-                placeholder={t('Search markets...')}
-                value={marketSearch}
-                onChange={e => setMarketSearch(e.target.value)}
-                autoFocus
-              />
+      {selected && headerSlot && createPortal(
+        <div id="marketStats" className="d-flex align-items-center px-2">
+          <div
+            className="flex-center pointer hoverbg px-2"
+            onClick={() => setShowMarketList(prev => !prev)}
+          >
+            <div className="flex-center">
+              <img className="small-icon" src={logoPath(baseSymbol)} alt="" />
+              <img className="small-icon ms-1" src={logoPath(quoteSymbol)} alt="" />
             </div>
-            <div className="flex-grow-1 overflow-y-auto">
-              {filteredMarkets.map(m => {
-                const isSelected = selected?.host === m.host &&
-                  selected?.baseID === m.baseID && selected?.quoteID === m.quoteID
-                return (
-                  <div
-                    key={`${m.host}-${m.baseID}-${m.quoteID}`}
-                    className={`d-flex align-items-center gap-2 px-2 py-1 cursor-pointer fs13${isSelected ? ' bg-primary bg-opacity-10' : ''}`}
-                    style={{ borderLeft: isSelected ? '3px solid var(--bs-primary)' : '3px solid transparent' }}
-                    onClick={() => selectMarket(m.host, m.baseID, m.quoteID)}
-                  >
-                    <img src={logoPath(m.baseSymbol)} alt="" className="micro-icon" />
-                    <span className="fw-bold">{m.baseSymbol.toUpperCase()}/{m.quoteSymbol.toUpperCase()}</span>
-                    {m.spot && m.spot.vol24 > 0 && (
-                      <span className="text-secondary ms-auto fs12">
-                        {formatFourSigFigs(m.spot.vol24 / (assets[m.baseID]?.unitInfo?.conventional?.conversionFactor ?? 1e8))}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* --------------------------------------------------------------- */}
-        {/* Left column: Order book + Trade form */}
-        {/* --------------------------------------------------------------- */}
-        <div className="d-flex flex-column border-end" style={{ width: 320, flexShrink: 0, overflow: 'hidden' }}>
-          {/* Order book */}
-          <div className="flex-grow-1 overflow-y-auto d-flex flex-column" style={{ minHeight: 0 }}>
-            {/* Sell side (asks) - reversed so best ask at bottom */}
-            <div className="flex-grow-1 d-flex flex-column justify-content-end" style={{ minHeight: 0 }}>
-              {bui && qui && currentMkt && orderBookData.sells.map((row, i) => {
-                const pct = (row.cumQty / maxCumSell) * 100
-                return (
-                  <div
-                    key={`s-${i}`}
-                    className="d-flex px-2 py-0 cursor-pointer fs13 position-relative"
-                    style={{ lineHeight: '20px' }}
-                    onClick={() => fillRateFromBook(row.msgRate)}
-                  >
-                    <div
-                      className="position-absolute"
-                      style={{ right: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: 'rgba(209,14,14,0.08)' }}
-                    />
-                    <span className="position-relative" style={{ width: '40%', color: '#d10e0e' }}>
-                      {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep, true)}
-                    </span>
-                    <span className="position-relative text-end" style={{ width: '30%' }}>
-                      {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
-                    </span>
-                    <span className="position-relative text-end text-secondary" style={{ width: '30%' }}>
-                      {formatCoinAtomToLotSizeBaseCurrency(row.cumQty, bui, currentMkt.lotsize)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Spread / mid-gap */}
-            {bui && qui && currentMkt && displayRate > 0 && (
-              <div className="d-flex align-items-center justify-content-center py-1 border-top border-bottom fs14 fw-bold">
-                {formatRateFullPrecision(displayRate, bui, qui, currentMkt.ratestep)}
-                <span className="ms-1 text-secondary fs12">{quiConv?.unit ?? ''}</span>
-              </div>
-            )}
-
-            {/* Buy side (bids) */}
-            <div style={{ minHeight: 0 }}>
-              {bui && qui && currentMkt && orderBookData.buys.map((row, i) => {
-                const pct = (row.cumQty / maxCumBuy) * 100
-                return (
-                  <div
-                    key={`b-${i}`}
-                    className="d-flex px-2 py-0 cursor-pointer fs13 position-relative"
-                    style={{ lineHeight: '20px' }}
-                    onClick={() => fillRateFromBook(row.msgRate)}
-                  >
-                    <div
-                      className="position-absolute"
-                      style={{ right: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: 'rgba(46,159,103,0.08)' }}
-                    />
-                    <span className="position-relative" style={{ width: '40%', color: '#2e9f67' }}>
-                      {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep)}
-                    </span>
-                    <span className="position-relative text-end" style={{ width: '30%' }}>
-                      {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
-                    </span>
-                    <span className="position-relative text-end text-secondary" style={{ width: '30%' }}>
-                      {formatCoinAtomToLotSizeBaseCurrency(row.cumQty, bui, currentMkt.lotsize)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-
-            {!bookRef.current && (
-              <div className="text-center text-secondary py-4 fs13">
-                {isConnected
-                  ? 'Loading order book...'
-                  : 'Connecting...'}
-              </div>
-            )}
-          </div>
-
-          {/* --------------------------------------------------------------- */}
-          {/* Trade form */}
-          {/* --------------------------------------------------------------- */}
-          <div className="border-top p-2" style={{ flexShrink: 0 }}>
-            {/* Buy/Sell tabs */}
-            <div className="d-flex mb-2">
-              <button
-                className={`btn btn-sm flex-fill${tradeSide === 'buy' ? ' buygreen-bg text-white' : ' btn-outline-secondary'}`}
-                onClick={() => { setTradeSide('buy'); setOrderError('') }}
-              >
-                {t('BUY')}
-              </button>
-              <button
-                className={`btn btn-sm flex-fill ms-1${tradeSide === 'sell' ? ' sellred-bg text-white' : ' btn-outline-secondary'}`}
-                onClick={() => { setTradeSide('sell'); setOrderError('') }}
-              >
-                {t('SELL')}
-              </button>
-            </div>
-
-            {!isRegistered && currentXc && (
-              <div className="text-center text-warning fs13 mb-2">
-                View only - not registered on {selected?.host}
-              </div>
-            )}
-
-            {isRegistered && currentMkt && bui && qui && (
-              <>
-                {/* Rate input */}
-                <div className="mb-2">
-                  <label className="fs12 text-secondary">Price ({quiConv?.unit ?? ''})</label>
-                  <div className="d-flex align-items-center">
-                    <input
-                      type="text"
-                      className="form-control form-control-sm flex-grow-1"
-                      value={rateInput}
-                      onChange={e => handleRateChange(e.target.value)}
-                      onBlur={handleRateBlur}
-                      onKeyDown={e => {
-                        if (e.key === 'ArrowUp') { e.preventDefault(); handleRateStep(1) }
-                        if (e.key === 'ArrowDown') { e.preventDefault(); handleRateStep(-1) }
-                      }}
-                      placeholder="0"
-                    />
-                    <div className="d-flex flex-column ms-1">
-                      <button className="btn btn-sm p-0 lh-1" onClick={() => handleRateStep(1)} style={{ fontSize: 10 }}>&#9650;</button>
-                      <button className="btn btn-sm p-0 lh-1" onClick={() => handleRateStep(-1)} style={{ fontSize: 10 }}>&#9660;</button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quantity input */}
-                <div className="mb-2">
-                  <label className="fs12 text-secondary">Amount ({buiConv?.unit ?? ''})</label>
-                  <div className="d-flex align-items-center">
-                    <input
-                      type="text"
-                      className="form-control form-control-sm flex-grow-1"
-                      value={qtyInput}
-                      onChange={e => handleQtyChange(e.target.value)}
-                      onBlur={handleQtyBlur}
-                      onKeyDown={e => {
-                        if (e.key === 'ArrowUp') { e.preventDefault(); handleQtyStep(1) }
-                        if (e.key === 'ArrowDown') { e.preventDefault(); handleQtyStep(-1) }
-                      }}
-                      placeholder="0"
-                    />
-                    <div className="d-flex flex-column ms-1">
-                      <button className="btn btn-sm p-0 lh-1" onClick={() => handleQtyStep(1)} style={{ fontSize: 10 }}>&#9650;</button>
-                      <button className="btn btn-sm p-0 lh-1" onClick={() => handleQtyStep(-1)} style={{ fontSize: 10 }}>&#9660;</button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quantity slider */}
-                <div className="mb-2">
-                  <input
-                    type="range"
-                    className="form-range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={sliderValue}
-                    onChange={e => handleSlider(parseFloat(e.target.value))}
-                  />
-                  <div className="d-flex justify-content-between fs11 text-secondary">
-                    <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
-                  </div>
-                </div>
-
-                {/* Preview total */}
-                {previewTotal && (
-                  <div className="d-flex justify-content-between fs13 mb-2">
-                    <span className="text-secondary">Total</span>
-                    <span>{previewTotal} {quiConv?.unit ?? ''}</span>
-                  </div>
-                )}
-
-                {submitMsg && (
-                  <div className="fs12 text-secondary text-center mb-1">{submitMsg}</div>
-                )}
-                {orderError && (
-                  <div className="fs12 text-danger text-center mb-1">{orderError}</div>
-                )}
-
-                {/* Submit button */}
-                <button
-                  className={`btn btn-sm w-100${isSell ? ' sellred-bg' : ' buygreen-bg'} text-white`}
-                  disabled={!submitEnabled}
-                  onClick={stepSubmit}
-                >
-                  {isSell
-                    ? `Sell ${baseSymbol}`
-                    : `Buy ${baseSymbol}`}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* --------------------------------------------------------------- */}
-        {/* Center + right: Chart, orders, matches */}
-        {/* --------------------------------------------------------------- */}
-        <div className="flex-grow-1 d-flex flex-column" style={{ overflow: 'hidden', minHeight: 0 }}>
-          {/* --------------------------------------------------------------- */}
-          {/* Chart panel */}
-          {/* --------------------------------------------------------------- */}
-          <div className="border-bottom position-relative" style={{ height: '45%', minHeight: 200, flexShrink: 0 }}>
-            {/* Duration buttons */}
-            <div className="d-flex gap-1 position-absolute" style={{ top: 4, left: 8, zIndex: 10 }}>
-              {candleDurs.map(dur => (
-                <button
-                  key={dur}
-                  className={`btn btn-sm px-2 py-0 fs12${candleDur === dur ? ' btn-primary' : ' btn-outline-secondary'}`}
-                  onClick={() => setCandleDur(dur)}
-                >
-                  {dur}
-                </button>
-              ))}
-            </div>
-
-            {/* Candle legend on hover */}
-            {mouseCandle && bui && qui && currentMkt && (
-              <div className="d-flex gap-3 position-absolute fs12" style={{ top: 4, right: 8, zIndex: 10 }}>
-                <span>O: {formatRateAtomToRateStep(mouseCandle.startRate, bui, qui, currentMkt.ratestep)}</span>
-                <span>H: {formatRateAtomToRateStep(mouseCandle.highRate, bui, qui, currentMkt.ratestep)}</span>
-                <span>L: {formatRateAtomToRateStep(mouseCandle.lowRate, bui, qui, currentMkt.ratestep)}</span>
-                <span>C: {formatRateAtomToRateStep(mouseCandle.endRate, bui, qui, currentMkt.ratestep)}</span>
-                <span>Vol: {formatCoinValue(mouseCandle.matchVolume, bui)}</span>
-              </div>
-            )}
-
-            {/* Loading animation */}
-            {candleLoading && (
-              <Wave message="Loading chart..." backgroundColor={true} />
-            )}
-
-            {/* Chart canvas */}
-            <div style={{ width: '100%', height: '100%', opacity: candleLoading ? 0 : 1 }}>
-              <CandleChart
-                data={candleData}
-                market={currentMkt}
-                baseUnitInfo={bui}
-                quoteUnitInfo={qui}
-                mktId={currentMktId}
-                reporters={candleReporters}
-              />
+            <div className="d-flex align-items-end fs24 demi ms-1">
+              <span>{baseSymbol}</span> / <span>{quoteSymbol}</span>
             </div>
           </div>
 
-          {/* --------------------------------------------------------------- */}
-          {/* Bottom panels: Orders + Matches + Registration */}
-          {/* --------------------------------------------------------------- */}
-          <div className="flex-grow-1 overflow-y-auto" style={{ minHeight: 0 }}>
-            {/* --------------------------------------------------------------- */}
-            {/* Registration / Reputation status */}
-            {/* --------------------------------------------------------------- */}
-            {selected && currentXc && (
-              <div className="border-bottom px-3 py-2">
-                {!isRegistered
-                  ? (
-                    <div className="d-flex align-items-center gap-2 fs13">
-                      <span className="text-warning">Not registered on {selected.host}</span>
-                      <button
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => navigate(`/register?host=${encodeURIComponent(selected.host)}`)}
-                      >
-                        Register
-                      </button>
-                    </div>
-                  )
-                  : (
-                    <div>
-                      <div className="d-flex align-items-center gap-3 fs13 mb-1">
-                        {tierData && (
-                          <>
-                            <span>Tier: <strong>{tierData.tier}</strong></span>
-                            <span>
-                              Parcel Limit: <strong>{(tierData.parcelLimit * tierData.parcelSize).toFixed(1)}</strong>
-                            </span>
-                            <span>
-                              Usage: <strong>
-                                {tierData.parcelLimit > 0
-                                  ? (tierData.usedParcels / tierData.parcelLimit * 100).toFixed(1)
-                                  : '0'}%
-                              </strong>
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <ReputationMeter host={selected.host} />
-                    </div>
-                  )}
+          <div className="d-flex flex-stretch-column ps-1 border-right">
+            {baseFiatRate > 0 && (
+              <div title="Price on external markets" className="d-flex align-items-center border-bottom pe-2 fs18 text-warning">
+                ${formatFourSigFigs(baseFiatRate)}
               </div>
             )}
+            <div title="Bison price" className="d-flex align-items-center pe-2 fs18">
+              {bui && qui && currentMkt && displayRate > 0
+                ? formatRateAtomToRateStep(displayRate, bui, qui, currentMkt.ratestep)
+                : '-'}
+              {quiConv && <span className="grey ms-1 fs14">{quiConv.unit}</span>}
+            </div>
+          </div>
 
-            {/* --------------------------------------------------------------- */}
-            {/* Active orders */}
-            {/* --------------------------------------------------------------- */}
-            <div className="border-bottom px-3 py-2">
-              <div className="fs14 fw-bold mb-1">Active Orders</div>
-              {activeOrders.length === 0
-                ? (
-                  <div className="fs13 text-secondary">No active orders</div>
-                )
-                : (
-                  <table className="table table-sm table-hover mb-0 fs13">
-                    <thead>
-                      <tr>
-                        <th>Type</th>
-                        <th>Side</th>
-                        <th>Rate</th>
-                        <th>Qty</th>
-                        <th>Filled</th>
-                        <th>Status</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeOrders.map(ord => {
-                        const filledPct = ord.qty > 0
-                          ? (filled(ord) / ord.qty * 100).toFixed(1)
-                          : '0.0'
+          <div className="statgrid">
+            <span className="fs14 grey px-2 border-right border-bottom">{t('Change24')}</span>
+            <span className="fs14 grey px-2 border-right border-bottom">{t('Volume24')}</span>
+            <span className="fs14 grey px-2 border-right border-bottom">{t('High24')}</span>
+            <span className="fs14 grey ps-2 border-bottom">{t('Low24')}</span>
+
+            <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
+              {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
+            </div>
+            <div className="d-flex justify-content-start align-items-center px-2 border-right">
+              <div className="fs14">
+                {spot && bui && qui && currentMkt
+                  ? formatFourSigFigs(vol24)
+                  : '-'}
+              </div>
+              <div className="fs14 grey ms-1">{quiConv?.unit ?? 'USD'}</div>
+            </div>
+            <div className="px-2 fs14 border-right">
+              {spot && bui && qui && currentMkt
+                ? formatRateAtomToRateStep(high24, bui, qui, currentMkt.ratestep)
+                : '-'}
+            </div>
+            <div className="px-2 fs14">
+              {spot && bui && qui && currentMkt
+                ? formatRateAtomToRateStep(low24, bui, qui, currentMkt.ratestep)
+                : '-'}
+            </div>
+          </div>
+        </div>,
+        headerSlot
+      )}
+
+      <div className="flex-grow-1 position-relative">
+        <div className="h-100 w-100 overflow-x-hidden flex-stretch-column">
+          <div id="mainContent" className="d-flex flex-grow-1 flex-stretch-row">
+
+            {/* ============================================================= */}
+            {/* LEFTMOST SECTION: Market list + Order book */}
+            {/* ============================================================= */}
+            <section className="d-flex align-items-center">
+              {/* Market list dock */}
+              {showMarketList && (
+                <div id="leftMarketDock" className="d-flex flex-stretch-column">
+                  <div className="d-flex flex-stretch-column align-items-stretch border-bottom" style={{ height: 55 }}>
+                    <form className="flex-grow-1 p-1 position-relative" autoComplete="off">
+                      <input
+                        type="text"
+                        className="my-1 fs24"
+                        placeholder=" "
+                        spellCheck={false}
+                        value={marketSearch}
+                        onChange={e => setMarketSearch(e.target.value)}
+                        style={{
+                          position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
+                          width: '100%', zIndex: 2, backgroundColor: 'transparent',
+                          border: 'none', textAlign: 'center', textTransform: 'uppercase'
+                        }}
+                        autoFocus
+                      />
+                      {!marketSearch && <div className="ico-search fs24" style={{ position: 'absolute', zIndex: 1, left: '50%', top: '50%', transform: 'translateX(-50%) translateY(-50%)', opacity: 0.25 }}></div>}
+                    </form>
+                  </div>
+                  <div className="flex-stretch-column overflow-y-hidden">
+                    <div className="d-flex hoveronly overflow-x-hidden flex-stretch-column">
+                      {filteredMarkets.map(m => {
+                        const isSelected = selected?.host === m.host &&
+                          selected?.baseID === m.baseID && selected?.quoteID === m.quoteID
                         return (
-                          <tr
-                            key={ord.id || String(ord.stamp)}
-                            className="cursor-pointer"
-                            onClick={() => ord.id && navigate(orderPath(ord.id))}
+                          <div
+                            key={`${m.host}-${m.baseID}-${m.quoteID}`}
+                            className={`d-flex align-items-stretch p-2 border-bottom lh1 pointer hoverbg${isSelected ? ' selected' : ''}`}
+                            style={isSelected ? { backgroundColor: 'var(--tertiary-bg)' } : undefined}
+                            onClick={() => selectMarket(m.host, m.baseID, m.quoteID)}
                           >
-                            <td>{typeString(ord)}</td>
-                            <td style={{ color: ord.sell ? '#d10e0e' : '#2e9f67' }}>
-                              {ord.sell
-                                ? 'Sell'
-                                : 'Buy'}
-                            </td>
-                            <td>
-                              {bui && qui && currentMkt
-                                ? formatRateAtomToRateStep(ord.rate, bui, qui, currentMkt.ratestep, ord.sell)
-                                : ''}
-                            </td>
-                            <td>
-                              {bui && currentMkt
-                                ? formatCoinAtomToLotSizeBaseCurrency(ord.qty, bui, currentMkt.lotsize)
-                                : ''}
-                            </td>
-                            <td>{filledPct}%</td>
-                            <td>{statusString(ord)}</td>
-                            <td>
-                              {isCancellable(ord) && (
-                                <button
-                                  className="btn btn-sm btn-outline-danger py-0 px-1 fs12"
-                                  onClick={e => { e.stopPropagation(); cancelOrder(ord.id) }}
-                                >
-                                  Cancel
-                                </button>
-                              )}
-                            </td>
-                          </tr>
+                            <div className="d-flex flex-column">
+                              <div className="d-flex align-items-center justify-content-start flex-grow-1">
+                                <img src={logoPath(m.baseSymbol)} alt="" className="small-icon" />
+                                <img src={logoPath(m.quoteSymbol)} alt="" className="small-icon ms-1" />
+                              </div>
+                            </div>
+                            <div className="d-flex flex-column flex-grow-1 ps-1">
+                              <span className="fs22 demi">
+                                {m.baseSymbol.toUpperCase()} / {m.quoteSymbol.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
                         )
                       })}
-                    </tbody>
-                  </table>
-                )}
-            </div>
-
-            {/* --------------------------------------------------------------- */}
-            {/* Completed orders */}
-            {/* --------------------------------------------------------------- */}
-            <div className="border-bottom px-3 py-2">
-              <div className="d-flex align-items-center gap-2 mb-1">
-                <span className="fs14 fw-bold">Completed Orders</span>
-                <div className="d-flex gap-1">
-                  {COMPLETED_PERIODS.map(p => (
-                    <button
-                      key={p.key}
-                      className={`btn btn-sm px-2 py-0 fs12${completedPeriod === p.key ? ' btn-primary' : ' btn-outline-secondary'}`}
-                      onClick={() => setCompletedPeriod(p.key)}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              {completedPeriod !== 'hide' && completedOrders.length === 0 && (
-                <div className="fs13 text-secondary">No completed orders</div>
               )}
-              {completedPeriod !== 'hide' && completedOrders.length > 0 && (
-                <table className="table table-sm table-hover mb-0 fs13">
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Rate</th>
-                      <th>Qty</th>
-                      <th>Filled</th>
-                      <th>Settled</th>
-                      <th>Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {completedOrders.map(ord => {
-                      const filledPct = ord.qty > 0
-                        ? (filled(ord) / ord.qty * 100).toFixed(1)
-                        : '0.0'
-                      const settledPct = ord.qty > 0
-                        ? (settled(ord) / ord.qty * 100).toFixed(1)
-                        : '0.0'
-                      return (
+
+              {/* Order book (shown when market list is hidden) */}
+              {!showMarketList && (
+              <div id="orderBook" className="d-flex flex-stretch-column">
+                {/* Sell side (asks) - reversed so best ask at bottom */}
+                <div className="hoveronly overflow-x-hidden flex-stretch-column ordertable-wrap reversible">
+                  <table className="compact lh1">
+                    <tbody id="sellRows">
+                      {bui && qui && currentMkt && orderBookData.sells.map((row, i) => (
                         <tr
-                          key={ord.id}
-                          className="cursor-pointer"
-                          onClick={() => navigate(orderPath(ord.id))}
+                          key={`s-${i}`}
+                          className="d-flex justify-content-between px-2 w-100 pointer"
+                          onClick={() => fillRateFromBook(row.msgRate)}
                         >
-                          <td style={{ color: ord.sell ? '#d10e0e' : '#2e9f67' }}>
-                            {typeString(ord)} {ord.sell
-                              ? 'Sell'
-                              : 'Buy'}
+                          <td className="d-flex align-items-center text-nowrap pe-2">
+                            <span className="fs17" style={{ color: 'var(--sell-color)' }}>
+                              {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep, true)}
+                            </span>
                           </td>
-                          <td>
-                            {bui && qui && currentMkt
-                              ? formatRateAtomToRateStep(ord.rate, bui, qui, currentMkt.ratestep, ord.sell)
-                              : ''}
-                          </td>
-                          <td>
-                            {bui && currentMkt
-                              ? formatCoinAtomToLotSizeBaseCurrency(ord.qty, bui, currentMkt.lotsize)
-                              : ''}
-                          </td>
-                          <td>{filledPct}%</td>
-                          <td>{settledPct}%</td>
-                          <td title={new Date(ord.submitTime).toLocaleString()}>
-                            {ageSince(ord.submitTime)} ago
+                          <td className="d-flex justify-content-end align-items-center ps-2">
+                            <div className="fs17 ms-2">
+                              {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
+                            </div>
                           </td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* --------------------------------------------------------------- */}
-            {/* Recent matches */}
-            {/* --------------------------------------------------------------- */}
-            <div className="px-3 py-2">
-              <div className="fs14 fw-bold mb-1">Recent Matches</div>
-              {recentMatches.length === 0
-                ? (
-                  <div className="fs13 text-secondary">No recent matches</div>
-                )
-                : (
-                  <table className="table table-sm mb-0 fs13">
+                {/* Spread / mid-gap */}
+                <div className="d-flex align-items-center justify-content-center py-1 px-2">
+                  {bui && qui && currentMkt && displayRate > 0 && (
+                    <span className="text-warning fs17">
+                      {formatRateFullPrecision(displayRate, bui, qui, currentMkt.ratestep)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Buy side (bids) */}
+                <div className="hoveronly overflow-x-hidden flex-stretch-column ordertable-wrap">
+                  <table className="compact buys lh1">
+                    <tbody id="buyRows">
+                      {bui && qui && currentMkt && orderBookData.buys.map((row, i) => (
+                        <tr
+                          key={`b-${i}`}
+                          className="d-flex justify-content-between px-2 w-100 pointer"
+                          onClick={() => fillRateFromBook(row.msgRate)}
+                        >
+                          <td className="d-flex align-items-center text-nowrap pe-2">
+                            <span className="fs17" style={{ color: 'var(--buy-color)' }}>
+                              {formatRateAtomToRateStep(row.rate, bui, qui, currentMkt.ratestep)}
+                            </span>
+                          </td>
+                          <td className="d-flex justify-content-end align-items-center ps-2">
+                            <div className="fs17 ms-2">
+                              {formatCoinAtomToLotSizeBaseCurrency(row.qty, bui, currentMkt.lotsize)}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {!bookRef.current && (
+                  <div className="text-center grey py-4 fs15">
+                    {isConnected
+                      ? 'Loading order book...'
+                      : 'Connecting...'}
+                  </div>
+                )}
+              </div>
+              )}
+            </section>
+
+            {/* ============================================================= */}
+            {/* MIDDLE SECTION: Chart + Buy/Sell forms */}
+            {/* ============================================================= */}
+            <section className="d-flex flex-stretch-column">
+              {/* Candle chart */}
+              <section className="d-flex flex-stretch-column">
+                <div className="flex-grow-1 flex-stretch-column position-relative">
+                  <div className="market-chart">
+                    <div id="candleDurBttnBox">
+                      {candleDurs.map(dur => (
+                        <button
+                          key={dur}
+                          className={`candle-dur-bttn${candleDur === dur ? ' selected' : ''}`}
+                          onClick={() => setCandleDur(dur)}
+                        >
+                          {dur}
+                        </button>
+                      ))}
+                    </div>
+                    {candleLoading && (
+                      <Wave message="Loading chart..." backgroundColor={true} />
+                    )}
+                    <div style={{ width: '100%', height: '100%', opacity: candleLoading ? 0 : 1 }}>
+                      <CandleChart
+                        data={candleData}
+                        market={currentMkt}
+                        baseUnitInfo={bui}
+                        quoteUnitInfo={qui}
+                        mktId={currentMktId}
+                        reporters={candleReporters}
+                      />
+                    </div>
+                  </div>
+                  {mouseCandle && bui && qui && currentMkt && (
+                    <div className="grey p-1 border-bottom border-start" style={{ position: 'absolute', top: 0, right: 0 }}>
+                      <div className="d-flex align-items-center">
+                        <span className="ico-target fs11 me-1"></span>
+                        <span>
+                          S: {formatRateAtomToRateStep(mouseCandle.startRate, bui, qui, currentMkt.ratestep)},
+                          E: {formatRateAtomToRateStep(mouseCandle.endRate, bui, qui, currentMkt.ratestep)},
+                          L: {formatRateAtomToRateStep(mouseCandle.lowRate, bui, qui, currentMkt.ratestep)},
+                          H: {formatRateAtomToRateStep(mouseCandle.highRate, bui, qui, currentMkt.ratestep)},
+                          V: {formatCoinValue(mouseCandle.matchVolume, bui)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Buy / Sell forms (side by side) */}
+              <section className="d-flex flex-stretch-row">
+                {selected && (
+                  <>
+                    <OrderForm
+                      key={`buy-${selected.host}-${selected.baseID}-${selected.quoteID}`}
+                      side="buy"
+                      selected={selected}
+                      currentMkt={currentMkt}
+                      bui={bui}
+                      qui={qui}
+                      walletMap={walletMap}
+                      baseSymbol={baseSymbol}
+                      bookRateAtom={bookRateAtom}
+                      bookRateVersion={bookRateVersion}
+                      onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
+                    />
+                    <OrderForm
+                      key={`sell-${selected.host}-${selected.baseID}-${selected.quoteID}`}
+                      side="sell"
+                      selected={selected}
+                      currentMkt={currentMkt}
+                      bui={bui}
+                      qui={qui}
+                      walletMap={walletMap}
+                      baseSymbol={baseSymbol}
+                      bookRateAtom={bookRateAtom}
+                      bookRateVersion={bookRateVersion}
+                      onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
+                    />
+                  </>
+                )}
+
+                {/* Not registered notice */}
+                {!isRegistered && currentXc && (
+                  <div className="p-3 flex-center fs17 grey">{t('create_account_to_trade')}</div>
+                )}
+              </section>
+            </section>
+
+            {/* ============================================================= */}
+            {/* RIGHTMOST SECTION: Orders, reputation, matches */}
+            {/* ============================================================= */}
+            <section className="rightmost-panel pb-3 position-relative">
+              <div className="flex-stretch-column">
+
+                {/* Not registered notice */}
+                {selected && currentXc && !isRegistered && (
+                  <div>
+                    <div className="p-3 flex-center fs17 grey">{t('create_account_to_trade')}</div>
+                    <div className="border-top border-bottom flex-center p-2">
+                      <p className="text-center fs14 p-2 m-0">{t('need_to_register_msg')}</p>
+                      <button
+                        type="button"
+                        className="text-nowrap"
+                        onClick={() => navigate(`/register?host=${encodeURIComponent(selected.host)}`)}
+                      >
+                        {t('Create Account')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reputation & Trading Tier (collapsible) */}
+                {selected && currentXc && isRegistered && (
+                  <div>
+                    <div
+                      className="p-2 grey fs15 hoverbg pointer"
+                      onClick={() => setShowTradingTier(!showTradingTier)}
+                    >
+                      <span className={`ico-${showTradingTier ? 'minus' : 'plus'} fs10 me-2`}></span>
+                      <span>{showTradingTier ? t('Hide trading tier info') : t('Show trading tier info')}</span>
+                    </div>
+                    {showTradingTier && tierData && (
+                      <div className="d-flex flex-stretch-column fs15 mx-2 mb-2 border">
+                        <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1 border-bottom">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span>{t('Parcel Size')}</span>
+                            <span>{tierData.parcelSize} {t('lots')}</span>
+                          </div>
+                        </div>
+                        <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span>{t('Trading Tier')}</span>
+                            <span>{tierData.tier}</span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span>{t('Trading Limit')}</span>
+                            <span>{tierData.parcelLimit} lots</span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span>{t('Current Usage')}</span>
+                            <span>
+                              {tierData.parcelLimit > 0
+                                ? (tierData.usedParcels / tierData.parcelLimit * 100).toFixed(1)
+                                : '0'}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div
+                      className="p-2 grey fs15 hoverbg pointer"
+                      onClick={() => setShowReputation(!showReputation)}
+                    >
+                      <span className={`ico-${showReputation ? 'minus' : 'plus'} fs10 me-2`}></span>
+                      <span>{showReputation ? t('Hide reputation') : t('Show reputation')}</span>
+                    </div>
+                    {showReputation && (
+                      <div className="px-3 mb-3 border-bottom">
+                        <ReputationMeter host={selected.host} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Open Orders */}
+                <div className="my-1 border-top">
+                  <div className="text-center demi fs20 p-1">{t('Open Orders')}</div>
+                  {activeOrders.length === 0
+                    ? <div className="flex-center fs15 pb-1 border-bottom grey">no recent activity</div>
+                    : (
+                      <div className="mb-1">
+                        {activeOrders.map(ord => (
+                          <UserOrderRow
+                            key={ord.id || String(ord.stamp)}
+                            order={ord}
+                            bui={bui}
+                            qui={qui}
+                            mkt={currentMkt}
+                            navigate={navigate}
+                            cancelOrder={cancelOrder}
+                          />
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                {/* Completed Orders */}
+                <div className="my-1 border-top">
+                  <div className="text-center demi fs20 p-1">{t('Completed Orders')}</div>
+                  <div id="completedOrderHistoryDurBttnBox" className="d-flex flex-stretch-row justify-content-between px-2 pb-2">
+                    {COMPLETED_PERIODS.map(p => (
+                      <button
+                        key={p.key}
+                        className={`completed-order-dur-bttn fs15 px-1 grey${completedPeriod === p.key ? ' selected' : ''}`}
+                        onClick={() => setCompletedPeriod(p.key)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  {completedPeriod !== 'hide' && completedOrders.length === 0 && (
+                    <div className="flex-center fs15 pb-1 grey">no past history for this period</div>
+                  )}
+                  {completedPeriod !== 'hide' && completedOrders.length > 0 && (
+                    <div className="mb-1">
+                      {completedOrders.map(ord => (
+                        <UserOrderRow
+                          key={ord.id || String(ord.stamp)}
+                          order={ord}
+                          bui={bui}
+                          qui={qui}
+                          mkt={currentMkt}
+                          navigate={navigate}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Matches */}
+                <div id="recentMatchesBox" className="flex-stretch-column my-1 border-top">
+                  <div className="text-center demi fs20 p-1">{t('Recent Matches')}</div>
+                  <table id="recentMatchesTable" className="row-border row-hover lh1 border-bottom">
                     <thead>
-                      <tr>
-                        <th>Price</th>
-                        <th>Size</th>
-                        <th>Side</th>
-                        <th>Age</th>
+                      <tr className="pointer">
+                        <th className="text-start text-nowrap grey">
+                          <span>{quiConv?.unit ?? 'Price'}</span>
+                        </th>
+                        <th className="text-end text-nowrap grey">
+                          <span>{buiConv?.unit ?? 'Qty'}</span>
+                        </th>
+                        <th className="text-end text-nowrap grey">
+                          <span>Age</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {recentMatches.slice(0, 20).map((m, i) => (
                         <tr key={`${m.stamp}-${i}`}>
-                          <td style={{ color: m.sell ? '#d10e0e' : '#2e9f67' }}>
+                          <td className="text-start fs17" style={{ color: m.sell ? 'var(--sell-color)' : 'var(--buy-color)' }}>
                             {bui && qui && currentMkt
                               ? formatRateAtomToRateStep(m.rate, bui, qui, currentMkt.ratestep, m.sell)
                               : ''}
                           </td>
-                          <td>
+                          <td className="text-end fs17">
                             {bui && currentMkt
                               ? formatCoinAtomToLotSizeBaseCurrency(m.qty, bui, currentMkt.lotsize)
                               : ''}
                           </td>
-                          <td style={{ color: m.sell ? '#d10e0e' : '#2e9f67' }}>
-                            {m.sell
-                              ? 'Sell'
-                              : 'Buy'}
-                          </td>
-                          <td className="text-secondary">{ageSince(m.stamp)}</td>
+                          <td className="preserve-spaces text-end fs17">{ageSince(m.stamp)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ================================================================= */}
-      {/* Order verification modal */}
-      {/* ================================================================= */}
-      <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
-        <div className="bg-body border rounded p-4" style={{ minWidth: 380, maxWidth: 460 }}>
-          <div className="fs18 mb-3">Confirm Order</div>
-
-          {verifiedOrderRef.current && bui && qui && currentMkt && (
-            <div className="fs14">
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Side</span>
-                <span
-                  className="fw-bold"
-                  style={{ color: verifiedOrderRef.current.sell ? '#d10e0e' : '#2e9f67' }}
-                >
-                  {verifiedOrderRef.current.sell
-                    ? 'Sell'
-                    : 'Buy'}
-                </span>
-              </div>
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Type</span>
-                <span>Limit Order</span>
-              </div>
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Host</span>
-                <span>{verifiedOrderRef.current.host}</span>
-              </div>
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Rate</span>
-                <span>
-                  {formatRateAtomToRateStep(
-                    verifiedOrderRef.current.rate, bui, qui, currentMkt.ratestep, verifiedOrderRef.current.sell
-                  )} {quiConv?.unit ?? ''}
-                </span>
-              </div>
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Quantity</span>
-                <span>
-                  {formatCoinAtomToLotSizeBaseCurrency(
-                    verifiedOrderRef.current.qty, bui, currentMkt.lotsize
-                  )} {buiConv?.unit ?? ''}
-                </span>
-              </div>
-              <div className="d-flex justify-content-between mb-1">
-                <span className="text-secondary">Total</span>
-                <span>
-                  {formatCoinAtomToLotSizeQuoteCurrency(
-                    baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
-                    bui, qui, currentMkt.lotsize, currentMkt.ratestep
-                  )} {quiConv?.unit ?? ''}
-                </span>
-              </div>
-              {fiatRatesMap[selected!.quoteID] > 0 && (
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="text-secondary">Fiat Value</span>
-                  <span>
-                    ~${formatFiatConversion(
-                      baseToQuote(verifiedOrderRef.current.rate, verifiedOrderRef.current.qty),
-                      fiatRatesMap[selected!.quoteID], qui
-                    )}
-                  </span>
                 </div>
-              )}
-            </div>
-          )}
 
-          {orderError && (
-            <div className="text-danger fs13 mt-2">{orderError}</div>
-          )}
+              </div>
+            </section>
 
-          <div className="d-flex gap-2 mt-3">
-            <button
-              className={`btn btn-sm flex-fill text-white${verifiedOrderRef.current?.sell ? ' sellred-bg' : ' buygreen-bg'}`}
-              disabled={submitting}
-              onClick={submitVerifiedOrder}
-            >
-              {submitting
-                ? <span className="spinner-border spinner-border-sm" />
-                : `Submit ${verifiedOrderRef.current?.sell ? 'Sell' : 'Buy'} Order`}
-            </button>
-            <button
-              className="btn btn-sm btn-secondary"
-              onClick={() => setShowVerify(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </FormOverlay>
+          </div>{/* closes #mainContent */}
+        </div>{/* closes h-100 w-100 */}
+      </div>{/* closes flex-grow-1 position-relative */}
+
     </div>
   )
 }
