@@ -405,12 +405,13 @@ interface OrderFormProps {
   qui: UnitInfo | null
   walletMap: Record<number, any>
   baseSymbol: string
+  quoteSymbol: string
   bookRateAtom: number
   bookRateVersion: number
   onOrderSubmitted: () => void
 }
 
-function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbol, bookRateAtom, bookRateVersion, onOrderSubmitted }: OrderFormProps) {
+function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbol, quoteSymbol, bookRateAtom, bookRateVersion, onOrderSubmitted }: OrderFormProps) {
   const { t } = useTranslation()
   const isSell = side === 'sell'
   const buiConv = bui?.conventional
@@ -431,7 +432,17 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
 
   // Max estimation cache. Buy: keyed by rateAtom. Sell: keyed by 0.
   const maxCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
+  // Used only by the validate effect below to detect when a newer validate
+  // has superseded an in-flight one. The requestMax market-switch guard uses
+  // the separate `selectedRef` snapshot pattern instead of a counter.
   const maxReqIdRef = useRef(0)
+  // MP-17: market-switch guard. Snapshot `selected` at requestMax call time,
+  // compare against `selectedRef.current` after the fetch returns; drop the
+  // response if the market has changed. The OrderForm `key` prop normally
+  // remounts the component on a market switch, but this guard is a defensive
+  // safety net that mirrors vanilla's marketBefore/marketAfter check.
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
 
   // Refs to the price/quantity input boxes so we can flash a red outline on
   // invalid submission. Matches the vanilla highlightOutlineRed animation.
@@ -451,6 +462,25 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
     maxCacheRef.current = {}
   }, [walletMap])
 
+  // MP-15: Initialize qty to 1 lot when the market first becomes available.
+  // Mirrors vanilla setBuyQtyDefault/setSellQtyDefault. The OrderForm is
+  // remounted on market change via its `key` prop, so this logically runs
+  // once per market. The `qtyInitRef` ref-guard is load-bearing though:
+  // within a single instance, `currentMkt` and `bui` identities change
+  // whenever the exchanges/assets store is mutated (e.g. spot-price WS
+  // updates), and without the guard the effect would re-fire and clobber
+  // whatever qty the user had typed. Rate initialization is handled
+  // separately by the book-fill effect.
+  const qtyInitRef = useRef(false)
+  useEffect(() => {
+    if (qtyInitRef.current || !currentMkt || !bui) return
+    qtyInitRef.current = true
+    qtyAtomRef.current = currentMkt.lotsize
+    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(currentMkt.lotsize, bui, currentMkt.lotsize))
+    setSliderValue(0)
+    maxCacheRef.current = {}
+  }, [currentMkt, bui])
+
   // Fill rate from order book click
   useEffect(() => {
     if (bookRateVersion === 0 || !bookRateAtom || !bui || !qui || !currentMkt) return
@@ -465,6 +495,11 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
   // Request max estimate for this side
   const requestMax = useCallback(async (): Promise<MaxOrderEstimate | null> => {
     if (!selected || !currentMkt || !bui || !qui) return null
+    const reqSelected = selected
+    const marketChanged = () =>
+      selectedRef.current.host !== reqSelected.host ||
+      selectedRef.current.baseID !== reqSelected.baseID ||
+      selectedRef.current.quoteID !== reqSelected.quoteID
     if (isSell) {
       const cached = maxCacheRef.current[0]
       if (cached) return cached
@@ -473,6 +508,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
       const res = await postJSON('/api/maxsell', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID
       })
+      if (marketChanged()) return null
       if (!checkResponse(res) || !res.maxSell) return null
       maxCacheRef.current[0] = res.maxSell
       return res.maxSell as MaxOrderEstimate
@@ -486,6 +522,7 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
       const res = await postJSON('/api/maxbuy', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID, rate: rateAtom
       })
+      if (marketChanged()) return null
       if (!checkResponse(res) || !res.maxBuy) return null
       maxCacheRef.current[rateAtom] = res.maxBuy
       return res.maxBuy as MaxOrderEstimate
@@ -507,6 +544,12 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
   const handleRateChange = useCallback((value: string) => {
     setRateInput(value)
     if (!bui || !qui || !currentMkt) return
+    // MP-16: If the value ends with a decimal separator, wait for the user to
+    // finish typing before processing. Matches vanilla rate field handlers.
+    if (value.length > 0) {
+      const last = value.charAt(value.length - 1)
+      if (last === '.' || last === ',') return
+    }
     const rateAtom = parseConvRate(value, bui, qui)
     if (!rateAtom) {
       rateAtomRef.current = 0
@@ -542,6 +585,12 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
   const handleQtyChange = useCallback((value: string) => {
     setQtyInput(value)
     if (!bui || !currentMkt) return
+    // MP-16: If the value ends with a decimal separator, wait for the user to
+    // finish typing before processing. Matches vanilla qty field handlers.
+    if (value.length > 0) {
+      const last = value.charAt(value.length - 1)
+      if (last === '.' || last === ',') return
+    }
     const qtyAtom = parseConvQty(value, bui)
     if (!qtyAtom) {
       qtyAtomRef.current = 0
@@ -634,6 +683,22 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
     const total = baseToQuote(rateAtom, qtyAtom)
     return formatCoinAtomToLotSizeQuoteCurrency(total, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
   }, [rateInput, qtyInput, bui, qui, currentMkt])
+
+  // MP-13: Wallet-readiness gate. Mirrors vanilla displayMessageIfMissingWallet
+  // priority order — both missing > base missing > quote missing > base
+  // disabled/not-running > quote disabled/not-running. When set, this message
+  // replaces submitMsg and the submit button is disabled.
+  const walletMsg = useMemo(() => {
+    if (!selected) return ''
+    const baseW = walletMap[selected.baseID]
+    const quoteW = walletMap[selected.quoteID]
+    if (!baseW && !quoteW) return `Create ${baseSymbol} and ${quoteSymbol} wallet to trade`
+    if (!baseW) return `Create a ${baseSymbol} wallet to trade`
+    if (!quoteW) return `Create a ${quoteSymbol} wallet to trade`
+    if (baseW.disabled || !baseW.running) return `Enable / Activate a ${baseSymbol} wallet to trade`
+    if (quoteW.disabled || !quoteW.running) return `Enable / Activate a ${quoteSymbol} wallet to trade`
+    return ''
+  }, [selected, walletMap, baseSymbol, quoteSymbol])
 
   // Submit order: step 1 - show confirmation.
   // Validation messages/flashes match vanilla validateOrderBuy/validateOrderSell.
@@ -797,11 +862,11 @@ function OrderForm ({ side, selected, currentMkt, bui, qui, walletMap, baseSymbo
                 </>
               )}
           </div>
-          {submitMsg && <div className="m-1 fs14 text-center grey">{submitMsg}</div>}
+          {(walletMsg || submitMsg) && <div className="m-1 fs14 text-center grey">{walletMsg || submitMsg}</div>}
           <button
             type="button"
             className={`flex-center border pointer hoverbg border-rounded3 m-1 submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-            disabled={!submitEnabled}
+            disabled={!submitEnabled || !!walletMsg}
             onClick={stepSubmit}
           >
             {isSell ? t('Sell') : t('Buy')} {baseSymbol}
@@ -1713,6 +1778,7 @@ export default function MarketsPage () {
                       qui={qui}
                       walletMap={walletMap}
                       baseSymbol={baseSymbol}
+                      quoteSymbol={quoteSymbol}
                       bookRateAtom={bookRateAtom}
                       bookRateVersion={bookRateVersion}
                       onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
@@ -1726,6 +1792,7 @@ export default function MarketsPage () {
                       qui={qui}
                       walletMap={walletMap}
                       baseSymbol={baseSymbol}
+                      quoteSymbol={quoteSymbol}
                       bookRateAtom={bookRateAtom}
                       bookRateVersion={bookRateVersion}
                       onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
