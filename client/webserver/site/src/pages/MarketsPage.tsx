@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
-import { leftMarketDockLK, lastCandleDurationLK, orderDisclaimerAckedLK, fetchLocal, storeLocal } from '../services/state'
+import { leftMarketDockLK, lastCandleDurationLK, lastMarketLK, orderDisclaimerAckedLK, fetchLocal, storeLocal } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useUIStore } from '../stores/useUIStore'
 import { useWebSocketStore } from '../stores/useWebSocketStore'
@@ -1626,10 +1626,32 @@ export default function MarketsPage () {
   const allMarkets = useMemo(() => collectMarkets(exchanges), [exchanges])
 
   const [selected, setSelected] = useState<SelectedMarket | null>(() => {
+    // Resolution priority mirrors vanilla `markets.ts` L572-588:
+    //   1. URL params (deep link / nav with explicit market)
+    //   2. `lastMarketLK` localStorage entry (last viewed market on this device)
+    //   3. null → falls through to the "default to first available market"
+    //      effect below once `allMarkets` is populated by the auth store.
+    // The `default to first` effect also doubles as a validator (MP-67):
+    // if the resolved market doesn't actually exist in `allMarkets` (e.g.
+    // user removed the DEX while a stale URL/lastMarketLK still points at
+    // it), it falls back to the first market — matching vanilla L580.
     const h = searchParams.get('host')
     const b = searchParams.get('baseID')
     const q = searchParams.get('quoteID')
     if (h && b && q) return { host: h, baseID: Number(b), quoteID: Number(q) }
+    // MP-67: localStorage fallback. `lastMarketLK` is shared with the
+    // services/state.ts schema. We persist `{host, baseID, quoteID}` in
+    // the React format (vanilla used `{host, base, quote}` — different
+    // key names — but this is a clean rewrite so we don't need to read
+    // vanilla's data).
+    const persisted = fetchLocal(lastMarketLK) as
+      { host?: string; baseID?: number; quoteID?: number } | null
+    if (persisted &&
+        typeof persisted.host === 'string' &&
+        typeof persisted.baseID === 'number' &&
+        typeof persisted.quoteID === 'number') {
+      return { host: persisted.host, baseID: persisted.baseID, quoteID: persisted.quoteID }
+    }
     return null
   })
   const [marketSearch, setMarketSearch] = useState('')
@@ -1743,22 +1765,71 @@ export default function MarketsPage () {
     ? !currentXc.viewOnly && currentXc.acctID !== ''
     : false
   const isConnected = currentXc?.connectionStatus === ConnectionStatus.Connected
-  // MP-18: Chart overlay message shown when the exchange is disabled or the
-  // WS connection is down. Empty string when the chart should render normally.
-  const chartErrMsg = currentXc?.disabled
-    ? 'DEX server is disabled. Visit the settings page to enable and connect to this server.'
-    : (currentXc && !isConnected)
-      ? 'Connection to dex server failed. You can close bisonw and try again later or wait for it to reconnect.'
-      : ''
+  // MP-18 + MP-69: chart overlay message shown when the selected DEX is
+  // disabled, disconnected, or has no markets configured. Mirrors vanilla
+  // `switchToMarket` (markets.ts L1315-1322) which guards on
+  // `!dex || !dex.markets || dex.connectionStatus !== Connected` and
+  // shows the same two strings (ID_DEX_DISABLED_MSG, ID_CONNECTION_FAILED).
+  //
+  // We hold off on the message until we have BOTH a selected market and
+  // the exchange data for it. `!currentXc` with `selected` set is a
+  // transient state (stale URL/lastMarketLK pointing at a removed DEX, or
+  // a DEX that was just removed via the Settings page); the
+  // default-to-first-market validation effect resolves it within one
+  // render, so showing "Connection failed" in that one-frame flicker
+  // would be misleading. The validation falls back to a real market and
+  // the user never sees the error.
+  const chartErrMsg = (() => {
+    if (!selected || !currentXc) return ''
+    if (currentXc.disabled) {
+      return 'DEX server is disabled. Visit the settings page to enable and connect to this server.'
+    }
+    // MP-69: vanilla collapses both `!dex.markets` and `!Connected` into
+    // ID_CONNECTION_FAILED. The `noMarkets` branch covers the rare bisonw
+    // state where the host record exists but its markets map hasn't been
+    // populated yet.
+    const noMarkets = !currentXc.markets || Object.keys(currentXc.markets).length === 0
+    if (noMarkets || !isConnected) {
+      return 'Connection to dex server failed. You can close bisonw and try again later or wait for it to reconnect.'
+    }
+    return ''
+  })()
 
   // -------------------------------------------------------------------------
-  // Default to first available market if none selected
+  // Default to first available market if none selected, plus MP-67
+  // validation: if `selected` came from URL params or lastMarketLK but no
+  // longer matches a real market (DEX removed since last visit), fall back
+  // to the first available market. Mirrors vanilla `markets.ts` L580-585.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (selected || allMarkets.length === 0) return
+    if (allMarkets.length === 0) return
+    if (selected) {
+      const exists = allMarkets.some(m =>
+        m.host === selected.host &&
+        m.baseID === selected.baseID &&
+        m.quoteID === selected.quoteID
+      )
+      if (exists) return
+    }
     const first = allMarkets[0]
     setSelected({ host: first.host, baseID: first.baseID, quoteID: first.quoteID })
   }, [selected, allMarkets])
+
+  // MP-67: persist the current market to localStorage whenever it changes
+  // so the next visit (or a hard reload without URL params) returns the
+  // user to the same market. Vanilla writes from inside `switchToMarket`
+  // (markets.ts L1375-1379); React writes here as a side effect of the
+  // `selected` state changing, which fires for every market switch
+  // regardless of how it was triggered (market list click, URL nav, or
+  // the default-to-first effect above).
+  useEffect(() => {
+    if (!selected) return
+    storeLocal(lastMarketLK, {
+      host: selected.host,
+      baseID: selected.baseID,
+      quoteID: selected.quoteID
+    })
+  }, [selected])
 
   // -------------------------------------------------------------------------
   // Market subscription + WS route handlers (combined so that handlers
