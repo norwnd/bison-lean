@@ -5,12 +5,46 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
+import { fetchLocal, storeLocal } from '../services/state'
 import { ROUTES } from '../router/routes'
 import type {
   BalanceNote,
   CEXNotification,
   MarketWithHost,
+  MMCEXStatus,
 } from '../stores/types'
+
+// MMS-05: localStorage key for persisting the user's last-selected
+// bot specs (host/baseID/quoteID/botType/cexName). Mirrors vanilla
+// `mmsettings.ts` `specLK = 'lastMMSpecs'` (L19) which restores the
+// form state across navigation/reloads when no URL params are
+// provided.
+const lastMMSpecsLK = 'lastMMSpecs'
+
+interface MMSpecs {
+  host: string
+  baseID: number
+  quoteID: number
+  botType: string
+  cexName: string
+}
+
+// MMS-03: minimal direct-market check used to filter the CEX dropdown
+// down to exchanges that actually trade the selected market. This is a
+// smaller-scope subset of vanilla's `cexSupportsArbOnMarket()`
+// (`mmsettings/components/MMSettings.tsx` L84-180) which also walks
+// bridge paths and intermediate-asset multi-hop routes. The bridge-
+// aware version requires the bridgePaths data that hasn't been ported
+// to the React stores yet -- it'll arrive with the full MMS-01 stub
+// migration. Until then, the direct check is strictly better than
+// "show every connected CEX regardless".
+function cexSupportsMarketDirect (cexStatus: MMCEXStatus, baseID: number, quoteID: number): boolean {
+  for (const m of Object.values(cexStatus.markets ?? {})) {
+    if (m.baseID === baseID && m.quoteID === quoteID) return true
+    if (m.baseID === quoteID && m.quoteID === baseID) return true
+  }
+  return false
+}
 
 const botTypeBasicMM = 'basicMM'
 const botTypeArbMM = 'arbMM'
@@ -41,6 +75,9 @@ interface AvailableMarket {
   quoteID: number
   baseSymbol: string
   quoteSymbol: string
+  // MMS-04: 24h volume in base-asset atoms (used for sort + future
+  // display). May be 0 when the market has no spot data yet.
+  vol24: number
 }
 
 /*
@@ -58,6 +95,7 @@ export default function MMSettingsPage () {
   const assets = useAuthStore(s => s.assets)
   const exchanges = useAuthStore(s => s.exchanges)
   const mmStatus = useAuthStore(s => s.mmStatus)
+  const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const { fetchMMStatus } = useMMStore()
   const fetchUser = useAuthStore(s => s.fetchUser)
 
@@ -93,6 +131,15 @@ export default function MMSettingsPage () {
   const isRunning = currentBot?.running ?? false
 
   // Build available markets from exchanges.
+  // MMS-02: skip exchanges where the user isn't registered
+  // (effectiveTier + pendingStrength === 0). Mirrors vanilla
+  // `mmsettings.ts` `loadAvailableMarkets()` (L47-50). Already in
+  // place since the initial rewrite -- documented here for
+  // traceability against the audit item.
+  // MMS-04: sort markets by USD-equivalent 24h volume descending so
+  // the most active markets surface first. Mirrors vanilla
+  // `mmsettings.ts` (L88-96) which multiplies `spot.vol24` by the
+  // base asset's fiat rate before sorting.
   const availableMarkets = useMemo(() => {
     const markets: AvailableMarket[] = []
     for (const [host, exchange] of Object.entries(exchanges)) {
@@ -105,23 +152,70 @@ export default function MMSettingsPage () {
           quoteID: market.quoteid,
           baseSymbol: market.basesymbol,
           quoteSymbol: market.quotesymbol,
+          vol24: market.spot?.vol24 ?? 0,
         })
       }
     }
+    markets.sort((a, b) => {
+      const rateA = fiatRatesMap[a.baseID] ?? 0
+      const rateB = fiatRatesMap[b.baseID] ?? 0
+      // When both rates are present, compare USD-equivalent volumes;
+      // otherwise fall back to raw vol24 so the sort still produces
+      // a meaningful order for less-liquid assets without fiat data.
+      const usdA = rateA > 0 ? a.vol24 * rateA : a.vol24
+      const usdB = rateB > 0 ? b.vol24 * rateB : b.vol24
+      return usdB - usdA
+    })
     return markets
-  }, [exchanges, assets])
+  }, [exchanges, assets, fiatRatesMap])
 
-  // Connected CEXes.
+  // Connected CEXes that actually trade the currently selected market.
+  // MMS-03: vanilla's full check is `cexSupportsArbOnMarket()` which
+  // also walks bridge paths and intermediate-asset routes. The
+  // bridge-aware version arrives with the full MMS-01 stub migration;
+  // until then the direct check still cuts out CEXes that don't have
+  // the market at all.
+  //
+  // A pre-existing `selectedCexName` (from URL params or persisted
+  // specs) is always kept in the dropdown even if it would otherwise
+  // be filtered out -- a bot configured against a CEX that supports
+  // the market via bridges (which our simplified check can't see)
+  // shouldn't have its CEX silently dropped on revisit.
   const connectedCexes = useMemo(() => {
     if (!mmStatus?.cexes) return []
-    return Object.entries(mmStatus.cexes)
+    const allConnected = Object.entries(mmStatus.cexes)
       .filter(([, s]) => s.connected)
+    if (!selectedBaseID || !selectedQuoteID) {
+      return allConnected.map(([name]) => name)
+    }
+    const filtered = allConnected
+      .filter(([, s]) => cexSupportsMarketDirect(s, selectedBaseID, selectedQuoteID))
       .map(([name]) => name)
-  }, [mmStatus?.cexes])
+    if (selectedCexName &&
+        !filtered.includes(selectedCexName) &&
+        allConnected.some(([name]) => name === selectedCexName)) {
+      filtered.push(selectedCexName)
+    }
+    return filtered
+  }, [mmStatus?.cexes, selectedBaseID, selectedQuoteID, selectedCexName])
 
-  // Auto-select first market if no specs.
+  // MMS-05: restore lastMMSpecs from localStorage when no URL specs
+  // were provided. Mirrors vanilla `mmsettings.ts` (L19, L33-40)
+  // which calls `State.fetchLocal(specLK)` to seed the form. If the
+  // persisted market is still in `availableMarkets`, use it;
+  // otherwise fall back to the first available market.
   useEffect(() => {
-    if (!hasSpecs && availableMarkets.length > 0 && !selectedHost) {
+    if (hasSpecs || selectedHost) return
+    const saved = fetchLocal(lastMMSpecsLK) as MMSpecs | null
+    if (saved && availableMarkets.some(m => m.host === saved.host && m.baseID === saved.baseID && m.quoteID === saved.quoteID)) {
+      setSelectedHost(saved.host)
+      setSelectedBaseID(saved.baseID)
+      setSelectedQuoteID(saved.quoteID)
+      if (saved.botType) setSelectedBotType(saved.botType)
+      if (saved.cexName) setSelectedCexName(saved.cexName)
+      return
+    }
+    if (availableMarkets.length > 0) {
       const m = availableMarkets[0]
       setSelectedHost(m.host)
       setSelectedBaseID(m.baseID)
@@ -129,10 +223,29 @@ export default function MMSettingsPage () {
     }
   }, [hasSpecs, availableMarkets, selectedHost])
 
+  // MMS-05: persist the current spec selection to localStorage
+  // whenever it changes, so the form survives navigation/reloads.
+  useEffect(() => {
+    if (!selectedHost || !selectedBaseID || !selectedQuoteID) return
+    const specs: MMSpecs = {
+      host: selectedHost,
+      baseID: selectedBaseID,
+      quoteID: selectedQuoteID,
+      botType: selectedBotType,
+      cexName: selectedCexName,
+    }
+    storeLocal(lastMMSpecsLK, specs)
+  }, [selectedHost, selectedBaseID, selectedQuoteID, selectedBotType, selectedCexName])
+
   // WS subscriptions.
   const noteHandlers = useMemo(() => ({
+    // MMS-06: wire the balance handler to refresh mmStatus so the
+    // displayed bot status / CEX balances stay in sync. The full
+    // balance-display refresh requires the MMS-01 stub migration --
+    // until then `fetchMMStatus()` is the closest data refresh we
+    // can trigger without a deeper port.
     balance: (_note: BalanceNote) => {
-      // Could refresh balances display here if needed.
+      fetchMMStatus()
     },
     cexnote: (_note: CEXNotification) => {
       fetchMMStatus()
@@ -156,6 +269,17 @@ export default function MMSettingsPage () {
       setError(t('Please select a market'))
       return
     }
+    // MMS-07: pre-check that the user has a non-zero trading tier on
+    // the selected exchange before round-tripping to the API. The
+    // backend will reject the start anyway if the user can't post
+    // bonds, but surfacing the check here gives immediate feedback
+    // without a server round trip and uses an actionable message.
+    const exchange = exchanges[selectedHost]
+    const tier = (exchange?.auth?.effectiveTier ?? 0) + (exchange?.auth?.pendingStrength ?? 0)
+    if (tier <= 0) {
+      setError(t('You need a non-zero trading tier on this DEX to start a bot. Register or top up bonds first.'))
+      return
+    }
     setError('')
     setLoading(true)
     setStatusMsg('')
@@ -177,7 +301,7 @@ export default function MMSettingsPage () {
     } finally {
       setLoading(false)
     }
-  }, [selectedHost, selectedBaseID, selectedQuoteID, fetchMMStatus, fetchUser, t])
+  }, [selectedHost, selectedBaseID, selectedQuoteID, exchanges, fetchMMStatus, fetchUser, t])
 
   const stopBot = useCallback(async () => {
     setError('')
