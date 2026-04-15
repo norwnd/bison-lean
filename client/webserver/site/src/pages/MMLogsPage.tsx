@@ -6,6 +6,8 @@ import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
 import { formatCoinValue, formatFourSigFigs, formatFiatValue } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
+import { CopyButton } from '../components/common/CopyButton'
+import { explorerURL } from '../components/CoinExplorers'
 import { ROUTES } from '../router/routes'
 import type {
   MarketMakingEvent,
@@ -20,6 +22,7 @@ import type {
   RunStatsNote,
   SupportedAsset,
   BotConfig,
+  WalletTransaction,
 } from '../stores/types'
 
 const logsBatchSize = 50
@@ -69,6 +72,48 @@ function trimWithEllipsis (str: string, maxLen: number): string {
   return `${str.substring(0, half)}...${str.substring(str.length - half)}`
 }
 
+// Inline helper for rendering an ID (TX/event/order) with an adjacent
+// CopyButton. Used pervasively in the event detail modals (MML-01).
+// `href` is optional — when present, the trimmed text becomes a link
+// to the block explorer (MML-02). The full untrimmed value is used
+// for both the title attribute and the clipboard payload.
+function IDCell ({ id, href, maxLen = 20 }: { id: string; href?: string | null; maxLen?: number }) {
+  const trimmed = trimWithEllipsis(id, maxLen)
+  return (
+    <span className="d-inline-flex align-items-center gap-1">
+      {href
+        ? (
+          <a href={href} target="_blank" rel="noopener noreferrer" title={id}>
+            {trimmed}
+          </a>
+          )
+        : (
+          <span title={id}>{trimmed}</span>
+          )}
+      <CopyButton text={id} />
+    </span>
+  )
+}
+
+// MML-02: resolve a tx-id to its block explorer URL using the asset's
+// CoinExplorers entry. Vanilla `mmlogs.ts` L451-452 uses
+// `tx.isRelay && tx.relayTxID` to pick the relay tx id when present.
+function txExplorerURL (tx: WalletTransaction, assetID: number, net: number): string | null {
+  const explorerID = (tx.isRelay && tx.relayTxID) ? tx.relayTxID : tx.id
+  return explorerURL(assetID, explorerID, net)
+}
+
+// Token-aware fee asset lookup: token assets pay fees in their parent
+// asset, so a USDC token tx's fees are denominated in ETH. Mirrors the
+// `feeAssetID` helper at the top of this module but takes the assets
+// map as a parameter for use inside the BridgeFees component.
+function feeAsset (assetID: number, assets: Record<number, SupportedAsset>): SupportedAsset | undefined {
+  const asset = assets[assetID]
+  if (!asset) return undefined
+  if (asset.token) return assets[asset.token.parentID]
+  return asset
+}
+
 function sumBalanceEffects (assetID: number, be: BalanceEffects): number {
   let sum = 0
   if (be.settled[assetID]) sum += be.settled[assetID]
@@ -99,6 +144,8 @@ export default function MMLogsPage () {
   const assets = useAuthStore(s => s.assets)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const mmStatus = useAuthStore(s => s.mmStatus)
+  const user = useAuthStore(s => s.user)
+  const net = user?.net ?? 0
 
   const host = searchParams.get('host') ?? ''
   const baseID = parseInt(searchParams.get('baseID') ?? '0')
@@ -481,11 +528,88 @@ export default function MMLogsPage () {
             baseID={baseID}
             quoteID={quoteID}
             fiatRates={fiatRates}
+            net={net}
             t={t}
           />
         )}
       </FormOverlay>
     </div>
+  )
+}
+
+// ---- Bridge Fees ----
+
+interface BridgeFeesProps {
+  // The asset id of the bridge transaction (the originating side).
+  assetID: number
+  bridgeTx: WalletTransaction
+  assets: Record<number, SupportedAsset>
+  t: (k: string) => string
+}
+
+// MML-03: bridge fees come from up to three sources, and each fee may
+// be denominated in a different asset. Mirrors vanilla `mmlogs.ts`
+// `populateBridgeFees()` (L564-608):
+//
+//   1. The fee of the bridge transaction itself (denominated in the
+//      origin chain's parent asset).
+//   2. The fee of the counterpart transaction on the destination
+//      chain (denominated in the destination chain's parent asset).
+//   3. The difference between the bridge tx amount and the
+//      counterpart's `amountReceived` (a "bridge protocol" fee
+//      denominated in the destination asset itself).
+//
+// Vanilla aggregates fees per fee-asset and renders one row per
+// asset, with the "Bridge Fees" label only on the first row.
+function BridgeFees ({ assetID, bridgeTx, assets, t }: BridgeFeesProps) {
+  if (!bridgeTx.bridgeCounterpartTx) return null
+  const counterpart = bridgeTx.bridgeCounterpartTx
+
+  // Aggregate fees keyed by the asset they're denominated in.
+  const fees: Record<number, number> = {}
+  const addFee = (assetIDForFee: number, amount: number) => {
+    const fa = feeAsset(assetIDForFee, assets)
+    if (!fa) return
+    fees[fa.id] = (fees[fa.id] ?? 0) + amount
+  }
+
+  if (bridgeTx.fees > 0) {
+    addFee(assetID, bridgeTx.fees)
+  }
+  if (counterpart.fees > 0) {
+    addFee(counterpart.assetID, counterpart.fees)
+  }
+  if (counterpart.amountReceived > 0) {
+    // The "bridge protocol" fee — the gap between what we sent on the
+    // origin chain and what we received on the destination chain. This
+    // is denominated in the destination asset itself, NOT its parent
+    // (so we use `addFee` against `counterpart.assetID` and let the
+    // helper do the parent-asset lookup; it'll be the same asset for
+    // non-token destinations and the parent for token destinations).
+    const diff = bridgeTx.amount - counterpart.amountReceived
+    if (diff > 0) addFee(counterpart.assetID, diff)
+  }
+
+  const assetIDs = Object.keys(fees).map(Number).filter(id => fees[id] > 0)
+  if (assetIDs.length === 0) return null
+
+  return (
+    <>
+      {assetIDs.map((id, i) => {
+        const asset = assets[id]
+        if (!asset) return null
+        const ui = asset.unitInfo
+        const unit = ui.conventional.unit
+        return (
+          <tr key={id}>
+            {/* Only the first row labels the section, matching vanilla
+                `Doc.setVis(i === 0, tmpl.label)`. */}
+            <td className="text-secondary">{i === 0 ? t('Bridge Fees') : ''}</td>
+            <td>{formatCoinValue(fees[id], ui)} {unit}</td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 
@@ -497,14 +621,15 @@ interface EventDetailProps {
   baseID: number
   quoteID: number
   fiatRates: Record<number, number>
+  net: number
   t: (k: string) => string
 }
 
-function EventDetailView ({ event, assets, baseID, quoteID, t }: EventDetailProps) {
-  if (event.dexOrderEvent) return <DEXOrderDetail e={event.dexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} t={t} />
+function EventDetailView ({ event, assets, baseID, quoteID, net, t }: EventDetailProps) {
+  if (event.dexOrderEvent) return <DEXOrderDetail e={event.dexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} net={net} t={t} />
   if (event.cexOrderEvent) return <CEXOrderDetail e={event.cexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} t={t} />
-  if (event.depositEvent) return <DepositDetail e={event.depositEvent} pending={event.pending} assets={assets} t={t} />
-  if (event.withdrawalEvent) return <WithdrawalDetail e={event.withdrawalEvent} pending={event.pending} assets={assets} t={t} />
+  if (event.depositEvent) return <DepositDetail e={event.depositEvent} pending={event.pending} assets={assets} net={net} t={t} />
+  if (event.withdrawalEvent) return <WithdrawalDetail e={event.withdrawalEvent} pending={event.pending} assets={assets} net={net} t={t} />
   return <div className="form-closer p-3">{t('Unknown event type')}</div>
 }
 
@@ -515,10 +640,11 @@ interface DEXOrderDetailProps {
   assets: Record<number, SupportedAsset>
   baseID: number
   quoteID: number
+  net: number
   t: (k: string) => string
 }
 
-function DEXOrderDetail ({ e, assets, baseID, quoteID, t }: DEXOrderDetailProps) {
+function DEXOrderDetail ({ e, assets, baseID, quoteID, net, t }: DEXOrderDetailProps) {
   const baseAsset = assets[baseID]
   const quoteAsset = assets[quoteID]
   const bui = baseAsset?.unitInfo
@@ -538,7 +664,8 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, t }: DEXOrderDetailProps)
         <tbody>
           <tr>
             <td className="text-secondary">{t('Order ID')}</td>
-            <td title={e.id}>{trimWithEllipsis(e.id, 20)}</td>
+            {/* MML-01: copy button on Order ID. */}
+            <td><IDCell id={e.id} /></td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Rate')}</td>
@@ -571,9 +698,12 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, t }: DEXOrderDetailProps)
                 const txAsset = assets[txAssetID]
                 const ui = txAsset?.unitInfo
                 const unit = ui?.conventional?.unit ?? ''
+                // MML-02: explorer link via the asset's CoinExplorers
+                // entry. Uses relayTxID when present (vanilla parity).
+                const href = txExplorerURL(tx, txAssetID, net)
                 return (
                   <tr key={i}>
-                    <td title={tx.id}>{trimWithEllipsis(tx.id, 16)}</td>
+                    <td><IDCell id={tx.id} href={href} maxLen={16} /></td>
                     <td>{ui ? formatCoinValue(tx.amount, ui) : tx.amount} {unit}</td>
                     <td>{ui ? formatCoinValue(tx.fees, ui) : tx.fees} {unit}</td>
                   </tr>
@@ -642,7 +772,8 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t 
         <tbody>
           <tr>
             <td className="text-secondary">{t('Order ID')}</td>
-            <td title={e.id}>{trimWithEllipsis(e.id, 20)}</td>
+            {/* MML-01: copy button on CEX Order ID. */}
+            <td><IDCell id={e.id} /></td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Base Asset')}</td>
@@ -695,16 +826,17 @@ interface DepositDetailProps {
   e: DepositEvent
   pending: boolean
   assets: Record<number, SupportedAsset>
+  net: number
   t: (k: string) => string
 }
 
-function DepositDetail ({ e, pending, assets, t }: DepositDetailProps) {
+function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
   const asset = assets[e.assetID]
   const ui = asset?.unitInfo
   const unit = ui?.conventional?.unit ?? ''
 
-  const feeAsset = assets[feeAssetID(e.assetID, assets)]
-  const feeUI = feeAsset?.unitInfo
+  const feeAssetForDeposit = assets[feeAssetID(e.assetID, assets)]
+  const feeUI = feeAssetForDeposit?.unitInfo
   const feeUnit = feeUI?.conventional?.unit ?? ''
 
   let amount = 0
@@ -712,6 +844,14 @@ function DepositDetail ({ e, pending, assets, t }: DepositDetailProps) {
   if (e.bridgeTx?.bridgeCounterpartTx?.amountReceived) {
     amount = e.bridgeTx.bridgeCounterpartTx.amountReceived
   }
+
+  // MML-02: explorer link helpers for the deposit's tx and bridge tx.
+  const txHref = e.transaction
+    ? txExplorerURL(e.transaction, e.assetID, net)
+    : null
+  const bridgeHref = e.bridgeTx
+    ? txExplorerURL(e.bridgeTx, e.assetID, net)
+    : null
 
   return (
     <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -722,7 +862,8 @@ function DepositDetail ({ e, pending, assets, t }: DepositDetailProps) {
             <>
               <tr>
                 <td className="text-secondary">{t('TX ID')}</td>
-                <td title={e.transaction.id}>{trimWithEllipsis(e.transaction.id, 20)}</td>
+                {/* MML-01 + MML-02: copy button + explorer link on TX ID. */}
+                <td><IDCell id={e.transaction.id} href={txHref} /></td>
               </tr>
               <tr>
                 <td className="text-secondary">{t('Fees')}</td>
@@ -733,8 +874,20 @@ function DepositDetail ({ e, pending, assets, t }: DepositDetailProps) {
           {e.bridgeTx && (
             <tr>
               <td className="text-secondary">{t('Bridge TX ID')}</td>
-              <td title={e.bridgeTx.id}>{trimWithEllipsis(e.bridgeTx.id, 20)}</td>
+              {/* MML-01 + MML-02. */}
+              <td><IDCell id={e.bridgeTx.id} href={bridgeHref} /></td>
             </tr>
+          )}
+          {/* MML-03: bridge fees broken down by the three vanilla
+              sources (origin tx fees, counterpart tx fees, bridge
+              protocol fee from the amount difference). */}
+          {e.bridgeTx && (
+            <BridgeFees
+              assetID={e.assetID}
+              bridgeTx={e.bridgeTx}
+              assets={assets}
+              t={t}
+            />
           )}
           {amount > 0 && (
             <tr>
@@ -764,17 +917,26 @@ interface WithdrawalDetailProps {
   e: WithdrawalEvent
   pending: boolean
   assets: Record<number, SupportedAsset>
+  net: number
   t: (k: string) => string
 }
 
-function WithdrawalDetail ({ e, pending, assets, t }: WithdrawalDetailProps) {
+function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps) {
   const asset = assets[e.assetID]
   const ui = asset?.unitInfo
   const unit = ui?.conventional?.unit ?? ''
 
-  const feeAsset = assets[feeAssetID(e.assetID, assets)]
-  const feeUI = feeAsset?.unitInfo
+  const feeAssetForWithdrawal = assets[feeAssetID(e.assetID, assets)]
+  const feeUI = feeAssetForWithdrawal?.unitInfo
   const feeUnit = feeUI?.conventional?.unit ?? ''
+
+  // MML-02: explorer link helpers for the withdrawal's tx and bridge tx.
+  const txHref = e.transaction
+    ? txExplorerURL(e.transaction, e.assetID, net)
+    : null
+  const bridgeHref = e.bridgeTx
+    ? txExplorerURL(e.bridgeTx, e.assetID, net)
+    : null
 
   return (
     <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -783,13 +945,15 @@ function WithdrawalDetail ({ e, pending, assets, t }: WithdrawalDetailProps) {
         <tbody>
           <tr>
             <td className="text-secondary">{t('Withdrawal ID')}</td>
-            <td title={e.id}>{trimWithEllipsis(e.id, 20)}</td>
+            {/* MML-01: copy button on Withdrawal ID. */}
+            <td><IDCell id={e.id} /></td>
           </tr>
           {e.transaction && (
             <>
               <tr>
                 <td className="text-secondary">{t('TX ID')}</td>
-                <td title={e.transaction.id}>{trimWithEllipsis(e.transaction.id, 20)}</td>
+                {/* MML-01 + MML-02: copy + explorer link on TX ID. */}
+                <td><IDCell id={e.transaction.id} href={txHref} /></td>
               </tr>
               <tr>
                 <td className="text-secondary">{t('Fees')}</td>
@@ -804,8 +968,17 @@ function WithdrawalDetail ({ e, pending, assets, t }: WithdrawalDetailProps) {
           {e.bridgeTx && (
             <tr>
               <td className="text-secondary">{t('Bridge TX ID')}</td>
-              <td title={e.bridgeTx.id}>{trimWithEllipsis(e.bridgeTx.id, 20)}</td>
+              <td><IDCell id={e.bridgeTx.id} href={bridgeHref} /></td>
             </tr>
+          )}
+          {/* MML-03: bridge fees breakdown for the withdrawal path. */}
+          {e.bridgeTx && (
+            <BridgeFees
+              assetID={e.assetID}
+              bridgeTx={e.bridgeTx}
+              assets={assets}
+              t={t}
+            />
           )}
           <tr>
             <td className="text-secondary">{t('CEX Debit')}</td>
