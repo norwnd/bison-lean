@@ -85,9 +85,13 @@ export default function MMArchivesPage () {
                 </td>
                 <td className={p.colorClass}>{p.text}</td>
                 <td>
+                  {/* MMA-01: pass `returnPage=mmarchives` so MMLogsPage's
+                      back button returns here instead of falling back to
+                      its `'mm'` default. Mirrors vanilla `mmarchives.ts`
+                      L48: `loadPage('mmlogs', { ..., returnPage: 'mmarchives' })`. */}
                   <button
                     className="btn btn-sm btn-outline-secondary me-1"
-                    onClick={() => navigate(`${ROUTES.MM_LOGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}&startTime=${startTime}`)}
+                    onClick={() => navigate(`${ROUTES.MM_LOGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}&startTime=${startTime}&returnPage=mmarchives`)}
                   >
                     {t('Logs')}
                   </button>
