@@ -3,7 +3,7 @@ import {
 } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { postJSON, checkResponse } from '../services/api'
+import { postJSON, checkResponse, Errors } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
@@ -22,17 +22,31 @@ import type {
   RateNote,
   WalletTransaction, TxHistoryResult, Order, UnitInfo,
   CoreNote, TicketStakingStatus, VotingServiceProvider,
-  Exchange, Spot
+  Exchange, Spot,
+  WalletPeer, WalletRestoration
 } from '../stores/types'
+import { PeerSource } from '../stores/types'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
+// Wallet trait flags (mirrors vanilla `wallets.ts` L66-77). Used to
+// gate "other actions" UI on wallets that actually implement each
+// optional capability.
 const traitRescanner = 1
+const traitLogFiler = 1 << 2
+const traitRecoverer = 1 << 5
+const traitRestorer = 1 << 8
 const traitTxFeeEstimator = 1 << 9
+const traitPeerManager = 1 << 10
 const traitTicketBuyer = 1 << 15
 const traitFundsMixer = 1 << 17
+// Aggregated mask used to decide whether to render the "Other Actions"
+// section at all (skipped entirely when no extra-actions trait is set).
+// Mirrors vanilla `traitsExtraOpts` L77.
+const traitsExtraOpts =
+  traitLogFiler | traitRecoverer | traitRestorer | traitRescanner
 
 const DCR_ASSET_ID = 42
 const TX_HISTORY_PAGE_SIZE = 10
@@ -257,7 +271,20 @@ export default function WalletsPage () {
   const fetchUser = useAuthStore(s => s.fetchUser)
 
   const [selectedAssetID, setSelectedAssetID] = useState<number | null>(null)
+  // WP-19: extended `activeForm` to host the four new action modals
+  // (recoverWallet / exportWalletAuth / restoreWalletInfo / managePeers)
+  // plus the shared confirmForce step. The string-tagged enum mirrors
+  // vanilla's per-form `Doc.show()` switching in `forms.show(...)`.
   const [activeForm, setActiveForm] = useState<string | null>(null)
+  // Shared force-confirm pending state. Vanilla stashes
+  // `this.forceUrl` + `this.forceReq` on the page class, and the
+  // confirmForce form re-submits with `force: true`. We use the same
+  // pattern: when a request fails with `activeOrdersErr`, we keep the
+  // URL + body around so the modal's confirm button can re-issue it.
+  const [pendingForce, setPendingForce] = useState<{ url: string; req: any } | null>(null)
+  // Restoration cards returned from /api/restorewalletinfo. Set when
+  // the password modal succeeds; cleared on close.
+  const [restorationInfo, setRestorationInfo] = useState<WalletRestoration[] | null>(null)
 
   // Force re-render on note arrival so balances refresh.
   const [, setTick] = useState(0)
@@ -521,6 +548,94 @@ export default function WalletsPage () {
               asset={selectedAsset}
               wallet={selectedWallet}
               onClose={() => setActiveForm(null)}
+              setActiveForm={setActiveForm}
+              setPendingForce={setPendingForce}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* WP-06: recover wallet confirmation. Vanilla
+          `wallets.tmpl` `recoverWalletConfirm` form (L882-895) +
+          `wallets.ts` `showRecoverWallet()` (L2250) + `recoverWallet()`
+          (L2669). On `activeOrdersErr`, transitions to confirmForce. */}
+      <FormOverlay show={activeForm === 'recoverWallet'} onClose={() => setActiveForm(null)}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 380, maxWidth: 480 }}>
+          {selectedAsset && (
+            <RecoverWalletConfirm
+              assetID={selectedAsset.id}
+              onClose={() => setActiveForm(null)}
+              onForceNeeded={(url, req) => {
+                setPendingForce({ url, req })
+                setActiveForm('confirmForce')
+              }}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* WP-07: export wallet password prompt. Vanilla
+          `wallets.tmpl` `exportWalletAuth` form (L897-918) +
+          `wallets.ts` `displayExportWalletAuth()` (L2624) +
+          `exportWalletAuthSubmit()` (L2634). On success, transitions to
+          restoreWalletInfo with the returned restoration cards. */}
+      <FormOverlay show={activeForm === 'exportWalletAuth'} onClose={() => setActiveForm(null)}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 400, maxWidth: 520 }}>
+          {selectedAsset && (
+            <ExportWalletAuth
+              assetID={selectedAsset.id}
+              onClose={() => setActiveForm(null)}
+              onSuccess={(info) => {
+                setRestorationInfo(info)
+                setActiveForm('restoreWalletInfo')
+              }}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* WP-07 (cont.): restore wallet info display. Vanilla
+          `wallets.tmpl` `restoreWalletInfo` form (L919-947) +
+          `wallets.ts` `displayRestoreWalletInfo()` (L2655). */}
+      <FormOverlay show={activeForm === 'restoreWalletInfo'} onClose={() => { setActiveForm(null); setRestorationInfo(null) }}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 400, maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
+          {restorationInfo && (
+            <RestoreWalletInfo
+              info={restorationInfo}
+              onClose={() => { setActiveForm(null); setRestorationInfo(null) }}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* WP-09: manage peers. Vanilla `wallets.tmpl` `managePeersForm`
+          (L779-815) + `wallets.ts` `showManagePeersForm()` (L834) +
+          `updateWalletPeersTable()` (L756) + `submitAddPeer()` (L843).
+          The Add Peer / Remove Peer flows poll the wallet for an
+          updated peer list (vanilla's `spinUntilPeersUpdate`); we
+          re-fetch on every successful mutation. */}
+      <FormOverlay show={activeForm === 'managePeers'} onClose={() => setActiveForm(null)}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640, maxHeight: '80vh', overflowY: 'auto' }}>
+          {selectedAsset && (
+            <ManagePeers
+              assetID={selectedAsset.id}
+              onClose={() => setActiveForm(null)}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* Shared confirm-force modal. Used by recover (WP-06) and rescan
+          when the wallet is actively managing orders. Vanilla
+          `wallets.tmpl` `confirmForce` form (L865-880) + `wallets.ts`
+          `confirmForceSubmit()` (L2700). The pendingForce state holds
+          the URL + body to retry with `force: true`. */}
+      <FormOverlay show={activeForm === 'confirmForce'} onClose={() => { setActiveForm(null); setPendingForce(null) }}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 380, maxWidth: 520 }}>
+          {pendingForce && (
+            <ConfirmForce
+              pending={pendingForce}
+              onClose={() => { setActiveForm(null); setPendingForce(null) }}
             />
           )}
         </div>
@@ -1797,10 +1912,18 @@ function RecentOrdersView ({ assetID, assets }: {
 // WalletConfigView
 // ---------------------------------------------------------------------------
 
-function WalletConfigView ({ asset, wallet, onClose }: {
+function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingForce }: {
   asset: SupportedAsset
   wallet: WalletState
   onClose: () => void
+  // WP-19: form-stack navigation for the "Other Actions" buttons. The
+  // config view closes itself and opens a sibling modal so each action
+  // is its own focused form, mirroring vanilla's `forms.show()` pattern.
+  setActiveForm: (f: string | null) => void
+  // Used by the WP-06/rescan force-confirm flow: when the underlying
+  // request fails with `activeOrdersErr` we stash the URL + body here
+  // so the shared ConfirmForce modal can re-issue with `force: true`.
+  setPendingForce: (p: { url: string; req: any } | null) => void
 }) {
   const { t } = useTranslation()
   const fetchUser = useAuthStore(s => s.fetchUser)
@@ -1810,7 +1933,14 @@ function WalletConfigView ({ asset, wallet, onClose }: {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // WP-19: trait-gated visibility for the "Other Actions" section.
+  // Mirrors vanilla `wallets.ts` `showReconfig()` L2298-2305.
   const isRescanner = (wallet.traits & traitRescanner) !== 0
+  const isLogFiler = (wallet.traits & traitLogFiler) !== 0
+  const isRecoverer = (wallet.traits & traitRecoverer) !== 0
+  const isRestorer = (wallet.traits & traitRestorer) !== 0
+  const isPeerManager = (wallet.traits & traitPeerManager) !== 0
+  const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0 || isPeerManager
 
   // Load wallet settings
   useEffect(() => {
@@ -1858,13 +1988,39 @@ function WalletConfigView ({ asset, wallet, onClose }: {
   const handleRescan = useCallback(async () => {
     setError('')
     setSuccess('')
-    const res = await postJSON('/api/rescanwallet', { assetID: asset.id })
+    const url = '/api/rescanwallet'
+    const req = { assetID: asset.id }
+    const res = await postJSON(url, req)
+    // WP-19: vanilla `wallets.ts` `rescanWallet()` (L2222) routes
+    // active-orders failures into the shared confirmForce form so the
+    // user can re-submit with `force: true`. Match that here.
+    if (res.code === Errors.activeOrdersErr) {
+      setPendingForce({ url, req })
+      onClose()
+      setActiveForm('confirmForce')
+      return
+    }
     if (!checkResponse(res)) {
       setError(res.msg || 'Rescan failed')
       return
     }
     setSuccess(t('Rescan started.'))
-  }, [asset.id, t])
+  }, [asset.id, onClose, setActiveForm, setPendingForce, t])
+
+  // WP-08: download wallet log file. Vanilla `downloadLogs()` (L2609)
+  // builds a `/wallets/logfile?assetid=N` URL and opens it in a new tab
+  // (or replaces self when running inside the desktop wrapper).
+  const handleDownloadLogs = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.search = `?assetid=${asset.id}`
+    url.pathname = '/wallets/logfile'
+    const w = window as { electron?: unknown; isWebview?: unknown }
+    if (w.electron !== undefined || w.isWebview !== undefined) {
+      window.open(url.toString(), '_self')
+    } else {
+      window.open(url.toString())
+    }
+  }, [asset.id])
 
   const handleSave = useCallback(async () => {
     setError('')
@@ -1938,14 +2094,6 @@ function WalletConfigView ({ asset, wallet, onClose }: {
                 ? t('Lock')
                 : t('Unlock')}
             </button>
-            {isRescanner && (
-              <button
-                className="btn btn-outline-secondary btn-sm"
-                onClick={handleRescan}
-              >
-                {t('Rescan')}
-              </button>
-            )}
             <button
               className="btn btn-secondary btn-sm ms-auto"
               onClick={onClose}
@@ -1953,8 +2101,449 @@ function WalletConfigView ({ asset, wallet, onClose }: {
               {t('Close')}
             </button>
           </div>
+
+          {/* WP-19: "Other Actions" section. Mirrors vanilla
+              `wallets.tmpl` L761-771 + `wallets.ts` `showReconfig()`
+              L2298-2305 trait-gated visibility. The header is hidden
+              when no extra-action trait is set. Manage Peers is also
+              shown here (vanilla puts it in a separate "network
+              actions" modal, but the React UI has only the gear icon
+              entry point so we host it next to the other per-wallet
+              actions for parity coverage). */}
+          {(hasExtraOpts || isPeerManager) && (
+            <>
+              <div className="fs15 mt-3 pt-2 border-top text-secondary">
+                {t('other_actions')}
+              </div>
+              <div className="d-flex flex-wrap gap-2 mt-2">
+                {isLogFiler && (
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={handleDownloadLogs}
+                  >
+                    {t('wallet_logs')}
+                  </button>
+                )}
+                {isRestorer && (
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => {
+                      onClose()
+                      setActiveForm('exportWalletAuth')
+                    }}
+                  >
+                    {t('export_wallet')}
+                  </button>
+                )}
+                {isPeerManager && (
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => {
+                      onClose()
+                      setActiveForm('managePeers')
+                    }}
+                  >
+                    {t('manage_peers')}
+                  </button>
+                )}
+                {isRescanner && (
+                  <button
+                    className="btn btn-outline-danger btn-sm"
+                    onClick={handleRescan}
+                  >
+                    {t('Rescan')}
+                  </button>
+                )}
+                {isRecoverer && (
+                  <button
+                    className="btn btn-outline-danger btn-sm"
+                    onClick={() => {
+                      onClose()
+                      setActiveForm('recoverWallet')
+                    }}
+                  >
+                    {t('recover')}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-06: RecoverWalletConfirm
+// ---------------------------------------------------------------------------
+
+function RecoverWalletConfirm ({ assetID, onClose, onForceNeeded }: {
+  assetID: number
+  onClose: () => void
+  // Called when the underlying request returns `activeOrdersErr`. The
+  // parent stashes the URL + body into pendingForce and switches to the
+  // confirmForce modal.
+  onForceNeeded: (url: string, req: any) => void
+}) {
+  const { t } = useTranslation()
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = useCallback(async () => {
+    setError('')
+    setSubmitting(true)
+    const url = '/api/recoverwallet'
+    const req = { assetID }
+    const res = await postJSON(url, req)
+    setSubmitting(false)
+    if (res.code === Errors.activeOrdersErr) {
+      onForceNeeded(url, req)
+      return
+    }
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Recover failed')
+      return
+    }
+    onClose()
+  }, [assetID, onClose, onForceNeeded])
+
+  return (
+    <div>
+      <div className="fs18 mb-3">{t('recover_wallet')}</div>
+      <div className="fs14 mb-3">{t('recover_warning')}</div>
+      {error && <div className="text-danger fs14 mb-2">{error}</div>}
+      <div className="d-flex gap-2">
+        <button
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting
+            ? '...'
+            : t('Submit')}
+        </button>
+        <button
+          className="btn btn-secondary ms-auto"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          {t('cancel')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-07: ExportWalletAuth (password prompt) → RestoreWalletInfo
+// ---------------------------------------------------------------------------
+
+function ExportWalletAuth ({ assetID, onClose, onSuccess }: {
+  assetID: number
+  onClose: () => void
+  onSuccess: (info: WalletRestoration[]) => void
+}) {
+  const { t } = useTranslation()
+  const [pw, setPw] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = useCallback(async () => {
+    setError('')
+    setSubmitting(true)
+    const res = await postJSON('/api/restorewalletinfo', { assetID, pass: pw })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Restore info request failed')
+      return
+    }
+    setPw('')
+    onSuccess(res.restorationinfo as WalletRestoration[])
+  }, [assetID, onSuccess, pw])
+
+  return (
+    <div>
+      <div className="fs18 mb-3">{t('export_wallet')}</div>
+      <div className="fs14 mb-2">{t('pw_for_wallet_seed')}</div>
+      {/* Vanilla `wallets.tmpl` L909 uses an HTML span with a
+          warning class; we render the same translation string. The
+          translation key is full sentence + class markup, but
+          react-i18next doesn't interpolate HTML by default so we
+          render the raw text. The danger color comes from the wrapper. */}
+      <div className="fs14 text-warning mb-3">{t('export_wallet_disclaimer')}</div>
+      <div className="mb-3">
+        <label className="form-label fs14">{t('Password')}</label>
+        <input
+          type="password"
+          className="form-control form-control-sm"
+          value={pw}
+          autoComplete="current-password"
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') submit()
+          }}
+        />
+      </div>
+      {error && <div className="text-danger fs14 mb-2">{error}</div>}
+      <div className="d-flex gap-2">
+        <button
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={submitting || !pw}
+        >
+          {submitting
+            ? '...'
+            : t('Show Me')}
+        </button>
+        <button
+          className="btn btn-secondary ms-auto"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          {t('cancel')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function RestoreWalletInfo ({ info, onClose }: {
+  info: WalletRestoration[]
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div>
+      <div className="fs18 mb-3">{t('export_wallet')}</div>
+      <div className="fs14 mb-2">{t('export_wallet_msg')}</div>
+      <div className="fs14 text-danger mb-3">
+        <strong><u>{t('clipboard_warning')}</u></strong>
+      </div>
+      <div className="mt-3 border-top pt-3">
+        {info.map((wr, idx) => (
+          <div key={idx} className="mb-3 pb-3 border-bottom">
+            <div className="fs20 demi text-decoration-underline">{wr.target}</div>
+            <div className="fs14 mt-1">{wr.seedName}</div>
+            <div className="d-flex align-items-start gap-2 mt-1">
+              <span className="mono fs14 text-break flex-grow-1">{wr.seed}</span>
+              <CopyButton text={wr.seed} />
+            </div>
+            <div className="fs14 mt-2">{t('Instructions:')}</div>
+            <div className="fs14 text-break" style={{ whiteSpace: 'pre-line' }}>{wr.instructions}</div>
+          </div>
+        ))}
+      </div>
+      <div className="d-flex">
+        <button className="btn btn-secondary ms-auto" onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-09: ManagePeers
+// ---------------------------------------------------------------------------
+
+function ManagePeers ({ assetID, onClose }: {
+  assetID: number
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const [peers, setPeers] = useState<WalletPeer[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [addAddr, setAddAddr] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const refresh = useCallback(async () => {
+    setError('')
+    setLoading(true)
+    const res = await postJSON('/api/getwalletpeers', { assetID })
+    setLoading(false)
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Failed to load peers')
+      return
+    }
+    const list: WalletPeer[] = res.peers || []
+    // Vanilla sorts by source ascending so default-discovered-added
+    // groups stay together.
+    list.sort((a, b) => a.source - b.source)
+    setPeers(list)
+  }, [assetID])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const sourceLabel = useCallback((src: PeerSource): string => {
+    switch (src) {
+      case PeerSource.WalletDefault: return t('DEFAULT')
+      case PeerSource.UserAdded: return t('ADDED')
+      case PeerSource.Discovered: return t('DISCOVERED')
+      default: return ''
+    }
+  }, [t])
+
+  const addPeer = useCallback(async () => {
+    if (!addAddr.trim()) return
+    setError('')
+    setSubmitting(true)
+    const res = await postJSON('/api/addwalletpeer', { assetID, addr: addAddr.trim() })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Failed to add peer')
+      return
+    }
+    setAddAddr('')
+    refresh()
+  }, [addAddr, assetID, refresh])
+
+  const removePeer = useCallback(async (addr: string) => {
+    setError('')
+    const res = await postJSON('/api/removewalletpeer', { assetID, addr })
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Failed to remove peer')
+      return
+    }
+    refresh()
+  }, [assetID, refresh])
+
+  return (
+    <div className="d-flex flex-column">
+      <div className="fs18 mb-3">{t('manage_peers')}</div>
+
+      {loading && (
+        <div className="text-center py-3">
+          <span className="ico-spinner spinner fs15"></span>
+        </div>
+      )}
+
+      {!loading && (
+        <table className="compact row-border">
+          <thead className="unbold fs15">
+            <tr>
+              <th>{t('address')}</th>
+              <th>{t('source')}</th>
+              <th>{t('connected')}</th>
+              <th>{t('Remove')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {peers.length === 0 && (
+              <tr>
+                <td colSpan={4} className="text-center grey py-2">—</td>
+              </tr>
+            )}
+            {peers.map(p => (
+              <tr key={`${p.source}-${p.addr}`}>
+                <td className="text-break">{p.addr}</td>
+                <td>{sourceLabel(p.source)}</td>
+                <td>
+                  {p.connected
+                    ? <span className="ico-check text-success" title={t('connected')}></span>
+                    : <span className="ico-cross text-danger" title={t('Not connected')}></span>}
+                </td>
+                <td>
+                  {p.source === PeerSource.UserAdded && (
+                    <span
+                      className="ico-cross pointer text-danger"
+                      title={t('Remove')}
+                      onClick={() => removePeer(p.addr)}
+                    ></span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="d-flex gap-2 mt-3">
+        <input
+          type="text"
+          className="form-control form-control-sm flex-grow-1"
+          placeholder={t('enter_peer_address')}
+          value={addAddr}
+          onChange={e => setAddAddr(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') addPeer()
+          }}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={addPeer}
+          disabled={submitting || !addAddr.trim()}
+        >
+          {t('add_peer')}
+        </button>
+      </div>
+
+      {error && <div className="text-danger fs14 mt-2">{error}</div>}
+
+      <div className="d-flex mt-3">
+        <button className="btn btn-secondary btn-sm ms-auto" onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Shared force-confirm modal (recover + rescan)
+// ---------------------------------------------------------------------------
+
+function ConfirmForce ({ pending, onClose }: {
+  pending: { url: string; req: any }
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const fetchUser = useAuthStore(s => s.fetchUser)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = useCallback(async () => {
+    setError('')
+    setSubmitting(true)
+    // Vanilla `wallets.ts` `confirmForceSubmit()` (L2700) re-issues the
+    // stashed request with `force: true`.
+    const res = await postJSON(pending.url, { ...pending.req, force: true })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Submit failed')
+      return
+    }
+    await fetchUser()
+    onClose()
+  }, [fetchUser, onClose, pending])
+
+  return (
+    <div>
+      <div className="fs20 mb-2 text-center">{t('wallet_actively_used')}</div>
+      <div className="fs14 mb-3">{t('confirm_force_message')}</div>
+      {error && <div className="text-danger fs14 mb-2">{error}</div>}
+      <div className="d-flex gap-2 justify-content-end">
+        <button
+          className="btn btn-outline-danger btn-sm"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          {t('cancel')}
+        </button>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting
+            ? '...'
+            : t('confirm')}
+        </button>
+      </div>
     </div>
   )
 }

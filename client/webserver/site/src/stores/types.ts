@@ -1129,6 +1129,19 @@ export interface WalletPeer {
   connected: boolean
 }
 
+// WalletRestoration mirrors the Go `asset.WalletRestoration` struct
+// (client/asset/interface.go L1137). Returned by /api/restorewalletinfo
+// for wallets that implement the WalletRestorer trait, and rendered as
+// per-target info cards in the export wallet flow.
+export interface WalletRestoration {
+  target: string
+  seed: string
+  // SeedName is the name of the seed used for this particular wallet,
+  // e.g. "Private Key".
+  seedName: string
+  instructions: string
+}
+
 export interface TicketTransaction {
   hash: string
   ticketPrice: number
