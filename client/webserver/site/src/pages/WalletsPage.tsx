@@ -29,7 +29,7 @@ import type {
   WalletPeer, WalletRestoration,
   ProposalsMeta, Ticket
 } from '../stores/types'
-import { PeerSource, ApprovalStatus } from '../stores/types'
+import { PeerSource, ApprovalStatus, DCRAssetID } from '../stores/types'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -65,7 +65,10 @@ interface PendingForce {
   req: { assetID: number; force?: boolean }
 }
 
-const DCR_ASSET_ID = 42
+// T18#6: previously declared `DCR_ASSET_ID = 42` locally here,
+// duplicating the shared `DCRAssetID` constant from stores/types.
+// Now imported from there -- single source of truth for the DCR
+// BIP-44 coin type.
 const TX_HISTORY_PAGE_SIZE = 10
 
 const txTypeUnknown = 0
@@ -886,7 +889,7 @@ function WalletDetail ({
     ? assets[asset.token.parentID]
     : null
 
-  const isTicketBuyer = (wallet.traits & traitTicketBuyer) !== 0 && asset.id === DCR_ASSET_ID
+  const isTicketBuyer = (wallet.traits & traitTicketBuyer) !== 0 && asset.id === DCRAssetID
   const isMixer = (wallet.traits & traitFundsMixer) !== 0
 
   const totalBal = bal.available + bal.locked + bal.immature
@@ -1092,7 +1095,7 @@ function WalletDetail ({
       {/* ---- Staking (DCR only, inline) ---- */}
       {isTicketBuyer && wallet.running && (
         <StakingView
-          assetID={DCR_ASSET_ID}
+          assetID={DCRAssetID}
           assets={assets}
         />
       )}
@@ -3730,6 +3733,7 @@ function SetVotesModal ({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-2 hoverbg pointer ico-open"
+                      aria-label={`View transaction ${tspend.hash.slice(0, 8)}... in block explorer`}
                     ></a>
                   )}
                 </div>
@@ -3830,6 +3834,7 @@ function SetVotesModal ({
                 to={`/proposal/${proposal.token}?assetID=${assetID}`}
                 className="fs15 pt-1 hoverbg pointer ico-open justify-content-end"
                 onClick={onClose}
+                aria-label={`View proposal: ${proposal.name}`}
               ></Link>
             </div>
             <div>

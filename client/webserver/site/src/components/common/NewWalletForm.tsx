@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { postJSON } from '../../services/api'
-import { checkResponse } from '../../hooks/useApi'
+import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { useNotifications } from '../../hooks/useNotifications'
 import { WalletConfigForm } from './WalletConfigForm'
 import type { WalletConfigFormHandle } from './WalletConfigForm'
 import type {
@@ -12,7 +10,6 @@ import type {
   WalletDefinition,
   Token,
   ConfigOption,
-  WalletCreationNote,
 } from '../../stores/types'
 
 // --- Utility ---
@@ -57,14 +54,13 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
   const [showSettingsHeader, setShowSettingsHeader] = useState(false)
   const [showOneBttn, setShowOneBttn] = useState(false)
   const [guideLink, setGuideLink] = useState('')
-  const [createUpdater] = useState<((note: WalletCreationNote) => void) | null>(null)
 
-  // Listen for wallet-creation notifications.
-  useNotifications({
-    createwallet: (note) => {
-      if (createUpdater) createUpdater(note as WalletCreationNote)
-    },
-  })
+  // T18#13: previously declared a `createUpdater` useState that was
+  // always null and a `useNotifications({ createwallet })` handler
+  // whose body never fired because of the null check. Dead code from
+  // an earlier refactor -- deleted. If we ever need wallet-creation
+  // progress callbacks (e.g. DCR SPV sync progress), wire them up
+  // fresh via useNotifications directly.
 
   // Parse asset data from store.
   const parseAsset = useCallback((id: number): CurrentAsset | null => {

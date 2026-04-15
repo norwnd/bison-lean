@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { postJSON } from '../../services/api'
-import { checkResponse } from '../../hooks/useApi'
+import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
 import { formatCoinValue, formatFiatConversion } from '../../hooks/useFormatters'

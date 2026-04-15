@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
-import { ROUTES } from '../router/routes'
+import { ROUTES, type MMLogsReturnPage } from '../router/routes'
 
 interface MarketMakingRun {
   startTime: number
@@ -88,10 +88,14 @@ export default function MMArchivesPage () {
                   {/* MMA-01: pass `returnPage=mmarchives` so MMLogsPage's
                       back button returns here instead of falling back to
                       its `'mm'` default. Mirrors vanilla `mmarchives.ts`
-                      L48: `loadPage('mmlogs', { ..., returnPage: 'mmarchives' })`. */}
+                      L48: `loadPage('mmlogs', { ..., returnPage: 'mmarchives' })`.
+                      T18#4: typed via MMLogsReturnPage to prevent typos. */}
                   <button
                     className="btn btn-sm btn-outline-secondary me-1"
-                    onClick={() => navigate(`${ROUTES.MM_LOGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}&startTime=${startTime}&returnPage=mmarchives`)}
+                    onClick={() => {
+                      const returnPage: MMLogsReturnPage = 'mmarchives'
+                      navigate(`${ROUTES.MM_LOGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}&startTime=${startTime}&returnPage=${returnPage}`)
+                    }}
                   >
                     {t('Logs')}
                   </button>

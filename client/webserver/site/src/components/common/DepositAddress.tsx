@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { postJSON } from '../../services/api'
-import { checkResponse } from '../../hooks/useApi'
+import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import type { SupportedAsset, WalletTransaction } from '../../stores/types'
 

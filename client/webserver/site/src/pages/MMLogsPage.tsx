@@ -8,7 +8,7 @@ import { formatCoinValue, formatFourSigFigs, formatFiatValue } from '../hooks/us
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CopyButton } from '../components/common/CopyButton'
 import { explorerURL } from '../components/CoinExplorers'
-import { ROUTES } from '../router/routes'
+import { ROUTES, type MMLogsReturnPage } from '../router/routes'
 import type {
   MarketMakingEvent,
   DEXOrderEvent,
@@ -151,7 +151,10 @@ export default function MMLogsPage () {
   const baseID = parseInt(searchParams.get('baseID') ?? '0')
   const quoteID = parseInt(searchParams.get('quoteID') ?? '0')
   const startTime = parseInt(searchParams.get('startTime') ?? '0')
-  const returnPage = searchParams.get('returnPage') ?? 'mm'
+  // T18#4: narrow the raw string to the known-valid set; anything
+  // else (including typos) falls through to the 'mm' default.
+  const rawReturnPage = searchParams.get('returnPage')
+  const returnPage: MMLogsReturnPage = rawReturnPage === 'mmarchives' ? 'mmarchives' : 'mm'
 
   const [events, setEvents] = useState<MarketMakingEvent[]>([])
   const [overview, setOverview] = useState<MarketMakingRunOverview | null>(null)

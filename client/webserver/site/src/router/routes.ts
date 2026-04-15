@@ -27,3 +27,10 @@ export function dexSettingsPath (host: string): string {
 export function proposalPath (token: string): string {
   return `/proposal/${token}`
 }
+
+// T18#4: MMLogsPage's `?returnPage=...` query param identifies where
+// the Back button should navigate to. Only two valid values; typing
+// them centrally prevents typos from silently falling through to
+// the default ('mm') on either side of the producer/consumer boundary
+// (MMArchivesPage produces, MMLogsPage consumes).
+export type MMLogsReturnPage = 'mm' | 'mmarchives'

@@ -35,7 +35,8 @@ import { bridgeApprovalStatus as apiBridgeApprovalStatus } from './bridgeApi'
 import { loadInitialBridgeHistory, type BridgeTransaction } from './bridgeData'
 import { assetLogoPath } from './bridgeUtils'
 import type {
-  CoreNote, BridgeNote, WalletStateNote, BalanceNote
+  CoreNote, BridgeNote, WalletStateNote, BalanceNote,
+  WalletNote, TransactionNote
 } from '../../stores/types'
 
 export interface BridgingPopupProps {
@@ -249,11 +250,10 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
     dispatch({ type: 'PATCH', patch: { pendingBridges: pending, bridgeHistory: history } })
   }, [state.pendingBridges, state.bridgeHistory])
 
-  const handleTransactionNote = useCallback((note: CoreNote) => {
+  const handleTransactionNote = useCallback((n: TransactionNote) => {
     // Update timestamp on any tx whose initiation has been mined.
     // Mirrors vanilla L106-134.
-    const noteTyped = note as { transaction?: { id: string; timestamp: number } }
-    const tx = noteTyped.transaction
+    const tx = n.transaction
     if (!tx?.id || !tx.timestamp) return
 
     const updateTimestamp = (txs: BridgeTransaction[]) => {
@@ -292,13 +292,27 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
     }
   }, [networkAssetIDs])
 
-  // Subscribe to the four WS routes the popup cares about. Stable
-  // identity via useMemo so useNotifications doesn't churn on every
-  // render.
+  // Subscribe to the four WS routes the popup cares about. Vanilla
+  // wallets.ts handles `walletnote` at the page level and
+  // dispatches based on `payload.route` (e.g. 'transaction',
+  // 'tipChange', 'ticketPurchaseUpdate'). For the bridge popup we
+  // only care about the 'transaction' sub-route (to refresh tx
+  // timestamps when the initiation tx is mined), so we unwrap the
+  // payload inline here. Mirrors vanilla `handleCustomWalletNote`
+  // (L2767) + `case 'transaction'` dispatch (L2791-2799).
+  //
+  // Previously subscribed to `transaction:` directly, which never
+  // fired because there is no top-level `type: 'transaction'` note
+  // -- they arrive wrapped as `walletnote`.
   const noteReceivers = useMemo(() => ({
     bridge: (n: CoreNote) => handleBridgeUpdate(n as BridgeNote),
     walletstate: (n: CoreNote) => handleWalletStateNote(n as WalletStateNote),
-    transaction: handleTransactionNote,
+    walletnote: (n: CoreNote) => {
+      const payload = (n as WalletNote).payload
+      if (payload?.route === 'transaction') {
+        handleTransactionNote(payload as TransactionNote)
+      }
+    },
     balance: handleBalanceUpdate
   }), [handleBridgeUpdate, handleWalletStateNote, handleTransactionNote, handleBalanceUpdate])
 

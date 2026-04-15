@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
 import { postJSON, getJSON } from '../services/api'
-import type { APIResponse } from '../services/api'
 
 interface ApiState<T> {
   data: T | null
@@ -53,7 +52,7 @@ export function useApi<T = any> () {
   return { ...state, post, get, reset }
 }
 
-// checkResponse is a simple helper matching the old pattern.
-export function checkResponse (resp: APIResponse): boolean {
-  return resp.requestSuccessful && resp.ok
-}
+// T18#14: `checkResponse` previously lived here as a duplicate of
+// the identical helper in `services/api.ts`. Call sites have been
+// migrated to import from `services/api.ts` directly. Keeping the
+// single source of truth there next to the other REST infrastructure.

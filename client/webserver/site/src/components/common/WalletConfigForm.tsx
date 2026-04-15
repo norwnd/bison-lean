@@ -1,7 +1,6 @@
 import { useState, useCallback, useImperativeHandle, forwardRef, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { postJSON } from '../../services/api'
-import { checkResponse } from '../../hooks/useApi'
+import { postJSON, checkResponse } from '../../services/api'
 import type { ConfigOption } from '../../stores/types'
 import { useAuthStore } from '../../stores/useAuthStore'
 
