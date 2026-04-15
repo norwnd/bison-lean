@@ -7,6 +7,7 @@ import { useMarketStore } from '../stores/useMarketStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useUIStore } from '../stores/useUIStore'
 import { Header } from './Header'
+import { NewUserBanner } from './NewUserBanner'
 
 export function AppLayout () {
   const user = useAuthStore(s => s.user)
@@ -89,6 +90,14 @@ export function AppLayout () {
 
   return (
     <>
+      {/* B-XB1: new-user banner sits above the header, mirroring vanilla's
+          placement at the top of `<body>` before the header template
+          (bodybuilder.tmpl L25). Renders null until the user has a
+          `seedGenTime`, and hides itself forever once dismissed for that
+          seed (dismissed state persisted via newUserBannerDismissedLK).
+          Closes LP-01 (high) + IP-01 (low) — no per-page calls needed,
+          the banner reacts to `useAuthStore.seedGenTime` transitions. */}
+      <NewUserBanner />
       <Header />
       <main id="main" className="flex-grow-1 position-relative d-flex flex-column" style={{ minHeight: 0 }}>
         <Outlet />
