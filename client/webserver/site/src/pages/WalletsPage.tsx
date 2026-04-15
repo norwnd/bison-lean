@@ -1,18 +1,21 @@
 import {
   useState, useEffect, useCallback, useMemo
 } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { DepositAddress } from '../components/common/DepositAddress'
+import { CopyButton } from '../components/common/CopyButton'
 import {
   formatCoinValue, formatFullPrecision, formatFiatConversion,
   formatFourSigFigs
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 import { filled } from '../components/AccountUtils'
+import { ROUTES } from '../router/routes'
 import type {
   SupportedAsset, WalletState,
   BalanceNote, WalletStateNote,
@@ -68,27 +71,36 @@ const noAmtTxTypes = [
   txTypeRevokeTokenApproval
 ]
 
-const TX_TYPE_LABELS: Record<number, string> = {
-  [txTypeUnknown]: 'Unknown',
-  [txTypeSend]: 'Send',
-  [txTypeReceive]: 'Receive',
-  [txTypeSwap]: 'Swap',
-  [txTypeRedeem]: 'Redeem',
-  [txTypeRefund]: 'Refund',
-  [txTypeSplit]: 'Split',
-  [txTypeCreateBond]: 'Create Bond',
-  [txTypeRedeemBond]: 'Redeem Bond',
-  [txTypeApproveToken]: 'Approve Token',
-  [txTypeAcceleration]: 'Acceleration',
-  [txTypeSelfSend]: 'Self Transfer',
-  [txTypeRevokeTokenApproval]: 'Revoke Approval',
-  [txTypeTicketPurchase]: 'Ticket Purchase',
-  [txTypeTicketVote]: 'Ticket Vote',
-  [txTypeTicketRevocation]: 'Ticket Revocation',
-  [txTypeSwapOrSend]: 'Swap/Send',
-  [txTypeMixing]: 'Mix',
-  [txTypeBridgeInitiation]: 'Bridge',
-  [txTypeBridgeCompletion]: 'Bridge Complete'
+// WP-10: tx-type i18n keys. Mirrors vanilla `wallets.ts` L154-176
+// `txTypeTranslationKeys` array indexed by tx type, then resolved
+// via `intl.prep(txTypeTranslationKeys[txType])`. The previous
+// hardcoded English `TX_TYPE_LABELS` would never translate.
+const TX_TYPE_KEYS: Record<number, string> = {
+  [txTypeUnknown]: 'TX_TYPE_UNKNOWN',
+  [txTypeSend]: 'TX_TYPE_SEND',
+  [txTypeReceive]: 'TX_TYPE_RECEIVE',
+  [txTypeSwap]: 'TX_TYPE_SWAP',
+  [txTypeRedeem]: 'TX_TYPE_REDEEM',
+  [txTypeRefund]: 'TX_TYPE_REFUND',
+  [txTypeSplit]: 'TX_TYPE_SPLIT',
+  [txTypeCreateBond]: 'TX_TYPE_CREATE_BOND',
+  [txTypeRedeemBond]: 'TX_TYPE_REDEEM_BOND',
+  [txTypeApproveToken]: 'TX_TYPE_APPROVE_TOKEN',
+  [txTypeAcceleration]: 'TX_TYPE_ACCELERATION',
+  [txTypeSelfSend]: 'TX_TYPE_SELF_TRANSFER',
+  [txTypeRevokeTokenApproval]: 'TX_TYPE_REVOKE_TOKEN_APPROVAL',
+  [txTypeTicketPurchase]: 'TX_TYPE_TICKET_PURCHASE',
+  [txTypeTicketVote]: 'TX_TYPE_TICKET_VOTE',
+  [txTypeTicketRevocation]: 'TX_TYPE_TICKET_REVOCATION',
+  [txTypeSwapOrSend]: 'TX_TYPE_SWAP_OR_SEND',
+  [txTypeMixing]: 'TX_TYPE_MIX',
+  [txTypeBridgeInitiation]: 'TX_TYPE_BRIDGE_INITIATION',
+  [txTypeBridgeCompletion]: 'TX_TYPE_BRIDGE_COMPLETION',
+}
+
+function txTypeLabel (t: (k: string) => string, txType: number): string {
+  const key = TX_TYPE_KEYS[txType] ?? 'TX_TYPE_UNKNOWN'
+  return t(key)
 }
 
 // ---------------------------------------------------------------------------
@@ -893,15 +905,23 @@ function PendingTransactions ({ txs, ui, assetID, net }: {
             <tbody>
               {txs.map(tx => {
                 const [sign, cls] = txSignAndClass(tx.type)
-                const label = TX_TYPE_LABELS[tx.type] ?? 'Unknown'
+                // WP-10: locale-aware tx type label (was hardcoded English).
+                const label = txTypeLabel(t, tx.type)
                 const url = explorerURL(assetID, tx.id, net)
                 return (
                   <tr key={tx.id}>
                     <td>{label}</td>
                     <td className="d-none d-sm-table-cell">
-                      {url
-                        ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">{tx.id.slice(0, 16)}...</a>
-                        : <span>{tx.id.slice(0, 16)}...</span>}
+                      {/* WP-11: copy-to-clipboard button on transaction ID,
+                          mirroring vanilla `setupCopyBtn()` next to TX
+                          IDs in the wallets page. Uses the shared
+                          CopyButton from B-L9. */}
+                      <span className="d-inline-flex align-items-center gap-1">
+                        {url
+                          ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">{tx.id.slice(0, 16)}...</a>
+                          : <span>{tx.id.slice(0, 16)}...</span>}
+                        <CopyButton text={tx.id} />
+                      </span>
                     </td>
                     <td>{ageSince(tx.timestamp * 1000)}</td>
                     <td className={`text-end ${cls}`}>
@@ -933,6 +953,7 @@ function MarketsSection ({ assetName, marketRows, assets }: {
   assets: Record<number, SupportedAsset>
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
 
   return (
     <section>
@@ -964,8 +985,26 @@ function MarketsSection ({ assetName, marketRows, assets }: {
                 const vol24 = row.spot
                   ? row.spot.vol24 / baseConv
                   : 0
+                // WP-21: row click navigates to the markets page
+                // pre-filtered to this market. Mirrors vanilla
+                // `wallets.ts` which made the row a clickable link to
+                // `/markets?host=...&base=...&quote=...`. The React
+                // table row already had `cursor: pointer` styling but
+                // no handler -- this wires it up.
+                const goToMarket = () => {
+                  const params = new URLSearchParams({
+                    host: row.host,
+                    baseID: String(row.baseID),
+                    quoteID: String(row.quoteID),
+                  })
+                  navigate(`${ROUTES.MARKETS}?${params.toString()}`)
+                }
                 return (
-                  <tr key={`${row.host}-${row.name}-${idx}`} className="pointer">
+                  <tr
+                    key={`${row.host}-${row.name}-${idx}`}
+                    className="pointer"
+                    onClick={goToMarket}
+                  >
                     <td>
                       <img src={logoPath(row.baseSymbol)} alt={row.baseSymbol} className="micro-icon me-1" />
                       <img src={logoPath(row.quoteSymbol)} alt={row.quoteSymbol} className="micro-icon me-1" />
@@ -1014,6 +1053,9 @@ function MixingToggle ({ assetID }: { assetID: number }) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // WP-18: mixing info popup state. Mirrors vanilla `wallets.ts`
+  // L409 `Doc.bind(page.privacyInfoBttn, 'click', () => { this.forms.show(page.mixingInfo) })`.
+  const [showInfo, setShowInfo] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1073,6 +1115,16 @@ function MixingToggle ({ assetID }: { assetID: number }) {
                 <span>{t('Privacy off')}</span>
               </div>}
         </div>
+        {/* WP-18: privacy info button. Click opens a modal explaining
+            CoinShuffle++ / StakeShuffle. Mirrors vanilla
+            `privacyInfoBttn` (`wallets.tmpl` L392). */}
+        <button
+          type="button"
+          className="btn flex-center p-3 border-0 border-start rounded-0 fs24 ico-info hoverbg"
+          onClick={() => setShowInfo(true)}
+          aria-label={t('Privacy info')}
+          title={t('Privacy info')}
+        />
         <div className="p-2 border-start flex-center">
           <div className="form-check form-switch mb-0">
             <input
@@ -1086,6 +1138,22 @@ function MixingToggle ({ assetID }: { assetID: number }) {
         </div>
       </div>
       {error && <div className="flex-center p-2 text-danger border-top">{error}</div>}
+
+      {/* WP-18: privacy info modal. Renders the 5 vanilla bullet
+          points from `wallets.tmpl` L1219-1238 using the existing
+          i18n keys (privacy_intro / cspp_how / decred_privacy /
+          privacy_optional / privacy_unlocked). */}
+      <FormOverlay show={showInfo} onClose={() => setShowInfo(false)}>
+        <div className="bg-body border rounded p-4" style={{ maxWidth: 425 }}>
+          <ul className="ps-3 mb-0">
+            <li className="mb-2">{t('privacy_intro')}</li>
+            <li className="mb-2">{t('cspp_how')}</li>
+            <li className="mb-2">{t('decred_privacy')}</li>
+            <li className="mb-2">{t('privacy_optional')}</li>
+            <li>{t('privacy_unlocked')}</li>
+          </ul>
+        </div>
+      </FormOverlay>
     </section>
   )
 }
@@ -1440,11 +1508,13 @@ function TxHistoryView ({ assetID, assets, net }: {
         </div>
 
         <div className="mb-2 fs14">
-          <span className="text-secondary">{t('Type')}:</span> {TX_TYPE_LABELS[detailTx.type] ?? 'Unknown'}
+          <span className="text-secondary">{t('Type')}:</span> {txTypeLabel(t, detailTx.type)}
         </div>
         <div className="mb-2 fs14">
           <span className="text-secondary">{t('ID')}:</span>{' '}
           <code className="text-break fs12">{detailTx.id}</code>
+          {/* WP-11: also offer copy on the detail view's full id. */}
+          <CopyButton text={detailTx.id} />
         </div>
         {!noAmtTxTypes.includes(detailTx.type) && (
           <div className="mb-2 fs14">
@@ -1537,7 +1607,7 @@ function TxHistoryView ({ assetID, assets, net }: {
                   className="cursor-pointer"
                   onClick={() => setDetailTx(tx)}
                 >
-                  <td>{TX_TYPE_LABELS[tx.type] ?? 'Unknown'}</td>
+                  <td>{txTypeLabel(t, tx.type)}</td>
                   <td className={cls}>
                     {noAmtTxTypes.includes(tx.type)
                       ? '-'
@@ -1594,6 +1664,7 @@ function RecentOrdersView ({ assetID, assets }: {
   assets: Record<number, SupportedAsset>
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -1619,7 +1690,19 @@ function RecentOrdersView ({ assetID, assets }: {
 
   return (
     <section className="d-flex flex-column pb-3 border-bottom">
-      <h4 className="m-3">{t('Recent')} {asset.name} {t('Activity')}</h4>
+      <div className="d-flex align-items-center justify-content-between m-3">
+        <h4 className="mb-0">{t('Recent')} {asset.name} {t('Activity')}</h4>
+        {/* WP-21: "View All" link to the orders page pre-filtered to
+            this asset. The OrdersPage `assets` URL param is consumed
+            by its initial filter state. */}
+        <button
+          type="button"
+          className="btn btn-sm btn-link p-0"
+          onClick={() => navigate(`${ROUTES.ORDERS}?assets=${assetID}`)}
+        >
+          {t('View All')}
+        </button>
+      </div>
 
       {loading && (
         <div className="text-center py-3">
@@ -1687,7 +1770,17 @@ function RecentOrdersView ({ assetID, assets }: {
                   <td>{statusStr}</td>
                   <td className="d-none d-md-table-cell">{filledPct}%</td>
                   <td className="text-nowrap">{ageSince(ord.submitTime)}</td>
-                  <td><a className="ico-open fs14 pointer plainlink" href={`/order/${ord.id}`}></a></td>
+                  {/* WP-21 drive-by: use react-router navigate so
+                      we don't trigger a full page reload (the
+                      previous `<a href>` reset the SPA state). */}
+                  <td>
+                    <button
+                      type="button"
+                      className="btn p-0 ico-open fs14 border-0 bg-transparent plainlink"
+                      onClick={() => navigate(`/order/${ord.id}`)}
+                      aria-label={t('View order')}
+                    />
+                  </td>
                 </tr>
               )
             })}
@@ -1894,22 +1987,41 @@ function StakingView ({ assetID, assets }: {
   const [purchaseSuccess, setPurchaseSuccess] = useState('')
 
   // Load stake status
+  const loadStakeStatus = useCallback(async () => {
+    const res = await postJSON('/api/stakestatus', assetID)
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Failed to load staking status')
+      return
+    }
+    setStakeStatus(res.status as TicketStakingStatus)
+  }, [assetID])
+
   useEffect(() => {
     let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      const res = await postJSON('/api/stakestatus', assetID)
-      if (cancelled) return
-      setLoading(false)
-      if (!checkResponse(res)) {
-        setError(res.msg || 'Failed to load staking status')
-        return
-      }
-      setStakeStatus(res.status as TicketStakingStatus)
-    }
-    load()
+    setLoading(true)
+    loadStakeStatus().finally(() => {
+      if (!cancelled) setLoading(false)
+    })
     return () => { cancelled = true }
-  }, [assetID])
+  }, [loadStakeStatus])
+
+  // WP-14: refresh staking status on relevant WS notes so the
+  // displayed ticket count, ticket price, and voting subsidy stay
+  // current. Vanilla `wallets.ts` `handleCustomWalletNote()` (L2767)
+  // dispatches `tipChange` and `ticketPurchaseUpdate` to update DCR
+  // ticket stats. The bumps in the parent WP-02 stub trigger
+  // re-renders but don't refetch -- this hook does the refetch.
+  useNotifications(useMemo(() => ({
+    walletnote: (note: CoreNote) => {
+      const n = note as { payload?: { route?: string; assetID?: number } }
+      const route = n.payload?.route
+      const noteAssetID = n.payload?.assetID
+      if (noteAssetID !== undefined && noteAssetID !== assetID) return
+      if (route === 'tipChange' || route === 'ticketPurchaseUpdate') {
+        loadStakeStatus()
+      }
+    },
+  }), [assetID, loadStakeStatus]))
 
   const loadVSPs = useCallback(async () => {
     setVspLoading(true)
