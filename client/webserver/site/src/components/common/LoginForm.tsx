@@ -24,8 +24,11 @@ export function LoginForm ({ onSuccess }: Props) {
     const result = await login(password)
     setLoading(false)
     setPassword('')
-    if (!result) {
-      setError(t('Login failed'))
+    if (!result.ok) {
+      // Surface the server's actual error message (e.g. "incorrect
+      // password"), mirroring vanilla `forms.ts` `LoginForm.submit()`
+      // L1838: `Doc.showFormError(page.errMsg, res.msg)`.
+      setError(result.msg)
       return
     }
     onSuccess()

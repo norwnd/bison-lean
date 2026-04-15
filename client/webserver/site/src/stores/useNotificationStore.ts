@@ -9,7 +9,7 @@ interface NotificationState {
   noteReceivers: Record<string, (n: CoreNote) => void>[]
 
   notify: (note: CoreNote) => void
-  addNotes: (notes: CoreNote[]) => void
+  setNotes: (notes: CoreNote[]) => void
   setPokes: (pokes: CoreNote[]) => void
   ackNotes: () => void
   registerNoteFeeder: (receivers: Record<string, (n: CoreNote) => void>) => () => void
@@ -36,14 +36,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     })
   },
 
-  addNotes: (notes: CoreNote[]) => {
-    set(prev => ({
-      notes: [...notes, ...prev.notes].slice(0, noteCacheSize)
-    }))
+  // setNotes replaces the entire notification cache, mirroring vanilla
+  // `app.ts` `setNotes()` (L1042) which clears `this.notes` and
+  // `this.page.noteList` before re-populating from the input. Used by
+  // `useAuthStore.login()` to seed the cache with the server's pre-login
+  // notification backlog. Vanilla expects the input to already be in
+  // chronological order (oldest-first); see `login.ts` `submit()` which
+  // calls `res.notes.reverse()` before `loggedIn(res.notes, res.pokes)`.
+  setNotes: (notes: CoreNote[]) => {
+    set({ notes: notes.slice(0, noteCacheSize) })
   },
 
   setPokes: (pokes: CoreNote[]) => {
-    set({ pokes })
+    set({ pokes: pokes.slice(0, noteCacheSize) })
   },
 
   ackNotes: () => {

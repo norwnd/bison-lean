@@ -41,8 +41,18 @@ export function AppPassResetForm ({ onSuccess }: Props) {
     setTimeout(() => onSuccess(), 3000)
   }
 
+  // Wrapping in a `<form>` lets HTML's native semantics handle keyboard
+  // submission: Enter on either password input fires `onSubmit` while
+  // Enter on the seed `<textarea>` inserts a newline as expected. The
+  // submit button is `type="submit"` so the form's onSubmit is the
+  // single source of truth for invocation (no duplicate onClick).
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    submit()
+  }
+
   return (
-    <div className="form-closer">
+    <form className="form-closer" onSubmit={handleSubmit}>
       <div className="px-3 py-2">
         <div className="fs18 mb-2">{t('Reset App Password')}</div>
         <p className="fs15">{t('reset_app_pw_msg')}</p>
@@ -84,13 +94,13 @@ export function AppPassResetForm ({ onSuccess }: Props) {
           <div className="fs15 text-success mb-2">{successMsg}</div>
         )}
         <button
+          type="submit"
           className="btn btn-primary w-100"
-          onClick={submit}
           disabled={loading || successMsg !== ''}
         >
           {loading ? '...' : t('Submit')}
         </button>
       </div>
-    </div>
+    </form>
   )
 }

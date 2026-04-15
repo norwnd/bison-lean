@@ -1,22 +1,39 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '../stores/useAuthStore'
 import { LoginForm } from '../components/common/LoginForm'
 import { AppPassResetForm } from '../components/common/AppPassResetForm'
 import { ROUTES } from '../router/routes'
 
+// LoginPage holds the form for login and password reset.
+//
+// Lifecycle parity with vanilla `login.ts` (LP-02): vanilla constructs
+// LoginForm and AppPassResetForm once and toggles them via
+// `prepAndDisplayLoginForm()`, which calls `refresh()` (clear inputs +
+// hide error) and `focus()` (focus first input) on each show. React
+// achieves the same effect via conditional rendering: each form's local
+// `useState` is reinitialized on remount and the first input has
+// `autoFocus`, so toggling `showResetForm` produces the same visible
+// behavior as vanilla's imperative refresh/focus calls.
+//
+// Concretely:
+//   - Initial mount: LoginForm fresh state + autoFocus on pw input
+//   - "Forgot Password?" click: LoginForm unmounts, AppPassResetForm
+//     mounts fresh (empty fields, autoFocus on newPassword)
+//   - Reset success / backdrop dismiss: AppPassResetForm unmounts,
+//     LoginForm mounts fresh (empty pw, error cleared, autoFocus on pw)
 export default function LoginPage () {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const fetchUser = useAuthStore(s => s.fetchUser)
 
   const [showResetForm, setShowResetForm] = useState(false)
 
-  const handleLoginSuccess = useCallback(async () => {
-    await fetchUser()
+  // No need to call `fetchUser()` here — `useAuthStore.login()` already
+  // fetches the user internally before resolving, mirroring vanilla
+  // `forms.ts` `LoginForm.submit()` (L1834: `await app().fetchUser()`).
+  const handleLoginSuccess = useCallback(() => {
     navigate(ROUTES.WALLETS)
-  }, [fetchUser, navigate])
+  }, [navigate])
 
   const handleResetSuccess = useCallback(() => {
     setShowResetForm(false)
@@ -40,7 +57,11 @@ export default function LoginPage () {
                 className="btn btn-link"
                 onClick={() => setShowResetForm(true)}
               >
-                {t('Forgot Password?')}
+                {/* LP-03: vanilla's `forms.tmpl` uses `[[[Forgot Password]]]`
+                    keyed as `Forgot Password` (no `?`) in `locales/en-us.go`
+                    L477 — the question mark lives in the translation, not
+                    the key. */}
+                {t('Forgot Password')}
               </button>
             </div>
           </div>

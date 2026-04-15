@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 import { getJSON, postJSON } from '../services/api'
+import { useNotificationStore } from './useNotificationStore'
 import type { User, SupportedAsset, Exchange, WalletState, MarketMakingStatus, CoreNote, UserResponse } from './types'
+
+// LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
+// distinguishes "request failed → show server msg" from "request ok →
+// process notes/pokes and continue". The discriminated union surfaces the
+// server's error message so the LoginForm can display it (matching
+// vanilla's `Doc.showFormError(page.errMsg, res.msg)`) instead of falling
+// back to a hardcoded "Login failed" string.
+export type LoginResult =
+  | { ok: true }
+  | { ok: false, msg: string }
 
 interface AuthState {
   user: User | null
@@ -20,7 +31,7 @@ interface AuthState {
 
   fetchUser: () => Promise<User | null>
   fetchBuildInfo: () => Promise<void>
-  login: (appPass: string) => Promise<{ notes: CoreNote[], pokes: CoreNote[] } | null>
+  login: (appPass: string) => Promise<LoginResult>
   logout: () => Promise<void>
   setUser: (user: User) => void
 }
@@ -93,12 +104,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (appPass: string) => {
     const resp = await postJSON('/api/login', { pass: appPass })
-    if (!resp.requestSuccessful || !resp.ok) return null
-    const notes: CoreNote[] = resp.notes || []
-    const pokes: CoreNote[] = resp.pokes || []
-    // After login, fetch user to populate state.
+    if (!resp.requestSuccessful || !resp.ok) {
+      return { ok: false, msg: resp.msg || 'login failed' }
+    }
+    // Mirror vanilla `login.ts` `submit()` ordering: fetch the user
+    // first so subscribers that react to a notification arrival can see
+    // the populated `user`/`assets`/`exchanges` state, then deliver the
+    // pre-login notification backlog.
     await get().fetchUser()
-    return { notes, pokes }
+    // Vanilla reverses the notes backlog before passing it to
+    // `setNotes()` so chronologically older entries sit at lower indices
+    // — matching `prependNoteElement`'s push-append order. `pokes` are
+    // not reversed in vanilla.
+    const notes: CoreNote[] = (resp.notes || []).slice().reverse()
+    const pokes: CoreNote[] = resp.pokes || []
+    const noteStore = useNotificationStore.getState()
+    noteStore.setNotes(notes)
+    noteStore.setPokes(pokes)
+    return { ok: true }
   },
 
   logout: async () => {
@@ -112,6 +135,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       fiatRatesMap: {},
       mmStatus: null,
     })
+    // Clear the notification cache too so a subsequent re-login starts
+    // from a clean slate. Without this, stale notes/pokes from the
+    // previous session would briefly remain visible until the next
+    // `login()` overwrites them via `setNotes`/`setPokes`.
+    const noteStore = useNotificationStore.getState()
+    noteStore.setNotes([])
+    noteStore.setPokes([])
   },
 
   setUser: (user: User) => {
