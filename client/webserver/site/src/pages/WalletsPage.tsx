@@ -10,6 +10,7 @@ import { FormOverlay } from '../components/common/FormOverlay'
 import { DepositAddress } from '../components/common/DepositAddress'
 import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
+import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
   formatCoinValue, formatFullPrecision, formatFiatConversion,
   formatFourSigFigs
@@ -2853,7 +2854,7 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
       <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
         <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
         <span>{t('disallow_token')}</span>
-        <span className="fs14 text-uppercase text-muted">{asset.symbol}</span>
+        <span className="fs14 text-muted"><AssetSymbol asset={asset} /></span>
       </div>
 
       {showTable && (
@@ -2997,7 +2998,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
       <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
         <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
         <span>{t('disallow_token')}</span>
-        <span className="fs14 text-uppercase text-muted">{asset.symbol}</span>
+        <span className="fs14 text-muted"><AssetSymbol asset={asset} /></span>
         <span className="fs14 text-muted">— {t('version')} {version}</span>
       </div>
 

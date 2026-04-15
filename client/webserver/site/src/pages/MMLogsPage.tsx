@@ -7,6 +7,7 @@ import { postJSON, checkResponse } from '../services/api'
 import { formatCoinValue, formatFourSigFigs, formatFiatValue } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CopyButton } from '../components/common/CopyButton'
+import { AssetSymbol } from '../components/common/AssetSymbol'
 import { explorerURL } from '../components/CoinExplorers'
 import { ROUTES, type MMLogsReturnPage } from '../router/routes'
 import type {
@@ -386,7 +387,7 @@ export default function MMLogsPage () {
                     <tr key={assetID}>
                       <td className="d-flex align-items-center gap-1">
                         <img src={logoPath(asset.symbol)} width={16} height={16} alt={asset.symbol} />
-                        {asset.symbol.toUpperCase()}
+                        <AssetSymbol asset={asset} />
                       </td>
                       <td>{diff.fmt}</td>
                       <td>{diff.fmtUSD}</td>
@@ -472,7 +473,7 @@ export default function MMLogsPage () {
               <th>{t('Type')}</th>
               <th>{t('Event ID')}</th>
               {mktAssets.map(a => (
-                <th key={a.id}>{a.symbol.toUpperCase()} {t('Delta')}</th>
+                <th key={a.id}><AssetSymbol asset={a} /> {t('Delta')}</th>
               ))}
               <th>{t('USD')}</th>
               <th></th>
