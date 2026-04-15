@@ -79,6 +79,32 @@
   }
 }
 
+// PS-01/PS-02 + PP-02: slide-in-from-right utility used by
+// ProposalsPage's filter form and ProposalPage's vote form. Mirrors
+// vanilla `proposals.ts`/`proposal.ts` `showForm()` (animationLength
+// 300ms, easeOutHard easing -- mathematically equivalent to standard
+// ease-out-cubic, hence the `cubic-bezier(0.215, 0.61, 0.355, 1)`
+// timing function below). Vanilla animated `right` from
+// `(forms.offsetWidth + form.offsetWidth) / 2` -> `0` on a fixed-overlay
+// form; here `translateX(100%)` -> `translateX(0)` on the form element
+// produces the same visual effect, with the immediate parent applying
+// `overflow-x: hidden` to clip the off-screen start state.
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-in-from-right {
+  animation: slide-in-from-right 300ms cubic-bezier(0.215, 0.61, 0.355, 1) both;
+}
+
 .ease-color {
   transition: color 1s ease;
 }

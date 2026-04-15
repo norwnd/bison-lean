@@ -149,25 +149,32 @@ export default function ProposalsPage () {
           </button>
         </div>
 
-        {/* Filter overlay */}
+        {/* PS-01/PS-02: filter form slide-in animation. Wrap in
+            `overflow-hidden` to clip the form's off-screen
+            `translateX(100%)` start state so the slide-in-from-right
+            keyframe doesn't leak into surrounding layout. CSS animation
+            replays automatically on each mount because `filterOpen`
+            unmounts/remounts the wrapper. */}
         {filterOpen && (
-          <div className="filter-form mb-3">
-            <div className="form-closer" onClick={() => setFilterOpen(false)}>
-              <span className="ico-cross" />
-            </div>
-            <div className="fs22 fw-bold mb-3">{t('Filter')}</div>
-            <div className="filter-list-wrap">
-              <div className="filter-list">
-                {VOTE_STATUS_OPTIONS.map(opt => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    className={`filter-pill${activeStatus === opt.key ? ' active-opt' : ''}`}
-                    onClick={() => applyFilter(opt.key)}
-                  >
-                    {t(opt.label)}
-                  </button>
-                ))}
+          <div className="overflow-hidden">
+            <div className="filter-form mb-3 slide-in-from-right">
+              <div className="form-closer" onClick={() => setFilterOpen(false)}>
+                <span className="ico-cross" />
+              </div>
+              <div className="fs22 fw-bold mb-3">{t('Filter')}</div>
+              <div className="filter-list-wrap">
+                <div className="filter-list">
+                  {VOTE_STATUS_OPTIONS.map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      className={`filter-pill${activeStatus === opt.key ? ' active-opt' : ''}`}
+                      onClick={() => applyFilter(opt.key)}
+                    >
+                      {t(opt.label)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

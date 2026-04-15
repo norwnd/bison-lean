@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON, postJSON } from '../services/api'
 import { ROUTES } from '../router/routes'
+import { SuccessCheckmarkModal } from '../components/common/SuccessCheckmarkModal'
 
 interface ProposalDetail {
   token: string
@@ -33,7 +34,10 @@ export default function ProposalPage () {
   const [voteFormOpen, setVoteFormOpen] = useState(false)
   const [voteError, setVoteError] = useState('')
   const [voteLoading, setVoteLoading] = useState(false)
-  const [successMessage, setSuccessMessage] = useState('')
+  // PP-01: vote-success modal (was inline `successMessage` text). The
+  // animated checkmark mirrors vanilla `proposal.ts` `showSuccess()` ->
+  // `forms.showSuccess()` -> `animateCheckmark()`.
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -81,10 +85,12 @@ export default function ProposalPage () {
       return
     }
 
+    // PP-01: open animated success modal instead of showing inline text.
+    // The modal auto-closes after 2700ms (1200ms animation + 1500ms hold)
+    // matching vanilla `animateCheckmark()` + the subsequent pause.
     setVoteFormOpen(false)
     setVoteChoice(null)
-    setSuccessMessage(t('Vote cast successfully'))
-    setTimeout(() => setSuccessMessage(''), 3000)
+    setShowSuccessModal(true)
   }
 
   const openVoteForm = () => {
@@ -92,6 +98,11 @@ export default function ProposalPage () {
     setVoteChoice(null)
     setVoteFormOpen(true)
   }
+
+  // Stable ref so SuccessCheckmarkModal's auto-close `useEffect` isn't
+  // re-triggered on every parent render (which would reset the timer
+  // and effectively prevent the modal from ever auto-closing).
+  const closeSuccessModal = useCallback(() => setShowSuccessModal(false), [])
 
   if (loading) {
     return (
@@ -134,10 +145,15 @@ export default function ProposalPage () {
           />
         </div>
 
-        {/* Success message */}
-        {successMessage && (
-          <div className="text-center my-2 buycolor fw-bold">{successMessage}</div>
-        )}
+        {/* PP-01: animated vote-success modal (was inline success text).
+            Uses `VOTE_CAST_MESSAGE` i18n key to match vanilla
+            `intl.prep(intl.ID_VOTE_CAST_MESSAGE)` (PP-03). Auto-closes
+            after 2700ms via the modal's internal timer. */}
+        <SuccessCheckmarkModal
+          show={showSuccessModal}
+          message={t('VOTE_CAST_MESSAGE')}
+          onClose={closeSuccessModal}
+        />
 
         {/* Proposal header */}
         <div className="d-flex justify-content-between mt-3">
@@ -207,56 +223,65 @@ export default function ProposalPage () {
           </button>
         )}
 
-        {/* Vote form overlay */}
+        {/* PP-02 + PP-04: vote form slide-in animation. Wrap in
+            `overflow-hidden` to clip the form's off-screen
+            `translateX(100%)` start state so the slide-in-from-right
+            keyframe doesn't leak into surrounding layout. CSS animation
+            replays automatically on each mount because `voteFormOpen`
+            unmounts/remounts the wrapper, and CSS animations clean up
+            on their own when the element unmounts -- no manual
+            `animation.stop()` equivalent needed. */}
         {voteFormOpen && (
-          <div className="mb-3">
-            <div className="form-closer" onClick={() => setVoteFormOpen(false)}>
-              <span className="ico-cross" />
-            </div>
-            <header>{t('Vote')}</header>
-            <p className="text-muted mt-2">{t('Cast your vote on this proposal')}</p>
-            <div>{t('Voting power')}: {proposal.votingPower}</div>
+          <div className="overflow-hidden">
+            <div className="mb-3 slide-in-from-right">
+              <div className="form-closer" onClick={() => setVoteFormOpen(false)}>
+                <span className="ico-cross" />
+              </div>
+              <header>{t('Vote')}</header>
+              <p className="text-muted mt-2">{t('Cast your vote on this proposal')}</p>
+              <div>{t('Voting power')}: {proposal.votingPower}</div>
 
-            <div className="vote-actions mt-2">
+              <div className="vote-actions mt-2">
+                <button
+                  type="button"
+                  className={`vote-btn vote-yes rounded3${voteChoice === 'yes' ? ' active' : ''}`}
+                  onClick={() => setVoteChoice('yes')}
+                >
+                  <span className="icon">
+                    <svg className="vote-icon" viewBox="0 0 24 24" width="20" height="20" fill="none">
+                      <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <span className="label">{t('Yes')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`vote-btn vote-no mt-2 rounded3${voteChoice === 'no' ? ' active' : ''}`}
+                  onClick={() => setVoteChoice('no')}
+                >
+                  <span className="icon">
+                    <svg className="vote-icon" viewBox="0 0 24 24" width="20" height="20" fill="none">
+                      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="label">{t('No')}</span>
+                </button>
+              </div>
+
               <button
                 type="button"
-                className={`vote-btn vote-yes rounded3${voteChoice === 'yes' ? ' active' : ''}`}
-                onClick={() => setVoteChoice('yes')}
+                className="mt-3"
+                onClick={handleVote}
+                disabled={!voteChoice || voteLoading}
               >
-                <span className="icon">
-                  <svg className="vote-icon" viewBox="0 0 24 24" width="20" height="20" fill="none">
-                    <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                <span className="label">{t('Yes')}</span>
+                {voteLoading ? '...' : t('Submit Vote')}
               </button>
 
-              <button
-                type="button"
-                className={`vote-btn vote-no mt-2 rounded3${voteChoice === 'no' ? ' active' : ''}`}
-                onClick={() => setVoteChoice('no')}
-              >
-                <span className="icon">
-                  <svg className="vote-icon" viewBox="0 0 24 24" width="20" height="20" fill="none">
-                    <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <span className="label">{t('No')}</span>
-              </button>
+              {voteError && (
+                <div className="text-danger text-center mt-2">{voteError}</div>
+              )}
             </div>
-
-            <button
-              type="button"
-              className="mt-3"
-              onClick={handleVote}
-              disabled={!voteChoice || voteLoading}
-            >
-              {voteLoading ? '...' : t('Submit Vote')}
-            </button>
-
-            {voteError && (
-              <div className="text-danger text-center mt-2">{voteError}</div>
-            )}
           </div>
         )}
 
