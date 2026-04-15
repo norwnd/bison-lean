@@ -1,5 +1,5 @@
 import {
-  useState, useEffect, useCallback, useMemo
+  useState, useEffect, useCallback, useMemo, useRef
 } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +23,8 @@ import type {
   WalletTransaction, TxHistoryResult, Order, UnitInfo,
   CoreNote, TicketStakingStatus, VotingServiceProvider,
   Exchange, Spot,
-  WalletPeer, WalletRestoration
+  WalletPeer, WalletRestoration,
+  ProposalsMeta, Ticket
 } from '../stores/types'
 import { PeerSource } from '../stores/types'
 
@@ -128,6 +129,28 @@ function txTypeLabel (t: (k: string) => string, txType: number): string {
   const key = TX_TYPE_KEYS[txType] ?? 'TX_TYPE_UNKNOWN'
   return t(key)
 }
+
+// WP-13: ticket-status i18n keys, indexed by the numeric ticket
+// status returned in `Ticket.status`. Mirrors vanilla `wallets.ts`
+// `ticketStatusTranslationKeys` array (L89-99). All 9 keys exist in
+// `en-US.json` L918-926.
+const TICKET_STATUS_KEYS = [
+  'TICKET_STATUS_UNKNOWN',
+  'TICKET_STATUS_UNMINED',
+  'TICKET_STATUS_IMMATURE',
+  'TICKET_STATUS_LIVE',
+  'TICKET_STATUS_VOTED',
+  'TICKET_STATUS_MISSED',
+  'TICKET_STATUS_EXPIRED',
+  'TICKET_STATUS_UNSPENT',
+  'TICKET_STATUS_REVOKED'
+]
+
+// WP-13: ticket pagination constants (vanilla `wallets.ts` L183-184).
+// `scanStartMempool` is the sentinel block height for "scan from
+// mempool" passed to `/api/ticketpage` on the first call.
+const TICKET_PAGE_SIZE = 10
+const SCAN_START_MEMPOOL = -1
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2578,6 +2601,10 @@ function StakingView ({ assetID, assets }: {
   const conv = ui?.conventional?.conversionFactor ?? 1e8
 
   const [stakeStatus, setStakeStatus] = useState<TicketStakingStatus | null>(null)
+  // WP-12: proposalsMeta is included in the /api/stakestatus response
+  // (vanilla `wallets.ts` L1361-1364). The voting modal renders the
+  // in-progress proposals list from this state.
+  const [proposalsMeta, setProposalsMeta] = useState<ProposalsMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -2592,6 +2619,13 @@ function StakingView ({ assetID, assets }: {
   const [purchaseError, setPurchaseError] = useState('')
   const [purchaseSuccess, setPurchaseSuccess] = useState('')
 
+  // WP-12 / WP-13: modal show state for the two new staking forms.
+  // Both are scoped to StakingView since they only apply to DCR
+  // ticket-buyer wallets and are read-mostly views over the existing
+  // stakeStatus / proposalsMeta state already loaded here.
+  const [showVoting, setShowVoting] = useState(false)
+  const [showTicketHistory, setShowTicketHistory] = useState(false)
+
   // Load stake status
   const loadStakeStatus = useCallback(async () => {
     const res = await postJSON('/api/stakestatus', assetID)
@@ -2600,6 +2634,9 @@ function StakingView ({ assetID, assets }: {
       return
     }
     setStakeStatus(res.status as TicketStakingStatus)
+    // WP-12: proposalsMeta ships in the same response. Vanilla reads
+    // it as `res.proposalsMeta` (L1362).
+    setProposalsMeta((res.proposalsMeta as ProposalsMeta) ?? null)
   }, [assetID])
 
   useEffect(() => {
@@ -2737,6 +2774,7 @@ function StakingView ({ assetID, assets }: {
   }
 
   return (
+    <>
     <section className="position-relative d-flex align-items-stretch border">
       <div className="flex-stretch-column flex-grow-1">
         <div className="d-flex align-items-center justify-content-start border-bottom px-3 py-2">
@@ -2752,7 +2790,18 @@ function StakingView ({ assetID, assets }: {
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Tickets bought')}</div>
-              <div className="flex-center demi">{stats.ticketCount}</div>
+              {/* WP-13: clickable count opens the paginated ticket
+                  history modal. Mirrors vanilla `wallets.ts` L404
+                  `Doc.bind(page.ticketHistory, 'click', ...)` which
+                  triggered `showTicketHistory()`. */}
+              <div
+                className="flex-center demi pointer hoverbg"
+                onClick={() => setShowTicketHistory(true)}
+                title={t('Ticket History')}
+              >
+                <span className="ico-textfile me-1"></span>
+                <span>{stats.ticketCount}</span>
+              </div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Total rewards')}</div>
@@ -2771,9 +2820,15 @@ function StakingView ({ assetID, assets }: {
             </div>
           </div>
 
-          {/* Set Votes sidebar */}
+          {/* Set Votes sidebar — WP-12: now opens the voting modal.
+              Mirrors vanilla `wallets.ts` L407 click handler that
+              dispatched to `showSetVotesDialog()`. The previous React
+              version had `pointer hoverbg` styling but no handler. */}
           {(agendaCount > 0 || tspendCount > 0 || tkeyCount > 0) && (
-            <div className="flex-center p-3 flex-column border-start hoverbg pointer">
+            <div
+              className="flex-center p-3 flex-column border-start hoverbg pointer"
+              onClick={() => setShowVoting(true)}
+            >
               <div className="flex-center fs18">
                 <span className="fs22 ico-check"></span>
                 <span className="ms-2 fs18">{t('Set Votes')}</span>
@@ -2835,5 +2890,520 @@ function StakingView ({ assetID, assets }: {
 
       {error && <div className="text-danger p-2 border-top">{error}</div>}
     </section>
+
+    {/* WP-13: ticket history modal. Vanilla `wallets.tmpl`
+        `ticketHistoryForm` (L1028-1066) + `wallets.ts` `showTicketHistory()`
+        (L1598). Pagination logic mirrors vanilla `pageOfTickets` /
+        `ticketPageN` (L1518-1596): merges `stakeStatus.tickets`
+        (live, returned by /api/stakestatus) with paged history
+        accumulated from /api/ticketpage. */}
+    <FormOverlay show={showTicketHistory} onClose={() => setShowTicketHistory(false)}>
+      <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640, maxHeight: '80vh', overflowY: 'auto' }}>
+        {stakeStatus && (
+          <TicketHistoryModal
+            assetID={assetID}
+            stakeStatus={stakeStatus}
+            ui={ui}
+            onClose={() => setShowTicketHistory(false)}
+          />
+        )}
+      </div>
+    </FormOverlay>
+
+    {/* WP-12: voting preferences modal. Vanilla `wallets.tmpl`
+        `votingForm` (L1068-1156) + `wallets.ts` `showSetVotesDialog()`
+        (L1611). Renders agendas / treasury spends / treasury keys
+        radios plus the in-progress proposals list. Each radio change
+        POSTs /api/setvotes with one of {choices, tSpendPolicy,
+        treasuryPolicy} and optimistically updates local stakeStatus. */}
+    <FormOverlay show={showVoting} onClose={() => setShowVoting(false)}>
+      <div className="bg-body border rounded p-4" style={{ minWidth: 520, maxWidth: 720, maxHeight: '85vh', overflowY: 'auto' }}>
+        {stakeStatus && (
+          <SetVotesModal
+            assetID={assetID}
+            stakeStatus={stakeStatus}
+            setStakeStatus={setStakeStatus}
+            proposalsMeta={proposalsMeta}
+            ui={ui}
+            onClose={() => setShowVoting(false)}
+          />
+        )}
+      </div>
+    </FormOverlay>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-13: TicketHistoryModal
+// ---------------------------------------------------------------------------
+
+// Mirrors vanilla `wallets.ts` `pageOfTickets` (L1518-1535) +
+// `ticketPageN` (L1559-1596). The window of tickets shown for a given
+// page index is computed by walking two lists -- the live tickets
+// returned in /api/stakestatus, then the historical tickets pulled
+// from /api/ticketpage as the user paginates further back. Once the
+// API has reported "no more tickets" we set `scanned` so the Next
+// button is hidden at the boundary.
+function TicketHistoryModal ({ assetID, stakeStatus, ui, onClose }: {
+  assetID: number
+  stakeStatus: TicketStakingStatus
+  ui: UnitInfo
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const user = useAuthStore(s => s.user)
+  const net = user?.net ?? 0
+
+  const [pageNumber, setPageNumber] = useState(0)
+  // Accumulated history tickets (paged in via /api/ticketpage). Kept
+  // in a ref so paging through pages we already loaded doesn't burn a
+  // network round-trip, matching vanilla's `this.ticketPage.history`
+  // accumulator.
+  const historyRef = useRef<Ticket[]>([])
+  const scannedRef = useRef(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  // The slice of tickets shown for the current page. Re-derived
+  // whenever pageNumber changes (via loadPage below).
+  const [pageTickets, setPageTickets] = useState<Ticket[]>([])
+
+  // Compute the slice for a given page index, drawing from both the
+  // live tickets and the historical accumulator. Returns whatever we
+  // already have without making any network calls.
+  const sliceForPage = useCallback((pgNum: number): Ticket[] => {
+    const out: Ticket[] = []
+    let startOffset = pgNum * TICKET_PAGE_SIZE
+    if (startOffset < stakeStatus.tickets.length) {
+      out.push(...stakeStatus.tickets.slice(startOffset, startOffset + TICKET_PAGE_SIZE))
+      if (out.length < TICKET_PAGE_SIZE) {
+        const need = TICKET_PAGE_SIZE - out.length
+        out.push(...historyRef.current.slice(0, need))
+      }
+    } else {
+      startOffset -= stakeStatus.tickets.length
+      out.push(...historyRef.current.slice(startOffset, startOffset + TICKET_PAGE_SIZE))
+    }
+    return out
+  }, [stakeStatus.tickets])
+
+  // Load page pgNum, fetching more from /api/ticketpage if needed.
+  // Mirrors vanilla `ticketPageN()`.
+  const loadPage = useCallback(async (pgNum: number) => {
+    setError('')
+    let tickets = sliceForPage(pgNum)
+    if (tickets.length < TICKET_PAGE_SIZE && !scannedRef.current) {
+      const need = TICKET_PAGE_SIZE - tickets.length
+      const lastList = historyRef.current.length > 0
+        ? historyRef.current
+        : stakeStatus.tickets
+      const scanStart = lastList.length > 0
+        ? lastList[lastList.length - 1].tx.blockHeight
+        : SCAN_START_MEMPOOL
+      // skipN is the count of tickets we already have in the
+      // scanStart block, so the API doesn't return them again.
+      const skipN = lastList.filter(tkt => tkt.tx.blockHeight === scanStart).length
+      setLoading(true)
+      const res = await postJSON('/api/ticketpage', { assetID, scanStart, n: need, skipN })
+      setLoading(false)
+      if (!checkResponse(res)) {
+        setError(res.msg || 'Failed to load ticket page')
+        return
+      }
+      const fetched = (res.tickets ?? []) as Ticket[]
+      historyRef.current.push(...fetched)
+      tickets = sliceForPage(pgNum)
+      if (fetched.length < need) scannedRef.current = true
+    }
+    setPageTickets(tickets)
+    setPageNumber(pgNum)
+  }, [assetID, sliceForPage, stakeStatus.tickets])
+
+  // Initial load. Intentionally fires only once per mount with empty
+  // deps: the modal is freshly mounted each time the user opens it
+  // from StakingView, so we always start at page 0. WS-driven
+  // stakeStatus updates (which would re-derive `loadPage` via its
+  // useCallback closure) shouldn't reset the user to page 0
+  // mid-browse, so we deliberately don't include `loadPage` here.
+  useEffect(() => {
+    loadPage(0)
+  }, [])
+
+  const totalTix = stakeStatus.tickets.length + historyRef.current.length
+  const atEnd = pageNumber * TICKET_PAGE_SIZE + pageTickets.length === totalTix
+  const showPagination = totalTix >= TICKET_PAGE_SIZE
+  const showTable = totalTix > 0
+  const showNext = !atEnd || !scannedRef.current
+  const showPrev = pageNumber > 0
+
+  const ticketLink = useCallback((hash: string) => {
+    return explorerURL(assetID, hash, net)
+  }, [assetID, net])
+
+  return (
+    <div>
+      <div className="d-flex align-items-center mb-3">
+        <span className="ico-ticket fs22 me-2 grey"></span>
+        <span className="fs18">{t('Ticket History')}</span>
+      </div>
+
+      {showTable && (
+        <table className="row-border w-100">
+          <thead>
+            <tr>
+              <th>{t('Age')}</th>
+              <th className="text-end">{t('Price')}</th>
+              <th className="text-end">{t('Status')}</th>
+              <th className="text-end">{t('Ticket')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageTickets.map(({ tx, status }) => {
+              const url = ticketLink(tx.hash)
+              const statusKey = TICKET_STATUS_KEYS[status] ?? 'TICKET_STATUS_UNKNOWN'
+              return (
+                <tr key={tx.hash}>
+                  <td>{ageSince(tx.stamp * 1000)}</td>
+                  <td className="text-end">{formatFullPrecision(tx.ticketPrice, ui)}</td>
+                  <td className="text-end">{t(statusKey)}</td>
+                  <td className="text-end">
+                    <span className="mono">
+                      {url
+                        ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">
+                            {tx.hash.slice(0, 6)}…{tx.hash.slice(-6)}
+                          </a>
+                        : <span>{tx.hash.slice(0, 6)}…{tx.hash.slice(-6)}</span>}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {!showTable && !loading && (
+        <div className="text-center py-3 grey">{t('No tickets to show')}</div>
+      )}
+
+      {loading && (
+        <div className="text-center py-2">
+          <span className="ico-spinner spinner fs15"></span>
+        </div>
+      )}
+
+      {error && <div className="text-danger fs14 mt-2">{error}</div>}
+
+      {showPagination && (
+        <div className="d-flex justify-content-end align-items-center mt-3 fs18">
+          {showPrev && (
+            <span
+              className="ico-arrowleft me-1 p-1 hoverbg pointer"
+              onClick={() => loadPage(pageNumber - 1)}
+              title={t('Previous')}
+            ></span>
+          )}
+          <span className="me-1">{pageNumber + 1}</span>
+          {showNext && (
+            <span
+              className="ico-arrowright p-1 hoverbg pointer"
+              onClick={() => loadPage(pageNumber + 1)}
+              title={t('Next')}
+            ></span>
+          )}
+        </div>
+      )}
+
+      <div className="d-flex mt-3">
+        <button className="btn btn-secondary btn-sm ms-auto" onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-12: SetVotesModal
+// ---------------------------------------------------------------------------
+
+// Mirrors vanilla `wallets.ts` `showSetVotesDialog()` (L1611-1721).
+// Renders three groups of radios (agendas / treasury spends /
+// treasury keys) plus the in-progress proposals list. Each radio
+// change POSTs /api/setvotes with one shape from {choices,
+// tSpendPolicy, treasuryPolicy} -- vanilla calls `setVotes` once per
+// change rather than batching, so we do the same. We also
+// optimistically update the local stakeStatus so the radios reflect
+// the new selection without waiting for a refetch.
+function SetVotesModal ({
+  assetID, stakeStatus, setStakeStatus, proposalsMeta, ui, onClose
+}: {
+  assetID: number
+  stakeStatus: TicketStakingStatus
+  setStakeStatus: React.Dispatch<React.SetStateAction<TicketStakingStatus | null>>
+  proposalsMeta: ProposalsMeta | null
+  ui: UnitInfo
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const user = useAuthStore(s => s.user)
+  const net = user?.net ?? 0
+  const [error, setError] = useState('')
+  const conv = ui.conventional.conversionFactor
+
+  const upperCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+  // Shared helper for posting any of the three voting preference
+  // shapes. Throws on error so callers can short-circuit their
+  // optimistic state updates.
+  const postVotes = useCallback(async (req: Record<string, unknown>) => {
+    setError('')
+    const res = await postJSON('/api/setvotes', { assetID, ...req })
+    if (!checkResponse(res)) {
+      setError(res.msg || 'Failed to set votes')
+      throw new Error(res.msg || 'Failed to set votes')
+    }
+  }, [assetID])
+
+  const setAgendaChoice = useCallback(async (agendaID: string, choiceID: string) => {
+    try {
+      await postVotes({ choices: { [agendaID]: choiceID } })
+    } catch {
+      return
+    }
+    setStakeStatus(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        stances: {
+          ...prev.stances,
+          agendas: prev.stances.agendas.map(a =>
+            a.id === agendaID ? { ...a, currentChoice: choiceID } : a
+          )
+        }
+      }
+    })
+  }, [postVotes, setStakeStatus])
+
+  const setTspendPolicy = useCallback(async (txHash: string, policy: string) => {
+    try {
+      await postVotes({ tSpendPolicy: { [txHash]: policy } })
+    } catch {
+      return
+    }
+    setStakeStatus(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        stances: {
+          ...prev.stances,
+          tspends: prev.stances.tspends.map(s =>
+            s.hash === txHash ? { ...s, currentPolicy: policy } : s
+          )
+        }
+      }
+    })
+  }, [postVotes, setStakeStatus])
+
+  const setTreasuryPolicy = useCallback(async (key: string, policy: string) => {
+    try {
+      await postVotes({ treasuryPolicy: { [key]: policy } })
+    } catch {
+      return
+    }
+    setStakeStatus(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        stances: {
+          ...prev.stances,
+          treasuryKeys: prev.stances.treasuryKeys.map(k =>
+            k.key === key ? { ...k, policy } : k
+          )
+        }
+      }
+    })
+  }, [postVotes, setStakeStatus])
+
+  const proposals = proposalsMeta?.proposalsInProgress ?? []
+
+  return (
+    <div>
+      {/* AGENDAS */}
+      <div className="d-flex align-items-center mb-2">
+        <span className="ico-check fs22 me-2 grey"></span>
+        <span className="fs22">{t('Agendas')}</span>
+      </div>
+      <div className="flex-stretch-column">
+        {stakeStatus.stances.agendas.map(agenda => (
+          <div key={agenda.id} className="d-flex justify-content-between py-2 border-bottom">
+            <div className="d-flex flex-grow-1 align-items-center pe-3">
+              <div className="w-100 fs14">{agenda.description}</div>
+            </div>
+            <div className="d-flex align-items-stretch">
+              {agenda.choices.map(choice => (
+                <label
+                  key={choice.id}
+                  className="flex-center flex-column pe-2 pointer"
+                  title={choice.description}
+                >
+                  <span className="fs14">{upperCase(choice.id)}</span>
+                  <input
+                    type="radio"
+                    className="form-check-input"
+                    name={agenda.id}
+                    value={choice.id}
+                    checked={agenda.currentChoice === choice.id}
+                    onChange={() => setAgendaChoice(agenda.id, choice.id)}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* TREASURY SPENDS */}
+      <div className="flex-center fs22 mt-3">{t('Treasury Spends')}</div>
+      {stakeStatus.stances.tspends.length === 0 && (
+        <div className="text-center py-2 grey">{t('no_treasury_spends_to_show')}</div>
+      )}
+      <div className="flex-stretch-column">
+        {stakeStatus.stances.tspends.map(tspend => {
+          const url = explorerURL(assetID, tspend.hash, net)
+          return (
+            <div key={tspend.hash} className="d-flex align-items-stretch py-3 border-bottom">
+              <div className="d-flex flex-column flex-grow-1 pe-3">
+                <div className="d-flex align-items-center justify-content-between">
+                  {tspend.value > 0 && (
+                    <div className="flex-center pe-2">
+                      {formatFourSigFigs(tspend.value / conv)} DCR
+                    </div>
+                  )}
+                  {url && (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 hoverbg pointer ico-open"
+                    ></a>
+                  )}
+                </div>
+                <div className="word-break-all user-select-all fs14 p-1">{tspend.hash}</div>
+              </div>
+              <div className="d-flex align-items-stretch">
+                <label className="flex-center flex-column pe-2 pointer">
+                  <span>{t('No')}</span>
+                  <input
+                    type="radio"
+                    className="form-check-input"
+                    name={tspend.hash}
+                    value="no"
+                    checked={tspend.currentPolicy === 'no'}
+                    onChange={() => setTspendPolicy(tspend.hash, 'no')}
+                  />
+                </label>
+                <label className="flex-center flex-column pe-2 pointer">
+                  <span>{t('Yes')}</span>
+                  <input
+                    type="radio"
+                    className="form-check-input"
+                    name={tspend.hash}
+                    value="yes"
+                    checked={tspend.currentPolicy === 'yes'}
+                    onChange={() => setTspendPolicy(tspend.hash, 'yes')}
+                  />
+                </label>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* TREASURY KEYS */}
+      <div className="flex-center fs22 mt-3">{t('Treasury Keys')}</div>
+      <div className="flex-stretch-column">
+        {(stakeStatus.stances.treasuryKeys ?? []).map(keyPolicy => (
+          <div key={keyPolicy.key} className="d-flex justify-content-between align-items-stretch py-2 border-bottom">
+            <div className="flex-center flex-grow-1 justify-content-start pe-3">
+              <div className="word-break-all user-select-all fs14 p-1">{keyPolicy.key}</div>
+            </div>
+            <div className="d-flex align-items-stretch">
+              <label className="flex-center flex-column pe-2 pointer">
+                <span>{t('No')}</span>
+                <input
+                  type="radio"
+                  className="form-check-input"
+                  name={keyPolicy.key}
+                  value="no"
+                  checked={keyPolicy.policy === 'no'}
+                  onChange={() => setTreasuryPolicy(keyPolicy.key, 'no')}
+                />
+              </label>
+              <label className="flex-center flex-column pe-2 pointer">
+                <span>{t('Yes')}</span>
+                <input
+                  type="radio"
+                  className="form-check-input"
+                  name={keyPolicy.key}
+                  value="yes"
+                  checked={keyPolicy.policy === 'yes'}
+                  onChange={() => setTreasuryPolicy(keyPolicy.key, 'yes')}
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* PROPOSALS IN-PROGRESS */}
+      <div className="d-flex justify-content-between align-items-center mt-3">
+        <div className="fs22">{t('proposals')}</div>
+        <Link
+          to={ROUTES.PROPOSALS}
+          className="fs15 hoverbg pointer ico-open justify-content-end"
+        >
+          {' '}{t('view_all')}
+        </Link>
+      </div>
+      {proposals.length === 0 && (
+        <div className="text-center py-2 grey">{t('no_proposals_in_progress')}</div>
+      )}
+      <div className="flex-stretch-column">
+        {proposals.map(proposal => (
+          <div key={proposal.token} className="py-3 border-bottom">
+            <div className="d-flex justify-content-between align-items-center">
+              <h6 className="pb-0 mb-0">{proposal.name}</h6>
+              {/* Vanilla `loadProposal` (L2905) embeds the proposal
+                  page inside the voting form; the React rewrite
+                  navigates to the standalone proposal page instead
+                  since we already have ProposalPage as a route.
+                  Using <Link> (vs. <a onClick={navigate}>) for the
+                  same reasons documented in B-L13-CLEANUP -- proper
+                  link semantics, supports cmd-click / middle-click,
+                  matches the existing convention in Header.tsx. */}
+              <Link
+                to={`/proposal/${proposal.token}?assetID=${assetID}`}
+                className="fs15 pt-1 hoverbg pointer ico-open justify-content-end"
+                onClick={onClose}
+              ></Link>
+            </div>
+            <div>
+              <small className="text-muted">
+                {proposal.username} - {t('VERSION')} {proposal.version} - {proposal.voteStatus.toLowerCase()}
+              </small>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {error && <div className="text-danger fs14 mt-2">{error}</div>}
+
+      <div className="d-flex mt-3">
+        <button className="btn btn-secondary btn-sm ms-auto" onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+    </div>
   )
 }
