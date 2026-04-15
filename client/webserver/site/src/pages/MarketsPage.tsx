@@ -2779,6 +2779,46 @@ export default function MarketsPage () {
     }
   }, [selected, currentXc, baseAsset, quoteAsset])
 
+  // MP-61 (deferred half — resolveOrderVsMMForm): compute a single
+  // "why can't the user trade right now" string by collapsing the four
+  // gating conditions vanilla `resolveOrderVsMMForm` (markets.ts L877-936)
+  // checks into one prioritized cascade. Returns `null` when the user
+  // CAN trade. Drives the `.cannot-trade-overlay` rendered over the
+  // OrderForms — the user sees the form faintly behind the overlay
+  // (Option 3 from the design doc), can't interact with it until they
+  // fix the underlying issue, and the right-side panels separately
+  // render the actionable CTAs (register, post bonds, approve token,
+  // create wallet, etc.).
+  //
+  // Priority mirrors vanilla:
+  //   1. `loaderMsgText` — asset version mismatch (vanilla L884
+  //      `assetsAreSupported` check, also coexists with bond panels)
+  //   2. `statusPanel.kind !== 'none'` — tier < 1 i.e. account not
+  //      registered, bonds not yet posted/confirmed, penalty
+  //      compensation needed (vanilla L885 `effectiveTier < 1`)
+  //   3. `noWalletMsg` — wallet missing / disabled / not-running
+  //      (vanilla L888-891 wallet checks)
+  //   4. `tokenApprovalStatus.visible` — token approval pending or
+  //      not approved on either side (vanilla L893-897)
+  //
+  // For statusPanel branches other than `notRegistered` (e.g.
+  // `bondCreationPending`, `registrationStatus`), we reuse the
+  // `create_account_to_trade` i18n string. It's not 100% accurate for
+  // mid-registration states but the right-side panel shows the actual
+  // bond/registration status with specific CTAs, so the overlay's job
+  // is just to block interaction. A more accurate i18n string would be
+  // a future cleanup (see TASKS.md).
+  const cantTradeReason = useMemo<string | null>(() => {
+    if (!selected || !currentMkt) return null
+    if (loaderMsgText) return loaderMsgText
+    if (statusPanel.kind !== 'none') return t('create_account_to_trade')
+    if (noWalletMsg) return noWalletMsg
+    if (tokenApprovalStatus.visible && tokenApprovalStatus.noticeKey) {
+      return t(tokenApprovalStatus.noticeKey)
+    }
+    return null
+  }, [selected, currentMkt, loaderMsgText, statusPanel, noWalletMsg, tokenApprovalStatus, t])
+
   // Portal target: render market stats into the header slot.
   // Use state so the portal renders after the DOM element is committed.
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
@@ -3133,8 +3173,17 @@ export default function MarketsPage () {
                 </div>
               </section>
 
-              {/* Buy / Sell forms (side by side) */}
-              <section className="d-flex flex-stretch-row">
+              {/* Buy / Sell forms (side by side). MP-61 (deferred half):
+                  the section is `position-relative` so the
+                  `.cannot-trade-overlay` (rendered as a sibling below) can
+                  cover the forms when `cantTradeReason` is non-null. The
+                  forms themselves render on `selected` (unchanged from
+                  before this batch) — the overlay handles suppression
+                  visually without unmounting, so the user's in-progress
+                  input survives wallet-state degradation. The overlay
+                  condition implicitly requires `currentMkt` to be truthy
+                  via the `cantTradeReason` cascade's early return. */}
+              <section className="d-flex flex-stretch-row position-relative">
                 {selected && (
                   <>
                     <OrderForm
@@ -3171,10 +3220,16 @@ export default function MarketsPage () {
                     />
                   </>
                 )}
-
-                {/* Not registered notice */}
-                {!isRegistered && currentXc && (
-                  <div className="p-3 flex-center fs17 grey">{t('create_account_to_trade')}</div>
+                {/* MP-61 cannot-trade overlay. Subsumes the standalone
+                    `create_account_to_trade` notice that previously lived
+                    here as a sibling — that case is now one branch of the
+                    `cantTradeReason` cascade. The condition simplifies to
+                    just `cantTradeReason` because the cascade returns
+                    `null` early when `!selected || !currentMkt`. */}
+                {cantTradeReason && (
+                  <div className="cannot-trade-overlay flex-center fs17 grey p-3 text-center">
+                    {cantTradeReason}
+                  </div>
                 )}
               </section>
             </section>

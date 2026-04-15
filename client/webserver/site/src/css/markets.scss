@@ -43,6 +43,24 @@ div[data-handler=markets] {
 
   #orderFormBuy,
   #orderFormSell {
+    // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
+    // OrderForms when `cantTradeReason` is non-null. Renders as an
+    // absolute-positioned sibling inside the `.d-flex.flex-stretch-row`
+    // wrapper that has `position-relative`. The semi-transparent backdrop
+    // lets the form be faintly visible underneath (Option 3 from the
+    // design doc) so the user sees their work; the high z-index +
+    // pointer-events: auto blocks all interaction with the form behind
+    // until the underlying issue is fixed. The right-side panels
+    // separately render the actionable CTAs (register, post bonds,
+    // approve token, create wallet, etc.).
+    .cannot-trade-overlay {
+      position: absolute;
+      inset: 0;
+      background-color: var(--overlay-bg);
+      z-index: 10;
+      cursor: not-allowed;
+    }
+
     .order-form-input{
       height: 44px; // helps to keep input size from growing larger than it could be
       font-weight: bold;

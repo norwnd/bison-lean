@@ -68,6 +68,12 @@ body:not(.dark) {
   // loader
   --loader-bg: #e0e0e077;
 
+  // MP-61: cannot-trade overlay covers the order forms when the user
+  // can't trade (wallet missing, token approval needed, registration
+  // incomplete, asset version unsupported). Theme-aware semi-transparent
+  // backdrop so the form is faintly visible underneath.
+  --overlay-bg: rgb(250 250 250 / 85%);
+
   // logo
   --dex-url: url("/img/softened-icon.png");
 }
@@ -138,6 +144,9 @@ body.dark {
 
   // loader
   --loader-bg: #13202b77;
+
+  // MP-61: cannot-trade overlay (see light-mode block above for context).
+  --overlay-bg: rgb(4 11 20 / 85%);
 
   // logo
   --dex-url: url("/img/softened-icon-dark.png");
