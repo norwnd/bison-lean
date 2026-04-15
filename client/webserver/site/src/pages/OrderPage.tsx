@@ -17,7 +17,7 @@ import type {
   UnitInfo, Exchange
 } from '../stores/types'
 import {
-  OrderTypeLimit, OrderTypeMarket,
+  OrderTypeLimit, OrderTypeMarket, OrderTypeCancel,
   StatusEpoch, StatusBooked, StatusExecuted, StatusCanceled, StatusRevoked,
   MatchSideMaker, MatchSideTaker,
   NewlyMatched, MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
@@ -67,6 +67,18 @@ function ageSince (ms: number): string {
   return result.trim()
 }
 
+// Shared "match-card timestamp" formatter. Used for both the
+// per-match `matchTime` and the pending-refund `refundAfterStr`.
+// Pinned to the user's preferred language list so dates render in
+// their locale (e.g. "Apr 15, 2026").
+function formatMatchDate (ms: number): string {
+  return new Date(ms).toLocaleTimeString(navigator.languages as string[], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 function statusString (order: Order, t: (k: string) => string): string {
   if (!order.id) return t('ORDER_SUBMITTING')
   const isLive = order.matches?.some(m => m.active) ?? false
@@ -91,7 +103,7 @@ function statusString (order: Order, t: (k: string) => string): string {
         : t('BOOKED')
     case StatusExecuted:
       if (isLive) return t('SETTLING')
-      if (filled(order) === 0 && order.type !== 3) return t('NO_MATCH')
+      if (filled(order) === 0 && order.type !== OrderTypeCancel) return t('NO_MATCH')
       return t('EXECUTED')
     case StatusCanceled:
       return isLive
@@ -436,11 +448,7 @@ export default function OrderPage () {
     if (Date.now() > refundAfter.getTime()) {
       return <span className="text-warning">{t('REFUND_IMMINENT')}</span>
     }
-    const refundAfterStr = refundAfter.toLocaleTimeString(navigator.languages as string[], {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
+    const refundAfterStr = formatMatchDate(refundAfter.getTime())
     return (
       <span className="text-secondary">
         {t('REFUND_WILL_HAPPEN_AFTER', { refundAfterTime: refundAfterStr })}
@@ -521,11 +529,7 @@ export default function OrderPage () {
     const confMsg = renderConfirmationMsg(m)
     const convRate = conventionalRate(order.baseID, order.quoteID, m.rate, allAssets)
 
-    const matchTime = new Date(m.stamp).toLocaleTimeString(navigator.languages as string[], {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
+    const matchTime = formatMatchDate(m.stamp)
 
     const portion = isMarketBuy(order)
       ? ((baseToQuote(m.rate, m.qty) / order.qty) * 100).toFixed(1)
