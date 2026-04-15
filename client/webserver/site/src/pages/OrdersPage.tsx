@@ -65,10 +65,15 @@ function typeString (ord: Order, t: (k: string) => string): string {
   return t('MARKET_ORDER')
 }
 
-function sellBuyString (ord: Order, t: (k: string) => string): string {
+// OSP-01: match vanilla `orderutil.ts` `sellString()` (L47-51), which
+// reads the user's lang and calls `toLocaleLowerCase(lang)` so the
+// case fold respects locale-specific rules (notably Turkish/Azerbaijani
+// dotless-'I'). React's plain `.toLowerCase()` would silently produce
+// the wrong character for those locales.
+function sellBuyString (ord: Order, t: (k: string) => string, lang: string): string {
   return ord.sell
-    ? t('SELL').toLowerCase()
-    : t('BUY').toLowerCase()
+    ? t('SELL').toLocaleLowerCase(lang)
+    : t('BUY').toLocaleLowerCase(lang)
 }
 
 function ageSince (ms: number): string {
@@ -118,6 +123,7 @@ export default function OrdersPage () {
 
   const assets = useAuthStore(s => s.assets)
   const exchanges = useAuthStore(s => s.exchanges)
+  const lang = useAuthStore(s => s.lang)
   // Filter state derived from URL search params on mount.
   const [hostFilter, setHostFilter] = useState<string[]>(() => {
     const v = searchParams.get('hosts')
@@ -356,7 +362,7 @@ export default function OrdersPage () {
     }
 
     const mktID = `${baseUnitInfo.conventional.unit}-${quoteUnitInfo.conventional.unit}`
-    const typeSide = `${typeString(ord, t)} ${sellBuyString(ord, t)}`
+    const typeSide = `${typeString(ord, t)} ${sellBuyString(ord, t, lang)}`
 
     // Combined assets from global + exchange-specific for rate lookup.
     const allAssets = { ...assets, ...(xc?.assets ?? {}) }
@@ -587,14 +593,20 @@ export default function OrdersPage () {
             {t('Save orders to file')}
           </label>
 
-          {deleteError && (
-            <div className="fs14 text-danger mb-2">{deleteError}</div>
-          )}
+          {/* OSP-03: dedicated success-result container, mirroring vanilla
+              `orders.tmpl` `#deleteArchivedResult` (`mt-3 border-top`).
+              The result block is visually separated from the form
+              inputs by a top border, making it explicit that this is
+              the outcome of the delete operation. The form stays open
+              after success (matches vanilla) so the user can read the
+              result and optionally trigger another delete. */}
           {deleteMsg && (
-            <div className="fs14 text-success mb-2">{deleteMsg}</div>
-          )}
-          {deletePath && (
-            <div className="fs14 mb-2">{deletePath}</div>
+            <div className="mt-3 pt-3 border-top">
+              <div className="fs14 text-success mb-2">{deleteMsg}</div>
+              {deletePath && (
+                <div className="fs14 text-break mb-2">{deletePath}</div>
+              )}
+            </div>
           )}
 
           <div className="d-flex gap-2">
@@ -608,6 +620,13 @@ export default function OrdersPage () {
               {t('Cancel')}
             </button>
           </div>
+
+          {/* Error message rendered after the buttons, matching vanilla
+              `orders.tmpl` ordering (`deleteArchivedRecordsErr` lives
+              after the submit button). */}
+          {deleteError && (
+            <div className="fs14 text-danger text-center mt-2 text-break">{deleteError}</div>
+          )}
         </div>
       </FormOverlay>
     </div>
