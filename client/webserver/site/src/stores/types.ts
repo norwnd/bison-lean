@@ -1300,6 +1300,11 @@ export interface TxHistoryResult {
 
 export const PrepaidBondID = 2147483647
 
+// DCR's BIP-44 coin type. Used as the default asset for proposal voting,
+// game-code redemptions, and other DCR-specific flows that mirror
+// vanilla's hardcoded `dcrBipID = 42`.
+export const DCRAssetID = 42
+
 // UserResponse is the shape returned by /api/user.
 export interface UserResponse {
   requestSuccessful: boolean

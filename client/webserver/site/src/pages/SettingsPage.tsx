@@ -14,16 +14,9 @@ import { ConfirmRegistrationForm } from '../components/common/ConfirmRegistratio
 import { AppPassResetForm } from '../components/common/AppPassResetForm'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import type { Exchange } from '../stores/types'
-import { PrepaidBondID } from '../stores/types'
+import { PrepaidBondID, DCRAssetID } from '../stores/types'
 import { formatCoinValue } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
-
-// SP-07: DCR's BIP-44 coin type. Game code redemptions always deliver
-// DCR rewards, so the success display formats `win` against DCR's unit
-// info and links the coin string to a DCR explorer. Mirrors vanilla
-// `settings.ts` `submitGameCode()` (L502-528) which hardcodes
-// `const dcrBipID = 42` for the same purpose.
-const DCR_ASSET_ID = 42
 
 type RegStep = 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
 
@@ -88,6 +81,10 @@ export default function SettingsPage () {
   const [newPW, setNewPW] = useState('')
   const [confirmNewPW, setConfirmNewPW] = useState('')
   const [changePWError, setChangePWError] = useState('')
+  // Loading state for the password-change round trip. Mirrors vanilla
+  // `settings.ts` `changeAppPW()` (L450) `app().loading(page.changeAppPW)`
+  // overlay. Same pattern as SP-06 export-seed loading.
+  const [changePWLoading, setChangePWLoading] = useState(false)
 
   // -- Import account --
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -229,10 +226,12 @@ export default function SettingsPage () {
       setChangePWError(t('PASSWORD_NOT_MATCH'))
       return
     }
+    setChangePWLoading(true)
     const res = await postJSON('/api/changeapppass', {
       appPW: currentPW,
       newAppPW: newPW,
     })
+    setChangePWLoading(false)
     if (!checkResponse(res)) {
       setChangePWError(res.msg)
       return
@@ -663,6 +662,7 @@ export default function SettingsPage () {
               value={currentPW}
               onChange={e => setCurrentPW(e.target.value)}
               autoFocus
+              disabled={changePWLoading}
             />
           </div>
           <div className="mb-2">
@@ -672,6 +672,7 @@ export default function SettingsPage () {
               className="form-control"
               value={newPW}
               onChange={e => setNewPW(e.target.value)}
+              disabled={changePWLoading}
             />
           </div>
           <div className="mb-2">
@@ -682,13 +683,21 @@ export default function SettingsPage () {
               value={confirmNewPW}
               onChange={e => setConfirmNewPW(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submitChangePassword() }}
+              disabled={changePWLoading}
             />
           </div>
           {changePWError && (
             <div className="fs15 text-danger mb-2">{changePWError}</div>
           )}
-          <button className="btn btn-primary w-100" onClick={submitChangePassword}>
-            {t('Submit')}
+          {/* Disable + spinner during the password-change round trip,
+              matching the SP-06 export-seed pattern and vanilla
+              `settings.ts` `changeAppPW()` (L450) `app().loading()`. */}
+          <button
+            className="btn btn-primary w-100"
+            onClick={submitChangePassword}
+            disabled={changePWLoading}
+          >
+            {changePWLoading ? '...' : t('Submit')}
           </button>
         </div>
       </FormOverlay>
@@ -709,6 +718,7 @@ export default function SettingsPage () {
               className="form-control"
               accept=".json"
               onChange={handleImportFileChange}
+              disabled={importLoading}
             />
             {/* SP-01: show a persistent "none selected" label when no
                 file is chosen, mirroring vanilla `settings.ts`
@@ -723,6 +733,7 @@ export default function SettingsPage () {
                 <button
                   className="btn btn-sm btn-outline-danger"
                   onClick={() => { setImportFile(null); if (accountFileRef.current) accountFileRef.current.value = '' }}
+                  disabled={importLoading}
                 >
                   {t('Remove')}
                 </button>
@@ -877,10 +888,10 @@ export default function SettingsPage () {
               button to match vanilla's `gameCodeSuccess` / `gameCodeErr`
               ordering in `settings.tmpl`. */}
           {gameCodeSuccess && (() => {
-            const dcrAsset = assets[DCR_ASSET_ID]
+            const dcrAsset = assets[DCRAssetID]
             const dcrUI = dcrAsset?.unitInfo
             const net = user?.net ?? 0
-            const explorerHref = explorerURL(DCR_ASSET_ID, gameCodeSuccess.coinString, net)
+            const explorerHref = explorerURL(DCRAssetID, gameCodeSuccess.coinString, net)
             return (
               <div className="mt-3 pt-3 border-top">
                 <div className="fs15 text-success mb-2">{t('Game code redeemed')}</div>

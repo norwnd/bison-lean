@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getJSON, postJSON } from '../services/api'
 import { ROUTES } from '../router/routes'
 import { SuccessCheckmarkModal } from '../components/common/SuccessCheckmarkModal'
+import { DCRAssetID } from '../stores/types'
 
 interface ProposalDetail {
   token: string
@@ -25,7 +26,10 @@ export default function ProposalPage () {
   const navigate = useNavigate()
   const { token } = useParams<{ token: string }>()
   const [searchParams] = useSearchParams()
-  const assetID = Number(searchParams.get('assetID')) || 42
+  // Default to DCR (BIP-44 coin type 42) when no assetID is provided in
+  // the URL — matches vanilla `proposal.ts` `loadProposal()` which also
+  // hardcodes DCR for proposal voting.
+  const assetID = Number(searchParams.get('assetID')) || DCRAssetID
 
   const [proposal, setProposal] = useState<ProposalDetail | null>(null)
   const [loading, setLoading] = useState(true)
