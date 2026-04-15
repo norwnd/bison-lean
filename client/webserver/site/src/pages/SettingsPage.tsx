@@ -15,6 +15,15 @@ import { AppPassResetForm } from '../components/common/AppPassResetForm'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import type { Exchange } from '../stores/types'
 import { PrepaidBondID } from '../stores/types'
+import { formatCoinValue } from '../hooks/useFormatters'
+import { explorerURL } from '../components/CoinExplorers'
+
+// SP-07: DCR's BIP-44 coin type. Game code redemptions always deliver
+// DCR rewards, so the success display formats `win` against DCR's unit
+// info and links the coin string to a DCR explorer. Mirrors vanilla
+// `settings.ts` `submitGameCode()` (L502-528) which hardcodes
+// `const dcrBipID = 42` for the same purpose.
+const DCR_ASSET_ID = 42
 
 type RegStep = 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
 
@@ -90,6 +99,11 @@ export default function SettingsPage () {
   const [exportSeedPW, setExportSeedPW] = useState('')
   const [exportSeedError, setExportSeedError] = useState('')
   const [exportSeedResult, setExportSeedResult] = useState<{ legacy?: string; mnemonic?: string } | null>(null)
+  // SP-06: loading state for the password-check round trip. Vanilla
+  // `settings.ts` `submitExportSeedReq()` (L394) wraps the request in
+  // `app().loading(this.body)` to show a spinner overlay; React mirrors
+  // this with a per-button loading flag + disabled state.
+  const [exportSeedLoading, setExportSeedLoading] = useState(false)
 
   // -- Companion app --
   const [companionUnpaired, setCompanionUnpaired] = useState(false)
@@ -246,7 +260,11 @@ export default function SettingsPage () {
   const submitImportAccount = useCallback(async () => {
     setImportError('')
     if (!importFile) {
-      setImportError(t('No file selected'))
+      // SP-02: defensive guard — the Import button is `disabled` when
+      // `importFile` is null so this branch shouldn't be reachable
+      // through the UI. Match vanilla `settings.ts` `importAccount()`
+      // (L356) which also bails silently with a `console.error`.
+      console.error('importAccount: no file specified')
       return
     }
     setImportLoading(true)
@@ -284,7 +302,9 @@ export default function SettingsPage () {
   const submitExportSeed = useCallback(async () => {
     setExportSeedError('')
     setExportSeedResult(null)
+    setExportSeedLoading(true)
     const res = await postJSON('/api/exportseed', { pass: exportSeedPW })
+    setExportSeedLoading(false)
     if (!checkResponse(res)) {
       setExportSeedError(res.msg)
       return
@@ -350,7 +370,12 @@ export default function SettingsPage () {
     setGameCodeError('')
     setGameCodeSuccess(null)
     if (!gameCode) {
-      setGameCodeError(t('No code provided'))
+      // SP-03: use canonical `NO_CODE_PROVIDED` key from `en-US.json`
+      // L1155 (matches vanilla `settings.ts` L507
+      // `intl.prep(intl.ID_NO_CODE_PROVIDED)`). The previous
+      // `t('No code provided')` was a non-existent key and fell
+      // through to the literal English string.
+      setGameCodeError(t('NO_CODE_PROVIDED'))
       return
     }
     const res = await postJSON('/api/redeemgamecode', { code: gameCode, msg: gameCodeMsg })
@@ -685,7 +710,14 @@ export default function SettingsPage () {
               accept=".json"
               onChange={handleImportFileChange}
             />
-            {importFile && (
+            {/* SP-01: show a persistent "none selected" label when no
+                file is chosen, mirroring vanilla `settings.ts`
+                `clearAccountFile()` (L339) which sets
+                `selectedAccount.textContent = intl.prep(intl.ID_NONE_SELECTED)`.
+                Without this, removing a previously-chosen file leaves
+                no visible feedback that the form is now empty. */}
+            {importFile
+              ? (
               <div className="fs14 mt-1 d-flex align-items-center gap-2">
                 <span>{importFile.name}</span>
                 <button
@@ -695,7 +727,10 @@ export default function SettingsPage () {
                   {t('Remove')}
                 </button>
               </div>
-            )}
+                )
+              : (
+              <div className="fs14 mt-1 text-secondary">{t('NONE_SELECTED')}</div>
+                )}
           </div>
           {importError && (
             <div className="fs15 text-danger mb-2">{importError}</div>
@@ -728,13 +763,21 @@ export default function SettingsPage () {
                   onChange={e => setExportSeedPW(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') submitExportSeed() }}
                   autoFocus
+                  disabled={exportSeedLoading}
                 />
               </div>
               {exportSeedError && (
                 <div className="fs15 text-danger mb-2">{exportSeedError}</div>
               )}
-              <button className="btn btn-primary w-100" onClick={submitExportSeed}>
-                {t('Submit')}
+              {/* SP-06: disable + spinner during password check, matching
+                  vanilla's `app().loading()` overlay around the
+                  `/api/exportseed` round trip. */}
+              <button
+                className="btn btn-primary w-100"
+                onClick={submitExportSeed}
+                disabled={exportSeedLoading || !exportSeedPW}
+              >
+                {exportSeedLoading ? '...' : t('Submit')}
               </button>
             </>
           )
@@ -815,17 +858,58 @@ export default function SettingsPage () {
               onKeyDown={e => { if (e.key === 'Enter') submitGameCode() }}
             />
           </div>
-          {gameCodeError && (
-            <div className="fs15 text-danger mb-2">{gameCodeError}</div>
-          )}
-          {gameCodeSuccess && (
-            <div className="fs15 text-success mb-2">
-              {t('Success!')} {t('TX')}: {gameCodeSuccess.coinString}
-            </div>
-          )}
-          <button className="btn btn-primary w-100" onClick={submitGameCode}>
+          <button
+            className="btn btn-primary w-100"
+            onClick={submitGameCode}
+            disabled={!gameCode}
+          >
             {t('Submit')}
           </button>
+
+          {/* SP-07: render the success block with vanilla's structure
+              (settings.tmpl L177-184): "Game code redeemed" header,
+              "Transaction" label with anchor link to the DCR explorer,
+              "Value: X DCR" formatted via `formatCoinValue` against
+              DCR's unit info. Mirrors vanilla `settings.ts`
+              `submitGameCode()` (L504-528) which uses
+              `setCoinHref(dcrBipID, ...)` + `Doc.formatCoinAtom(win, ui)`.
+              Both success and error blocks live AFTER the submit
+              button to match vanilla's `gameCodeSuccess` / `gameCodeErr`
+              ordering in `settings.tmpl`. */}
+          {gameCodeSuccess && (() => {
+            const dcrAsset = assets[DCR_ASSET_ID]
+            const dcrUI = dcrAsset?.unitInfo
+            const net = user?.net ?? 0
+            const explorerHref = explorerURL(DCR_ASSET_ID, gameCodeSuccess.coinString, net)
+            return (
+              <div className="mt-3 pt-3 border-top">
+                <div className="fs15 text-success mb-2">{t('Game code redeemed')}</div>
+                <div className="fs14 mb-1">{t('Transaction')}</div>
+                {explorerHref
+                  ? (
+                  <a
+                    href={explorerHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="fs14 text-break d-block mb-2"
+                  >
+                    {gameCodeSuccess.coinString}
+                  </a>
+                    )
+                  : (
+                  <div className="fs14 text-break mb-2">{gameCodeSuccess.coinString}</div>
+                    )}
+                <div className="fs14">
+                  {t('Value')}: <span>{formatCoinValue(gameCodeSuccess.win, dcrUI)}</span>{' '}
+                  <span className="fs12 text-secondary">DCR</span>
+                </div>
+              </div>
+            )
+          })()}
+
+          {gameCodeError && (
+            <div className="fs15 text-danger mt-2 text-break">{gameCodeError}</div>
+          )}
         </div>
       </FormOverlay>
     </div>
