@@ -109,6 +109,51 @@ div.note-indicator {
   border-bottom: 1px solid var(--border-color);
 }
 
+// B-XB2: shared SuccessCheckmarkModal animation. Mirrors vanilla
+// `forms.ts animateCheckmark()` which drove font-size 0 → 80px and color
+// text-color → #10a310 over 1200ms with easeOutElastic. We approximate
+// the elastic bounce with a 5-stop keyframe sequence (overshoot + pullback
+// + smaller overshoot + pullback + settle) that evokes the same springy
+// feel without a JS animation loop.
+.success-checkmark-box {
+  height: 100px;
+  width: 100px;
+}
+
+@keyframes success-checkmark-elastic-in {
+  0% {
+    font-size: 0;
+    color: var(--text-color);
+  }
+
+  50% {
+    font-size: 100px;
+  }
+
+  65% {
+    font-size: 70px;
+  }
+
+  80% {
+    font-size: 88px;
+  }
+
+  90% {
+    font-size: 75px;
+  }
+
+  100% {
+    font-size: 80px;
+    color: #10a310;
+  }
+}
+
+.success-checkmark {
+  font-size: 80px;
+  color: #10a310;
+  animation: success-checkmark-elastic-in 1200ms ease-out forwards;
+}
+
 .z10 {
   z-index: 10;
 }
