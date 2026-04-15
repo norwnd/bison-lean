@@ -28,7 +28,7 @@ import type {
   WalletPeer, WalletRestoration,
   ProposalsMeta, Ticket
 } from '../stores/types'
-import { PeerSource } from '../stores/types'
+import { PeerSource, ApprovalStatus } from '../stores/types'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,6 +43,7 @@ const traitRecoverer = 1 << 5
 const traitRestorer = 1 << 8
 const traitTxFeeEstimator = 1 << 9
 const traitPeerManager = 1 << 10
+const traitTokenApprover = 1 << 13
 const traitTicketBuyer = 1 << 15
 const traitFundsMixer = 1 << 17
 // Aggregated mask used to decide whether to render the "Other Actions"
@@ -51,7 +52,7 @@ const traitFundsMixer = 1 << 17
 // the React UI hosts Manage Peers in this same section (vanilla puts
 // it in a separate "network actions" modal we don't have).
 const traitsExtraOpts =
-  traitLogFiler | traitRecoverer | traitRestorer | traitRescanner | traitPeerManager
+  traitLogFiler | traitRecoverer | traitRestorer | traitRescanner | traitPeerManager | traitTokenApprover
 
 // PendingForce is the stashed request shape for the shared
 // confirmForce flow. The two callers (recover + rescan) post the same
@@ -322,6 +323,11 @@ export default function WalletsPage () {
   // Restoration cards returned from /api/restorewalletinfo. Set when
   // the password modal succeeds; cleared on close.
   const [restorationInfo, setRestorationInfo] = useState<WalletRestoration[] | null>(null)
+  // WP-16: which approved token version the user clicked "Remove" on.
+  // Set when transitioning from the token-versions-table modal to
+  // the confirmation modal, cleared on close. Mirrors vanilla
+  // `wallets.ts` `this.unapprovingTokenVersion`.
+  const [unapprovingVersion, setUnapprovingVersion] = useState<number | null>(null)
   // WP-15: bridge topology, fetched once on mount via
   // /api/allbridgepaths. Used to (a) gate the Bridge button visibility
   // on whether any paths exist for the selected ticker's network
@@ -742,6 +748,56 @@ export default function WalletsPage () {
             onClose={() => setActiveForm(null)}
           />
         )}
+      </FormOverlay>
+
+      {/* WP-16: token approval table. Vanilla `wallets.tmpl`
+          `unapproveTokenTableForm` (L815-842) + `wallets.ts`
+          `showUnapproveTokenAllowanceTableForm()` (L718). Lists every
+          approved swap-contract version for the selected token
+          wallet, with a Remove icon per row that transitions to the
+          single-version confirmation modal. */}
+      <FormOverlay show={activeForm === 'unapproveTokenTable'} onClose={() => setActiveForm(null)}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640 }}>
+          {selectedAsset && selectedWallet && (
+            <UnapproveTokenTable
+              asset={selectedAsset}
+              wallet={selectedWallet}
+              exchanges={exchanges}
+              onClose={() => setActiveForm(null)}
+              onPickVersion={(version) => {
+                setUnapprovingVersion(version)
+                setActiveForm('unapproveTokenConfirm')
+              }}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* WP-16: token approval removal confirmation. Vanilla
+          `wallets.tmpl` `unapproveTokenForm` (L845-864) + `wallets.ts`
+          `showUnapproveTokenAllowanceForm()` (L680) +
+          `submitUnapproveTokenAllowance()` (L654). Fetches the tx
+          fee estimate via /api/approvetokenfee on mount and displays
+          it; Submit posts to /api/unapprovetoken, then shows the tx
+          ID with an explorer link (mirroring vanilla's behavior of
+          staying on the success-state pane instead of auto-closing). */}
+      <FormOverlay
+        show={activeForm === 'unapproveTokenConfirm'}
+        onClose={() => { setActiveForm(null); setUnapprovingVersion(null) }}
+      >
+        <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 560 }}>
+          {selectedAsset && unapprovingVersion !== null && (
+            <UnapproveTokenConfirm
+              asset={selectedAsset}
+              assets={assets}
+              fiatRatesMap={fiatRatesMap}
+              version={unapprovingVersion}
+              net={net}
+              onClose={() => { setActiveForm(null); setUnapprovingVersion(null) }}
+              onSuccess={() => fetchUser()}
+            />
+          )}
+        </div>
       </FormOverlay>
     </div>
   )
@@ -2056,12 +2112,16 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   // WP-19: trait-gated visibility for the "Other Actions" section.
   // Mirrors vanilla `wallets.ts` `showReconfig()` L2298-2305. The
   // section header is shown only when at least one button below would
-  // be rendered (`traitsExtraOpts` mask covers all five traits).
+  // be rendered (`traitsExtraOpts` mask covers all traits).
   const isRescanner = (wallet.traits & traitRescanner) !== 0
   const isLogFiler = (wallet.traits & traitLogFiler) !== 0
   const isRecoverer = (wallet.traits & traitRecoverer) !== 0
   const isRestorer = (wallet.traits & traitRestorer) !== 0
   const isPeerManager = (wallet.traits & traitPeerManager) !== 0
+  // WP-16: token approver. Only show the "Disallow Token" button
+  // when the wallet implements the trait AND isn't disabled (vanilla
+  // L2303: `traitTokenApprover && !wallet.disabled`).
+  const isTokenApprover = (wallet.traits & traitTokenApprover) !== 0 && !wallet.disabled
   const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0
 
   // Load wallet settings
@@ -2244,6 +2304,23 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                     onClick={handleDownloadLogs}
                   >
                     {t('wallet_logs')}
+                  </button>
+                )}
+                {/* WP-16: Disallow Token button — gated on
+                    `traitTokenApprover && !wallet.disabled`. Opens
+                    the token-versions-table modal listing every
+                    approved swap-contract version with a Remove icon
+                    per row. Mirrors vanilla `wallets.ts` L396 +
+                    `showUnapproveTokenAllowanceTableForm()` (L718). */}
+                {isTokenApprover && (
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => {
+                      onClose()
+                      setActiveForm('unapproveTokenTable')
+                    }}
+                  >
+                    {t('disallow_token')}
                   </button>
                 )}
                 {isRestorer && (
@@ -2667,6 +2744,271 @@ function ConfirmForce ({ pending, onClose }: {
             : t('confirm')}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-16: UnapproveTokenTable — list of approved swap-contract versions
+// ---------------------------------------------------------------------------
+
+// Mirrors vanilla `wallets.ts` `showUnapproveTokenAllowanceTableForm()`
+// (L718) + `assetVersionUsedByDEXes()` (L632). Walks the wallet's
+// `approved` map (version → ApprovalStatus) and lists every version
+// with status `Approved`, annotated with the list of DEX hosts
+// currently using that version.
+function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion }: {
+  asset: SupportedAsset
+  wallet: WalletState
+  exchanges: Record<string, Exchange>
+  onClose: () => void
+  onPickVersion: (version: number) => void
+}) {
+  const { t } = useTranslation()
+
+  // Build the version → DEX-hosts map. Same logic as vanilla: walk
+  // each connected exchange and group by the version of THIS asset
+  // that it uses.
+  const versionToDEXes = useMemo<Record<number, string[]>>(() => {
+    const out: Record<number, string[]> = {}
+    for (const host in exchanges) {
+      const xc = exchanges[host]
+      const xcAsset = xc.assets?.[asset.id]
+      if (!xcAsset) continue
+      if (!out[xcAsset.version]) out[xcAsset.version] = []
+      out[xcAsset.version].push(xc.host)
+    }
+    return out
+  }, [exchanges, asset.id])
+
+  // Collect the rows to display. Only versions with
+  // ApprovalStatus.Approved (= 0) show up.
+  const approvedVersions = useMemo<number[]>(() => {
+    if (!wallet.approved) return []
+    const out: number[] = []
+    // Iterate 0..wallet.version inclusive like vanilla so versions
+    // are displayed in stable ascending order.
+    for (let i = 0; i <= wallet.version; i++) {
+      if (wallet.approved[i] === ApprovalStatus.Approved) out.push(i)
+    }
+    return out
+  }, [wallet.approved, wallet.version])
+
+  const showTable = approvedVersions.length > 0
+
+  return (
+    <div>
+      <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
+        <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
+        <span>{t('disallow_token')}</span>
+        <span className="fs14 text-uppercase text-muted">{asset.symbol}</span>
+      </div>
+
+      {showTable && (
+        <table className="row-border w-100">
+          <thead>
+            <tr>
+              <th className="ps-3">{t('version')}</th>
+              <th>{t('used_by_dex')}</th>
+              <th className="pe-3 text-end">{t('Remove')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {approvedVersions.map(v => (
+              <tr key={v}>
+                <td className="ps-3">{v}</td>
+                <td>{(versionToDEXes[v] ?? []).join(', ') || '—'}</td>
+                <td className="pe-3 text-end">
+                  <span
+                    className="ico-cross text-danger pointer"
+                    title={t('Remove')}
+                    onClick={() => onPickVersion(v)}
+                  ></span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {!showTable && (
+        <div className="text-center py-3 grey">{t('no_token_allowances')}</div>
+      )}
+
+      <div className="d-flex mt-3">
+        <button className="btn btn-secondary btn-sm ms-auto" onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WP-16: UnapproveTokenConfirm — single-version unapprove confirmation
+// ---------------------------------------------------------------------------
+
+// Mirrors vanilla `wallets.ts` `showUnapproveTokenAllowanceForm()`
+// (L680) + `submitUnapproveTokenAllowance()` (L654). On mount, fetches
+// the fee estimate via /api/approvetokenfee with `approval: false`
+// and displays it. Submit POSTs to /api/unapprovetoken and, on
+// success, swaps the form content for a tx-ID display (matching
+// vanilla's behavior of staying on the success pane until the user
+// closes it manually).
+function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onClose, onSuccess }: {
+  asset: SupportedAsset
+  assets: Record<number, SupportedAsset>
+  fiatRatesMap: Record<number, number>
+  version: number
+  net: number
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const { t } = useTranslation()
+  // Parent asset (eth for usdc-erc20, etc.) pays the fee for the
+  // unapprove tx. Vanilla requires the selected asset to be a token
+  // (L686-688); we defensively null-check here and render the error
+  // state if somehow called with a non-token asset.
+  const parentAsset = asset.token ? assets[asset.token.parentID] : null
+  const parentRate = parentAsset ? fiatRatesMap[parentAsset.id] : 0
+
+  const [feeEstimate, setFeeEstimate] = useState<number | null>(null)
+  const [feeLoading, setFeeLoading] = useState(true)
+  const [feeError, setFeeError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  // On success we stash the returned tx ID and swap the form content
+  // (mirroring vanilla's `Doc.show(page.unapproveTokenTxMsg)` pattern).
+  const [txID, setTxID] = useState<string | null>(null)
+
+  // Load the fee estimate on mount.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!parentAsset) {
+        setFeeLoading(false)
+        setFeeError(t('Invalid source asset'))
+        return
+      }
+      const res = await postJSON('/api/approvetokenfee', {
+        assetID: asset.id,
+        version,
+        approval: false
+      })
+      if (cancelled) return
+      setFeeLoading(false)
+      if (!checkResponse(res)) {
+        setFeeError(res.msg || 'Failed to estimate fee')
+        return
+      }
+      setFeeEstimate(res.txFee ?? 0)
+    })()
+    return () => { cancelled = true }
+  }, [asset.id, parentAsset, t, version])
+
+  const handleSubmit = useCallback(async () => {
+    setSubmitError('')
+    setSubmitting(true)
+    const res = await postJSON('/api/unapprovetoken', { assetID: asset.id, version })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setSubmitError(res.msg || 'Unapprove failed')
+      return
+    }
+    setTxID(res.txID ?? '')
+    // Keep the parent's wallet-state fresh so the approved-versions
+    // table reflects the change if the user re-opens it.
+    onSuccess()
+  }, [asset.id, version, onSuccess])
+
+  // Build the fee display string. Mirrors vanilla L705-710:
+  // "{atomicFormatted} {unit} ({fiatFormatted} USD)" if a rate is
+  // available, otherwise just the atomic amount.
+  const feeText = useMemo(() => {
+    if (feeEstimate === null || !parentAsset) return ''
+    const atomicStr = `${formatCoinValue(feeEstimate, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
+    if (parentRate > 0) {
+      return `${atomicStr} (${formatFiatConversion(feeEstimate, parentRate, parentAsset.unitInfo)} USD)`
+    }
+    return atomicStr
+  }, [feeEstimate, parentAsset, parentRate])
+
+  // Explorer URL for the success tx ID, using the parent chain's
+  // explorer since the unapprove tx is on the parent network.
+  const txUrl = useMemo(() => {
+    if (!txID || !parentAsset) return null
+    return explorerURL(parentAsset.id, txID, net)
+  }, [txID, parentAsset, net])
+
+  return (
+    <div>
+      <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
+        <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
+        <span>{t('disallow_token')}</span>
+        <span className="fs14 text-uppercase text-muted">{asset.symbol}</span>
+        <span className="fs14 text-muted">— {t('version')} {version}</span>
+      </div>
+
+      {/* Success state: show tx ID with explorer link. */}
+      {txID !== null && (
+        <>
+          <div className="fs14 word-break-all mb-2">
+            {t('token_unapproval_tx_msg')}
+          </div>
+          <div className="word-break-all mb-3">
+            {txUrl
+              ? (
+                <a href={txUrl} target="_blank" rel="noopener noreferrer" className="subtlelink mono">
+                  {txID}
+                </a>
+                )
+              : (
+                <span className="mono">{txID}</span>
+                )}
+          </div>
+          <div className="d-flex">
+            <button className="btn btn-secondary btn-sm ms-auto" onClick={onClose}>
+              {t('Close')}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Pending state: show warning, fee estimate, submit button. */}
+      {txID === null && (
+        <>
+          <div className="fs14 mb-3">
+            {t('If you remove the allowance for this version of the swap contract, you will no longer be able to trade until you re-allow it.')}
+          </div>
+          <div className="fs14 mb-3">
+            <span className="text-muted me-1">{t('ESTIMATED_FEES')}:</span>
+            {feeLoading && <span className="ico-spinner spinner fs14"></span>}
+            {!feeLoading && feeError && <span className="text-danger">{feeError}</span>}
+            {!feeLoading && !feeError && <strong>{feeText}</strong>}
+          </div>
+
+          {submitError && <div className="text-danger fs14 mb-2">{submitError}</div>}
+
+          <div className="d-flex gap-2 justify-content-end">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              {t('cancel')}
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSubmit}
+              disabled={submitting || feeLoading || !!feeError}
+            >
+              {submitting
+                ? '...'
+                : t('Submit')}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
