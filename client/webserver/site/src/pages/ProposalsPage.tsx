@@ -112,7 +112,9 @@ export default function ProposalsPage () {
 
   return (
     <div id="main" className="py-5 overflow-y-auto">
-      <section id="proposals" className="flex-stretch-column mx-auto pb-3 pt-2 px-3">
+      {/* T18#2: use the shared `mw-500` utility class instead of the
+          old `#proposals { max-width: 500px }` ID rule. */}
+      <section className="flex-stretch-column mw-500 mx-auto pb-3 pt-2 px-3">
         <div className="d-flex justify-content-start align-items-center">
           <span
             className="ico-wide-headed-left-arrow fs24 py-1 px-2 lh1 hoverbg pointer"

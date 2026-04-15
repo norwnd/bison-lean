@@ -3,19 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
+import { formatProfit } from '../hooks/useFormatters'
 import { ROUTES, type MMLogsReturnPage } from '../router/routes'
 
 interface MarketMakingRun {
   startTime: number
   market: { baseID: number; quoteID: number; host: string }
   profit: number
-}
-
-function formatProfit (profit: number): { text: string; colorClass: string } {
-  const s = profit.toFixed(2)
-  if (s === '-0.00' || s === '0.00') return { text: '$0.00', colorClass: '' }
-  if (profit < 0) return { text: `-$${s.substring(1)}`, colorClass: 'sellcolor' }
-  return { text: `$${s}`, colorClass: 'buycolor' }
 }
 
 export default function MMArchivesPage () {
@@ -56,7 +50,7 @@ export default function MMArchivesPage () {
       <div className="mb-3">
         <span className="me-3">{t('Total Runs')}: {runs.length}</span>
         <span>
-          {t('Total Profit')}: <span className={total.colorClass}>{total.text}</span>
+          {t('Total Profit')}: <span className={total.cls}>{total.text}</span>
         </span>
       </div>
 
@@ -83,25 +77,42 @@ export default function MMArchivesPage () {
                   {quoteSym && <img src={`/img/coins/${quoteSym}.png`} width={20} height={20} alt={quoteSym} />}
                   <span>{baseSym.toUpperCase()}-{quoteSym.toUpperCase()}</span>
                 </td>
-                <td className={p.colorClass}>{p.text}</td>
+                <td className={p.cls}>{p.text}</td>
                 <td>
-                  {/* MMA-01: pass `returnPage=mmarchives` so MMLogsPage's
-                      back button returns here instead of falling back to
-                      its `'mm'` default. Mirrors vanilla `mmarchives.ts`
-                      L48: `loadPage('mmlogs', { ..., returnPage: 'mmarchives' })`.
-                      T18#4: typed via MMLogsReturnPage to prevent typos. */}
+                  {/* MMA-01 + T18#3: use URLSearchParams for safe
+                      URL construction, matching MMPage.tsx's pattern
+                      instead of manually-concatenated template strings
+                      with individual encodeURIComponent calls. The
+                      `returnPage=mmarchives` param is T18#4-typed via
+                      MMLogsReturnPage to prevent typos on the
+                      producer side. Vanilla `mmarchives.ts` L48:
+                      `loadPage('mmlogs', { ..., returnPage: 'mmarchives' })`. */}
                   <button
                     className="btn btn-sm btn-outline-secondary me-1"
                     onClick={() => {
                       const returnPage: MMLogsReturnPage = 'mmarchives'
-                      navigate(`${ROUTES.MM_LOGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}&startTime=${startTime}&returnPage=${returnPage}`)
+                      const params = new URLSearchParams({
+                        baseID: String(baseID),
+                        quoteID: String(quoteID),
+                        host,
+                        startTime: String(startTime),
+                        returnPage,
+                      })
+                      navigate(`${ROUTES.MM_LOGS}?${params.toString()}`)
                     }}
                   >
                     {t('Logs')}
                   </button>
                   <button
                     className="btn btn-sm btn-outline-secondary"
-                    onClick={() => navigate(`${ROUTES.MM_SETTINGS}?baseID=${baseID}&quoteID=${quoteID}&host=${encodeURIComponent(host)}`)}
+                    onClick={() => {
+                      const params = new URLSearchParams({
+                        baseID: String(baseID),
+                        quoteID: String(quoteID),
+                        host,
+                      })
+                      navigate(`${ROUTES.MM_SETTINGS}?${params.toString()}`)
+                    }}
                   >
                     {t('Settings')}
                   </button>

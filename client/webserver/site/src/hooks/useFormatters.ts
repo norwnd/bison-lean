@@ -147,6 +147,18 @@ export function formatFiatValue (value: number): string {
   return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
 }
 
+// T18#5: formatProfit returns a USD profit string (always 2 decimals)
+// together with the sell/buy color class to style it. Consolidated
+// here from MMPage.tsx and MMArchivesPage.tsx, which had identical
+// implementations modulo the result-field name (`cls` vs.
+// `colorClass`). Call sites now unpack as `{ text, cls }`.
+export function formatProfit (profit: number): { text: string; cls: string } {
+  const s = profit.toFixed(2)
+  if (s === '-0.00' || s === '0.00') return { text: '$0.00', cls: '' }
+  if (profit < 0) return { text: `-$${s.substring(1)}`, cls: 'sellcolor' }
+  return { text: `$${s}`, cls: 'buycolor' }
+}
+
 export function conventionalRate (baseID: number, quoteID: number, encRate: number, assets: Record<number, { unitInfo: UnitInfo }>): number {
   const bui = assets[baseID]?.unitInfo
   const qui = assets[quoteID]?.unitInfo

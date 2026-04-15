@@ -1,7 +1,9 @@
-#proposals {
-  max-width: 500px;
-  width: 100%;
-}
+// T18#2: `#proposals { max-width: 500px; width: 100% }` was
+// consolidated into the shared `.mw-500` utility class (see
+// css/utilities.scss). ProposalsPage now applies `mw-500` directly
+// at the section level, matching ProposalPage's convention. The
+// `width: 100%` was redundant -- Bootstrap's `flex-stretch-column`
+// wrapper already stretches children.
 
 .proposal {
   cursor: pointer;

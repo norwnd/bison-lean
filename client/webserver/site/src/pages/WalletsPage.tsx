@@ -2578,6 +2578,12 @@ function ManagePeers ({ assetID, onClose }: {
   const [error, setError] = useState('')
   const [addAddr, setAddAddr] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // T18#8: set of peer addresses currently being removed. Gates
+  // duplicate-click POSTs so the user can't fire N parallel
+  // /api/removewalletpeer requests for the same row, each with its
+  // own last-one-wins refresh(). Using a Set keeps the state
+  // O(removing count) without an object-per-row allocation.
+  const [removingAddrs, setRemovingAddrs] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     setError('')
@@ -2623,13 +2629,37 @@ function ManagePeers ({ assetID, onClose }: {
   }, [addAddr, assetID, refresh])
 
   const removePeer = useCallback(async (addr: string) => {
+    // T18#8: dedupe concurrent removal attempts on the same address.
+    // If a previous POST for this addr is already in flight, bail
+    // out. Using functional setState to avoid stale-closure reads
+    // of removingAddrs if the user rapid-fire clicks different peers.
+    let skip = false
+    setRemovingAddrs(prev => {
+      if (prev.has(addr)) {
+        skip = true
+        return prev
+      }
+      const next = new Set(prev)
+      next.add(addr)
+      return next
+    })
+    if (skip) return
+
     setError('')
-    const res = await postJSON('/api/removewalletpeer', { assetID, addr })
-    if (!checkResponse(res)) {
-      setError(res.msg || 'Failed to remove peer')
-      return
+    try {
+      const res = await postJSON('/api/removewalletpeer', { assetID, addr })
+      if (!checkResponse(res)) {
+        setError(res.msg || 'Failed to remove peer')
+        return
+      }
+      refresh()
+    } finally {
+      setRemovingAddrs(prev => {
+        const next = new Set(prev)
+        next.delete(addr)
+        return next
+      })
     }
-    refresh()
   }, [assetID, refresh])
 
   return (
@@ -2669,11 +2699,13 @@ function ManagePeers ({ assetID, onClose }: {
                 </td>
                 <td>
                   {p.source === PeerSource.UserAdded && (
-                    <span
-                      className="ico-cross pointer text-danger"
-                      title={t('Remove')}
-                      onClick={() => removePeer(p.addr)}
-                    ></span>
+                    removingAddrs.has(p.addr)
+                      ? <span className="ico-spinner spinner fs14"></span>
+                      : <span
+                          className="ico-cross pointer text-danger"
+                          title={t('Remove')}
+                          onClick={() => removePeer(p.addr)}
+                        ></span>
                   )}
                 </td>
               </tr>

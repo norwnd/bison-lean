@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
-import { formatCoinValue, formatFourSigFigs, formatFiatValue } from '../hooks/useFormatters'
+import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
 import { ROUTES } from '../router/routes'
@@ -54,13 +54,6 @@ function botTypeLabel (cfg: BotConfig, t: (k: string) => string): string {
   if (bt === botTypeArbMM) return t('Arb MM')
   if (bt === botTypeBasicArb) return t('Simple Arb')
   return t('Basic MM')
-}
-
-function formatProfit (profit: number): { text: string; cls: string } {
-  const s = profit.toFixed(2)
-  if (s === '-0.00' || s === '0.00') return { text: '$0.00', cls: '' }
-  if (profit < 0) return { text: `-$${s.substring(1)}`, cls: 'sellcolor' }
-  return { text: `$${s}`, cls: 'buycolor' }
 }
 
 interface AvailableBalances {
