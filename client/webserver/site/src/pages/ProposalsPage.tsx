@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON } from '../services/api'
 import { proposalPath } from '../router/routes'
+import { FormOverlay } from '../components/common/FormOverlay'
 
 interface Proposal {
   token: string
@@ -151,15 +152,19 @@ export default function ProposalsPage () {
           </button>
         </div>
 
-        {/* PS-01/PS-02: filter form slide-in animation. Wrap in
-            `overflow-hidden` to clip the form's off-screen
-            `translateX(100%)` start state so the slide-in-from-right
-            keyframe doesn't leak into surrounding layout. CSS animation
-            replays automatically on each mount because `filterOpen`
-            unmounts/remounts the wrapper. */}
-        {filterOpen && (
+        {/* T17: filter form now renders as a fixed-overlay modal via
+            FormOverlay (backdrop dim + center + Esc/backdrop close),
+            matching vanilla's `#forms > form` pattern. The inner card
+            uses the shared `.modal-form` class for the border/shadow/
+            padding look. `slide-in-from-right` still replays on each
+            open because FormOverlay returns null when `show` is false,
+            so the children remount. Overflow-hidden still needed to
+            clip the slide-in start state (`translateX(100%)`) -- the
+            backdrop extends full-viewport so it's a safe clipping
+            context. */}
+        <FormOverlay show={filterOpen} onClose={() => setFilterOpen(false)}>
           <div className="overflow-hidden">
-            <div className="filter-form mb-3 slide-in-from-right">
+            <div className="modal-form filter-form mw-500 slide-in-from-right">
               <div className="form-closer" onClick={() => setFilterOpen(false)}>
                 <span className="ico-cross" />
               </div>
@@ -180,7 +185,7 @@ export default function ProposalsPage () {
               </div>
             </div>
           </div>
-        )}
+        </FormOverlay>
 
         <div className="mb-3" />
 

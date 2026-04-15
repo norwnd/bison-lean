@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON, postJSON } from '../services/api'
 import { ROUTES } from '../router/routes'
+import { FormOverlay } from '../components/common/FormOverlay'
 import { SuccessCheckmarkModal } from '../components/common/SuccessCheckmarkModal'
 import { DCRAssetID } from '../stores/types'
 
@@ -222,17 +223,17 @@ export default function ProposalPage () {
           </button>
         )}
 
-        {/* PP-02 + PP-04: vote form slide-in animation. Wrap in
-            `overflow-hidden` to clip the form's off-screen
-            `translateX(100%)` start state so the slide-in-from-right
-            keyframe doesn't leak into surrounding layout. CSS animation
-            replays automatically on each mount because `voteFormOpen`
-            unmounts/remounts the wrapper, and CSS animations clean up
-            on their own when the element unmounts -- no manual
-            `animation.stop()` equivalent needed. */}
-        {voteFormOpen && (
+        {/* T17: vote form now renders as a fixed-overlay modal via
+            FormOverlay (backdrop + center + Esc/backdrop close),
+            matching vanilla's `#forms > form` pattern. Mirrors the
+            ProposalsPage filter form conversion. The inner card uses
+            the shared `.modal-form` class for the border/shadow/
+            padding look. `slide-in-from-right` replays on each open
+            because FormOverlay remounts its children when `show`
+            flips. Overflow-hidden clips the slide-in start state. */}
+        <FormOverlay show={voteFormOpen} onClose={() => setVoteFormOpen(false)}>
           <div className="overflow-hidden">
-            <div className="mb-3 slide-in-from-right">
+            <div className="modal-form mw-425 slide-in-from-right">
               <div className="form-closer" onClick={() => setVoteFormOpen(false)}>
                 <span className="ico-cross" />
               </div>
@@ -282,7 +283,7 @@ export default function ProposalPage () {
               )}
             </div>
           </div>
-        )}
+        </FormOverlay>
 
         {/* Proposal body */}
         <div className="d-flex align-items-center mt-2">
