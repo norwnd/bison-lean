@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
@@ -11,6 +11,7 @@ import { NewWalletForm } from '../components/common/NewWalletForm'
 import { WalletWaitForm } from '../components/common/WalletWaitForm'
 import { ConfirmRegistrationForm } from '../components/common/ConfirmRegistrationForm'
 import { ReputationMeter } from '../components/common/ReputationMeter'
+import { SuccessCheckmarkModal } from '../components/common/SuccessCheckmarkModal'
 import { strongTier } from '../components/AccountUtils'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import { ConnectionStatus, PrepaidBondID } from '../stores/types'
@@ -55,7 +56,13 @@ export default function DexSettingsPage () {
   const [tierValue, setTierValue] = useState(1)
   const [tierBondFeeBuffer, setTierBondFeeBuffer] = useState(0)
   const [tierCertFile] = useState('')
-  const [tierSuccessMsg, setTierSuccessMsg] = useState('')
+  // DSP-04: SuccessCheckmarkModal replaces the previous inline
+  // `tierSuccessMsg` banner + manual `setTimeout` flow. Mirrors vanilla
+  // `dexsettings.ts` `showSuccess(intl.prep(intl.ID_TRADING_TIER_UPDATED))`
+  // (L56, L82, L244) which used the animated checkmark overlay shared
+  // by `forms.showSuccess()`. Both success and dismiss are handled by
+  // the modal's internal 2700ms auto-close timer.
+  const [showTierSuccess, setShowTierSuccess] = useState(false)
 
   // -- Auto-renew toggle --
   const [autoRenew, setAutoRenew] = useState(() => (auth?.targetTier ?? 0) > 0)
@@ -88,6 +95,15 @@ export default function DexSettingsPage () {
       setConnStatusKey(prev => prev + 1)
     },
     bondpost: () => {
+      setConnStatusKey(prev => prev + 1)
+    },
+    // DSP-01: walletstate changes affect bond-posting capability (a
+    // wallet going from synced/unlocked to locked, for example, leaves
+    // the user unable to post bonds). Force a re-render so the
+    // connection-status panel and downstream tier displays reflect the
+    // latest wallet state. The auth store is kept fresh by the global
+    // note dispatcher in `AppLayout`.
+    walletstate: () => {
       setConnStatusKey(prev => prev + 1)
     },
   }), []))
@@ -124,16 +140,21 @@ export default function DexSettingsPage () {
     const xc = exchanges[host]
     if (!xc) return
     setTierStep('feeAsset')
-    setTierSuccessMsg('')
     setShowTierForm(true)
   }, [exchanges, host])
+
+  // DSP-04: helper that closes the tier wizard and triggers the success
+  // checkmark modal. Used by every success path in the tier flow.
+  const finishTierUpdate = useCallback(() => {
+    setShowTierForm(false)
+    setShowTierSuccess(true)
+  }, [])
 
   const handleTierFeeAssetSuccess = useCallback(async (assetID: number, tier: number) => {
     if (assetID === PrepaidBondID) {
       await fetchUser()
-      setTierSuccessMsg(t('Trading tier updated'))
       setAutoRenew(tier > 0)
-      setTimeout(() => setShowTierForm(false), 1500)
+      finishTierUpdate()
       return
     }
     const xc = exchanges[host]
@@ -167,9 +188,8 @@ export default function DexSettingsPage () {
         // Lowering tier - just update options directly.
         try {
           await updateBondOptions({ bondAssetID: assetID, targetTier: tier })
-          setTierSuccessMsg(t('Trading tier updated'))
           await fetchUser()
-          setTimeout(() => setShowTierForm(false), 1500)
+          finishTierUpdate()
         } catch (e: any) {
           setGeneralError(e.msg || 'Error updating bond options')
           setShowTierForm(false)
@@ -181,7 +201,7 @@ export default function DexSettingsPage () {
     }
     setTierBondFeeBuffer(0)
     setTierStep('newWallet')
-  }, [exchanges, host, assets, getBondsFeeBuffer, fetchUser, updateBondOptions, t])
+  }, [exchanges, host, assets, getBondsFeeBuffer, fetchUser, updateBondOptions, finishTierUpdate])
 
   const handleTierNewWalletSuccess = useCallback(async (assetID: number) => {
     const user = await fetchUser()
@@ -203,9 +223,8 @@ export default function DexSettingsPage () {
       }
       try {
         await updateBondOptions({ bondAssetID: assetID, targetTier: tierValue })
-        setTierSuccessMsg(t('Trading tier updated'))
         await fetchUser()
-        setTimeout(() => setShowTierForm(false), 1500)
+        finishTierUpdate()
       } catch (e: any) {
         setGeneralError(e.msg || 'Error updating bond options')
         setShowTierForm(false)
@@ -213,22 +232,20 @@ export default function DexSettingsPage () {
       return
     }
     setTierStep('walletWait')
-  }, [exchanges, host, fetchUser, getBondsFeeBuffer, tierValue, updateBondOptions, t])
+  }, [exchanges, host, fetchUser, getBondsFeeBuffer, tierValue, updateBondOptions, finishTierUpdate])
 
   const handleTierWalletWaitSuccess = useCallback(async () => {
     setTierStep('confirm')
   }, [])
 
   const handleTierConfirmSuccess = useCallback(async () => {
-    setTierSuccessMsg(t('Trading tier updated'))
     setAutoRenew(tierValue > 0)
     await fetchUser()
-    setTimeout(() => setShowTierForm(false), 1500)
-  }, [fetchUser, tierValue, t])
+    finishTierUpdate()
+  }, [fetchUser, tierValue, finishTierUpdate])
 
   const closeTierForm = useCallback(() => {
     setShowTierForm(false)
-    setTierSuccessMsg('')
   }, [])
 
   // -- Auto-renew toggle --
@@ -250,21 +267,69 @@ export default function DexSettingsPage () {
   }, [autoRenew, accountDisabled, openTierForm, updateBondOptions])
 
   // -- Penalty comps --
-  const handlePenaltyCompsKeyUp = useCallback(async (e: React.KeyboardEvent) => {
+  // DSP-07: keep the canonical applied value handy so we can revert
+  // local input state on error or cancel.
+  const appliedPenaltyComps = currentAuth?.penaltyComps ?? 0
+  // DSP-07: re-sync local state when the auth store reports a new
+  // applied value (e.g. after a successful update or from a fresh
+  // /api/user payload). Without this, the input keeps showing the
+  // stale value from the initial mount even though the store updated.
+  useEffect(() => {
+    setPenaltyComps(String(appliedPenaltyComps))
+  }, [appliedPenaltyComps])
+
+  // DSP-02: pending penalty-comps value awaiting user confirmation.
+  // When non-null, the confirm modal is shown.
+  const [pendingPenaltyComps, setPendingPenaltyComps] = useState<number | null>(null)
+
+  const handlePenaltyCompsKeyUp = useCallback((e: React.KeyboardEvent) => {
     setPenaltyCompsError('')
-    if (e.key === 'Escape') return
+    // DSP-07: Escape reverts the input to the canonical applied value,
+    // matching vanilla `dexsettings.ts` `penaltyCompBox` click handler
+    // (L135) which restores `String(xc.auth.penaltyComps)`.
+    if (e.key === 'Escape') {
+      setPenaltyComps(String(appliedPenaltyComps))
+      return
+    }
     if (e.key !== 'Enter') return
     const val = parseInt(penaltyComps)
     if (isNaN(val)) {
-      setPenaltyCompsError(t('Invalid value'))
+      // DSP-03: canonical `INVALID_COMPS_VALUE` key from `en-US.json`
+      // L937, mirroring vanilla `dexsettings.ts` L149
+      // `intl.prep(intl.ID_INVALID_COMPS_VALUE)`. The previous
+      // `t('Invalid value')` was a non-existent key.
+      setPenaltyCompsError(t('INVALID_COMPS_VALUE'))
       return
     }
+    // No-op if the value didn't actually change.
+    if (val === appliedPenaltyComps) return
+    // DSP-02: open confirmation modal before submitting. Vanilla
+    // `dexsettings.ts` L167 had a commented-out `bondDetailsForm`
+    // confirm wired to `updateBondOptionsConfirm`; React adopts a
+    // dedicated React modal (FormOverlay) to prevent typo-induced
+    // accidental updates of a bond-affecting setting.
+    setPendingPenaltyComps(val)
+  }, [penaltyComps, appliedPenaltyComps, t])
+
+  const cancelPenaltyCompsUpdate = useCallback(() => {
+    setPendingPenaltyComps(null)
+    // Revert the input to the canonical value (matches Escape behavior).
+    setPenaltyComps(String(appliedPenaltyComps))
+  }, [appliedPenaltyComps])
+
+  const confirmPenaltyCompsUpdate = useCallback(async () => {
+    if (pendingPenaltyComps === null) return
+    const val = pendingPenaltyComps
+    setPendingPenaltyComps(null)
     try {
       await updateBondOptions({ penaltyComps: val })
     } catch (e: any) {
       setPenaltyCompsError(e.msg || 'Error updating')
+      // DSP-07: revert the input on error so the user can see the
+      // value that's still applied (and try again if they want).
+      setPenaltyComps(String(appliedPenaltyComps))
     }
-  }, [penaltyComps, updateBondOptions, t])
+  }, [pendingPenaltyComps, appliedPenaltyComps, updateBondOptions])
 
   // -- Export account --
   const exportAccount = useCallback(async () => {
@@ -409,7 +474,14 @@ export default function DexSettingsPage () {
       <div className="mb-4">
         <h5>{t('Trading Tier')}</h5>
         <div className="d-flex flex-wrap gap-2 mb-2">
-          <button className="btn btn-outline-primary" onClick={openTierForm}>
+          {/* DSP-10: disable when account is disabled, mirroring vanilla
+              `dexsettings.ts` which disables both the auto-renew toggle
+              and the tier wizard entry point for disabled accounts. */}
+          <button
+            className="btn btn-outline-primary"
+            onClick={openTierForm}
+            disabled={accountDisabled}
+          >
             {t('Change Tier')}
           </button>
         </div>
@@ -498,65 +570,83 @@ export default function DexSettingsPage () {
         )}
       </div>
 
-      {/* -- Tier success banner -- */}
-      {tierSuccessMsg && !showTierForm && (
-        <div className="alert alert-success">{tierSuccessMsg}</div>
-      )}
-
       {/* ==== OVERLAYS ==== */}
+
+      {/* DSP-04: animated trading-tier-updated success modal, replacing
+          the previous inline `tierSuccessMsg` alert + checkmark. Auto-
+          closes after 2700ms via the modal's internal timer, matching
+          vanilla `dexsettings.ts` `showSuccess(intl.prep(intl.ID_TRADING_TIER_UPDATED))`. */}
+      <SuccessCheckmarkModal
+        show={showTierSuccess}
+        message={t('TRADING_TIER_UPDATED')}
+        onClose={() => setShowTierSuccess(false)}
+      />
 
       {/* -- Tier change overlay -- */}
       <FormOverlay show={showTierForm} onClose={closeTierForm}>
         <div className="col-12 col-sm-10 col-md-8 col-lg-6 mx-auto">
-          {tierSuccessMsg
-? (
-            <div className="px-4 py-3 text-center">
-              <div className="ico-check text-success fs24 mb-2" />
-              <div className="fs18">{tierSuccessMsg}</div>
-            </div>
-          )
-: (
-            <>
-              {tierStep === 'feeAsset' && exchange && (
-                <FeeAssetSelectionForm
-                  exchange={exchange}
-                  certFile={tierCertFile}
-                  onSuccess={handleTierFeeAssetSuccess}
-                />
-              )}
-
-              {tierStep === 'newWallet' && tierAssetID !== null && (
-                <NewWalletForm
-                  assetID={tierAssetID}
-                  onSuccess={handleTierNewWalletSuccess}
-                  onBack={() => setTierStep('feeAsset')}
-                />
-              )}
-
-              {tierStep === 'walletWait' && exchange && tierAssetID !== null && (
-                <WalletWaitForm
-                  exchange={exchange}
-                  assetID={tierAssetID}
-                  bondFeeBuffer={tierBondFeeBuffer}
-                  tier={tierValue}
-                  onSuccess={handleTierWalletWaitSuccess}
-                  onBack={async () => setTierStep('feeAsset')}
-                />
-              )}
-
-              {tierStep === 'confirm' && exchange && tierAssetID !== null && (
-                <ConfirmRegistrationForm
-                  exchange={exchange}
-                  certFile={tierCertFile}
-                  bondAssetID={tierAssetID}
-                  tier={tierValue}
-                  fees={tierBondFeeBuffer}
-                  onSuccess={handleTierConfirmSuccess}
-                  onBack={async () => setTierStep('feeAsset')}
-                />
-              )}
-            </>
+          {tierStep === 'feeAsset' && exchange && (
+            <FeeAssetSelectionForm
+              exchange={exchange}
+              certFile={tierCertFile}
+              onSuccess={handleTierFeeAssetSuccess}
+            />
           )}
+
+          {tierStep === 'newWallet' && tierAssetID !== null && (
+            <NewWalletForm
+              assetID={tierAssetID}
+              onSuccess={handleTierNewWalletSuccess}
+              onBack={() => setTierStep('feeAsset')}
+            />
+          )}
+
+          {tierStep === 'walletWait' && exchange && tierAssetID !== null && (
+            <WalletWaitForm
+              exchange={exchange}
+              assetID={tierAssetID}
+              bondFeeBuffer={tierBondFeeBuffer}
+              tier={tierValue}
+              onSuccess={handleTierWalletWaitSuccess}
+              onBack={async () => setTierStep('feeAsset')}
+            />
+          )}
+
+          {tierStep === 'confirm' && exchange && tierAssetID !== null && (
+            <ConfirmRegistrationForm
+              exchange={exchange}
+              certFile={tierCertFile}
+              bondAssetID={tierAssetID}
+              tier={tierValue}
+              fees={tierBondFeeBuffer}
+              onSuccess={handleTierConfirmSuccess}
+              onBack={async () => setTierStep('feeAsset')}
+            />
+          )}
+        </div>
+      </FormOverlay>
+
+      {/* DSP-02: penalty comps confirmation modal. Modeled on the
+          Disable Account confirm pattern below. The user must
+          explicitly confirm before the bond-affecting setting is
+          updated, preventing typo-induced accidents. Uses the visual
+          arrow `→` instead of an "update from X to Y" sentence to
+          avoid introducing new fall-through i18n keys for what is
+          already universally understood. */}
+      <FormOverlay show={pendingPenaltyComps !== null} onClose={cancelPenaltyCompsUpdate}>
+        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
+          <div className="fs20 mb-3">{t('Penalty compensations')}</div>
+          <p className="fs15">
+            <strong>{appliedPenaltyComps}</strong> → <strong>{pendingPenaltyComps}</strong>
+          </p>
+          <div className="d-flex gap-2">
+            <button className="btn btn-secondary" onClick={cancelPenaltyCompsUpdate}>
+              {t('Cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={confirmPenaltyCompsUpdate}>
+              {t('Confirm')}
+            </button>
+          </div>
         </div>
       </FormOverlay>
 
