@@ -85,6 +85,12 @@ export default function MMPage () {
   const [removingBot, setRemovingBot] = useState<MarketWithHost | null>(null)
   const [removeErr, setRemoveErr] = useState('')
   const [idleBalances, setIdleBalances] = useState<Record<string, AvailableBalances>>({})
+  // MM-02: per-bot reconfigure error keyed by hosted-market id. When
+  // set, the bot card shows a temporary CEX-not-connected warning
+  // beside the Reconfigure button. Auto-clears after 3s to match
+  // vanilla `mm.ts` `reconfigure()` (L450-462) which used
+  // `Doc.showTemporarily(3000, page.offError)`.
+  const [reconfigErrs, setReconfigErrs] = useState<Record<string, string>>({})
 
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -121,8 +127,15 @@ export default function MMPage () {
               dexBalances: resp.dexBalances ?? {},
               cexBalances: resp.cexBalances ?? {},
             }
+          } else if (resp.msg) {
+            // MM-03: surface the failure rather than swallowing it
+            // silently. Used to be `catch { /* ignore */ }` which made
+            // it impossible to diagnose missing balance displays.
+            console.warn('availablebalances failed for bot', id, resp.msg)
           }
-        } catch { /* ignore */ }
+        } catch (e) {
+          console.warn('availablebalances threw for bot', id, e)
+        }
       }
       setIdleBalances(newBalances)
     }
@@ -191,6 +204,30 @@ export default function MMPage () {
 
   const reconfigure = useCallback((cfg: BotConfig) => {
     const bt = botType(cfg)
+    // MM-02: if the bot is wired to a CEX, refuse to navigate when
+    // that CEX isn't currently connected — the mmsettings page can't
+    // load market data for an offline CEX. Mirrors vanilla `mm.ts`
+    // `reconfigure()` (L450-462) which set
+    // `page.offError.textContent = intl.prep(intl.ID_CEX_NOT_CONNECTED, ...)`
+    // and showed it for 3 seconds via `Doc.showTemporarily(3000, ...)`.
+    if (cfg.cexName) {
+      const cex = mmStatus?.cexes?.[cfg.cexName]
+      // Vanilla checks `!cex || !cex.connected` — `MMCEXStatus.connected`
+      // is the canonical liveness flag.
+      if (!cex || !cex.connected) {
+        const id = hostedMarketID(cfg.host, cfg.baseID, cfg.quoteID)
+        const msg = t('CEX_NOT_CONNECTED', { cexName: cfg.cexName })
+        setReconfigErrs(prev => ({ ...prev, [id]: msg }))
+        setTimeout(() => {
+          setReconfigErrs(prev => {
+            if (!(id in prev)) return prev
+            const { [id]: _drop, ...rest } = prev
+            return rest
+          })
+        }, 3000)
+        return
+      }
+    }
     const params = new URLSearchParams({
       host: cfg.host,
       baseID: String(cfg.baseID),
@@ -199,7 +236,23 @@ export default function MMPage () {
     })
     if (cfg.cexName) params.set('cexName', cfg.cexName)
     navigate(`${ROUTES.MM_SETTINGS}?${params.toString()}`)
-  }, [navigate])
+  }, [navigate, mmStatus, t])
+
+  // MM-06: stop a running bot directly from the bot card. Vanilla
+  // exposed a Stop button inside `runningBotDisplay` (`forms.tmpl`
+  // L1068) wired to `MM.stopBot()` which calls `/api/stopmarketmakingbot`.
+  // After success we refresh `mmStatus` + `user` so the card flips
+  // from running → idle without waiting for the next WS note.
+  const stopBot = useCallback(async (cfg: BotConfig) => {
+    const market: MarketWithHost = { host: cfg.host, baseID: cfg.baseID, quoteID: cfg.quoteID }
+    const resp = await postJSON('/api/stopmarketmakingbot', { market })
+    if (!checkResponse(resp)) {
+      console.warn('stopmarketmakingbot failed', resp.msg)
+      return
+    }
+    await fetchMMStatus()
+    await fetchUser()
+  }, [fetchMMStatus, fetchUser])
 
   const noBots = !sortedBots.length
 
@@ -387,24 +440,29 @@ export default function MMPage () {
       {/* Bot Cards Grid */}
       {!noBots && (
         <div className="row g-3">
-          {sortedBots.map((bot) => (
-            <BotCard
-              key={hostedMarketID(bot.config.host, bot.config.baseID, bot.config.quoteID)}
-              bot={bot}
-              assets={assets}
-              exchanges={exchanges}
-              fiatRatesMap={fiatRatesMap}
-              mmStatus={mmStatus}
-              idleBalances={idleBalances}
-              highlighted={highlightedBot === hostedMarketID(bot.config.host, bot.config.baseID, bot.config.quoteID)}
-              refCallback={(el) => {
-                cardRefs.current[hostedMarketID(bot.config.host, bot.config.baseID, bot.config.quoteID)] = el
-              }}
-              onReconfigure={reconfigure}
-              onRemove={confirmRemoveCfg}
-              t={t}
-            />
-          ))}
+          {sortedBots.map((bot) => {
+            const id = hostedMarketID(bot.config.host, bot.config.baseID, bot.config.quoteID)
+            return (
+              <BotCard
+                key={id}
+                bot={bot}
+                assets={assets}
+                exchanges={exchanges}
+                fiatRatesMap={fiatRatesMap}
+                mmStatus={mmStatus}
+                idleBalances={idleBalances}
+                highlighted={highlightedBot === id}
+                reconfigErr={reconfigErrs[id]}
+                refCallback={(el) => {
+                  cardRefs.current[id] = el
+                }}
+                onReconfigure={reconfigure}
+                onStop={stopBot}
+                onRemove={confirmRemoveCfg}
+                t={t}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -453,15 +511,19 @@ interface BotCardProps {
   mmStatus: { cexes: Record<string, { markets?: Record<string, { day?: { lastPrice: number; vol: number } }> }> } | null
   idleBalances: Record<string, AvailableBalances>
   highlighted: boolean
+  // MM-02: temporary CEX-not-connected error to show beside the
+  // Reconfigure button. Cleared by the parent after 3 seconds.
+  reconfigErr?: string
   refCallback: (el: HTMLDivElement | null) => void
   onReconfigure: (cfg: BotConfig) => void
+  onStop: (cfg: BotConfig) => Promise<void>
   onRemove: (cfg: BotConfig) => void
   t: (k: string) => string
 }
 
 function BotCard ({
   bot, assets, exchanges, fiatRatesMap, mmStatus, idleBalances,
-  highlighted, refCallback, onReconfigure, onRemove, t,
+  highlighted, reconfigErr, refCallback, onReconfigure, onStop, onRemove, t,
 }: BotCardProps) {
   const navigate = useNavigate()
   const { config: cfg, running, runStats } = bot
@@ -639,7 +701,23 @@ function BotCard ({
           )}
 
           {/* Actions */}
-          <div className="d-flex gap-2 mt-2">
+          <div className="d-flex gap-2 mt-2 flex-wrap">
+            {/* MM-01: jump to the markets page for this bot's market.
+                Mirrors vanilla `mm.ts` `marketLink` click handler
+                (L329) which loads `markets` with `{host, baseID, quoteID}`. */}
+            <button
+              className="btn btn-sm btn-outline-secondary"
+              onClick={() => {
+                const params = new URLSearchParams({
+                  host,
+                  baseID: String(baseID),
+                  quoteID: String(quoteID),
+                })
+                navigate(`${ROUTES.MARKETS}?${params.toString()}`)
+              }}
+            >
+              {t('View Market')}
+            </button>
             <button className="btn btn-sm btn-outline-secondary" onClick={() => onReconfigure(cfg)}>
               {t('Reconfigure')}
             </button>
@@ -659,12 +737,25 @@ function BotCard ({
                 {t('Logs')}
               </button>
             )}
+            {/* MM-06: stop a running bot directly from the card.
+                Mirrors vanilla `runningBotDisplay` `stopBttn` (forms.tmpl
+                L1068) wired to `MM.stopBot()`. */}
+            {running && (
+              <button className="btn btn-sm btn-outline-warning" onClick={() => onStop(cfg)}>
+                {t('Stop')}
+              </button>
+            )}
             {!running && (
               <button className="btn btn-sm btn-outline-danger" onClick={() => onRemove(cfg)}>
                 {t('Remove')}
               </button>
             )}
           </div>
+          {/* MM-02: temporary CEX-not-connected error from the parent's
+              reconfigure guard. Auto-clears after 3 seconds. */}
+          {reconfigErr && (
+            <div className="mt-2 fs14 text-warning">{reconfigErr}</div>
+          )}
         </div>
       </div>
     </div>
