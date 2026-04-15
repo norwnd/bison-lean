@@ -82,31 +82,23 @@ export default function DexSettingsPage () {
   const [certUpdateMsg, setCertUpdateMsg] = useState('')
 
   // -- WS note handlers --
+  // All five note types share the same handler: bump `connStatusKey`
+  // to force a local re-render. The auth store is already updated by
+  // the global note dispatcher in `AppLayout`; this component reads
+  // `exchange.auth` and `exchange.connectionStatus` directly, so it
+  // just needs a render trigger to pick up the fresh values.
+  // `walletstate` is included (DSP-01) because wallet readiness
+  // affects bond-posting capability — a wallet going locked or
+  // unsynced leaves the user unable to post bonds, and the connection
+  // panel + tier displays should reflect that.
+  const forceReRender = useCallback(() => setConnStatusKey(prev => prev + 1), [])
   useNotifications(useMemo(() => ({
-    conn: (_note: any) => {
-      setConnStatusKey(prev => prev + 1)
-    },
-    reputation: () => {
-      // Just force a re-render. The authStore is already updated by the
-      // notification pipeline; the component reads exchange.auth directly.
-      setConnStatusKey(prev => prev + 1)
-    },
-    feepayment: () => {
-      setConnStatusKey(prev => prev + 1)
-    },
-    bondpost: () => {
-      setConnStatusKey(prev => prev + 1)
-    },
-    // DSP-01: walletstate changes affect bond-posting capability (a
-    // wallet going from synced/unlocked to locked, for example, leaves
-    // the user unable to post bonds). Force a re-render so the
-    // connection-status panel and downstream tier displays reflect the
-    // latest wallet state. The auth store is kept fresh by the global
-    // note dispatcher in `AppLayout`.
-    walletstate: () => {
-      setConnStatusKey(prev => prev + 1)
-    },
-  }), []))
+    conn: forceReRender,
+    reputation: forceReRender,
+    feepayment: forceReRender,
+    bondpost: forceReRender,
+    walletstate: forceReRender,
+  }), [forceReRender]))
 
   // -- Derived values --
   // Read from exchanges on each render (may be updated by store).
