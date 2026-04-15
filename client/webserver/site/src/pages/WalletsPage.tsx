@@ -44,9 +44,21 @@ const traitTicketBuyer = 1 << 15
 const traitFundsMixer = 1 << 17
 // Aggregated mask used to decide whether to render the "Other Actions"
 // section at all (skipped entirely when no extra-actions trait is set).
-// Mirrors vanilla `traitsExtraOpts` L77.
+// Mirrors vanilla `traitsExtraOpts` L77 plus `traitPeerManager` since
+// the React UI hosts Manage Peers in this same section (vanilla puts
+// it in a separate "network actions" modal we don't have).
 const traitsExtraOpts =
-  traitLogFiler | traitRecoverer | traitRestorer | traitRescanner
+  traitLogFiler | traitRecoverer | traitRestorer | traitRescanner | traitPeerManager
+
+// PendingForce is the stashed request shape for the shared
+// confirmForce flow. The two callers (recover + rescan) post the same
+// {assetID} body, with `force: true` added on retry. Vanilla stores
+// `forceUrl` + `forceReq` as `string` + arbitrary object, but in
+// practice both endpoints share this shape.
+interface PendingForce {
+  url: string
+  req: { assetID: number; force?: boolean }
+}
 
 const DCR_ASSET_ID = 42
 const TX_HISTORY_PAGE_SIZE = 10
@@ -281,7 +293,7 @@ export default function WalletsPage () {
   // confirmForce form re-submits with `force: true`. We use the same
   // pattern: when a request fails with `activeOrdersErr`, we keep the
   // URL + body around so the modal's confirm button can re-issue it.
-  const [pendingForce, setPendingForce] = useState<{ url: string; req: any } | null>(null)
+  const [pendingForce, setPendingForce] = useState<PendingForce | null>(null)
   // Restoration cards returned from /api/restorewalletinfo. Set when
   // the password modal succeeds; cleared on close.
   const [restorationInfo, setRestorationInfo] = useState<WalletRestoration[] | null>(null)
@@ -1923,7 +1935,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   // Used by the WP-06/rescan force-confirm flow: when the underlying
   // request fails with `activeOrdersErr` we stash the URL + body here
   // so the shared ConfirmForce modal can re-issue with `force: true`.
-  setPendingForce: (p: { url: string; req: any } | null) => void
+  setPendingForce: (p: PendingForce | null) => void
 }) {
   const { t } = useTranslation()
   const fetchUser = useAuthStore(s => s.fetchUser)
@@ -1934,13 +1946,15 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   const [success, setSuccess] = useState('')
 
   // WP-19: trait-gated visibility for the "Other Actions" section.
-  // Mirrors vanilla `wallets.ts` `showReconfig()` L2298-2305.
+  // Mirrors vanilla `wallets.ts` `showReconfig()` L2298-2305. The
+  // section header is shown only when at least one button below would
+  // be rendered (`traitsExtraOpts` mask covers all five traits).
   const isRescanner = (wallet.traits & traitRescanner) !== 0
   const isLogFiler = (wallet.traits & traitLogFiler) !== 0
   const isRecoverer = (wallet.traits & traitRecoverer) !== 0
   const isRestorer = (wallet.traits & traitRestorer) !== 0
   const isPeerManager = (wallet.traits & traitPeerManager) !== 0
-  const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0 || isPeerManager
+  const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0
 
   // Load wallet settings
   useEffect(() => {
@@ -2110,7 +2124,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
               actions" modal, but the React UI has only the gear icon
               entry point so we host it next to the other per-wallet
               actions for parity coverage). */}
-          {(hasExtraOpts || isPeerManager) && (
+          {hasExtraOpts && (
             <>
               <div className="fs15 mt-3 pt-2 border-top text-secondary">
                 {t('other_actions')}
@@ -2184,7 +2198,7 @@ function RecoverWalletConfirm ({ assetID, onClose, onForceNeeded }: {
   // Called when the underlying request returns `activeOrdersErr`. The
   // parent stashes the URL + body into pendingForce and switches to the
   // confirmForce modal.
-  onForceNeeded: (url: string, req: any) => void
+  onForceNeeded: (url: string, req: PendingForce['req']) => void
 }) {
   const { t } = useTranslation()
   const [submitting, setSubmitting] = useState(false)
@@ -2279,6 +2293,7 @@ function ExportWalletAuth ({ assetID, onClose, onSuccess }: {
           className="form-control form-control-sm"
           value={pw}
           autoComplete="current-password"
+          autoFocus
           onChange={e => setPw(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter') submit()
@@ -2498,7 +2513,7 @@ function ManagePeers ({ assetID, onClose }: {
 // ---------------------------------------------------------------------------
 
 function ConfirmForce ({ pending, onClose }: {
-  pending: { url: string; req: any }
+  pending: PendingForce
   onClose: () => void
 }) {
   const { t } = useTranslation()
