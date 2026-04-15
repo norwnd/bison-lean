@@ -38,10 +38,27 @@ export function checkResponse (resp: APIResponse): boolean {
   return resp.requestSuccessful && resp.ok
 }
 
+// Errors is a numeric enum whose values must match the Go-side iota
+// ordering in `client/core/errors.go`. The server returns these codes
+// on `res.code` for `writeAPIError` responses; the frontend compares
+// against them to branch on specific failure modes (e.g.
+// `res.code === Errors.activeOrdersErr` to trigger the force-confirm
+// flow on recoverwallet / rescanwallet).
+//
+// IMPORTANT: the numeric indices are what's wire-compatible, not the
+// names. But matching names to the Go source makes drift-hunting
+// trivial when someone adds or renames a code.
+//
+// T18#7: previously had three drifted names (`noAuthErr`,
+// `accountDisableErr`, `insufficientRedeemFundsRelayErr`) that were
+// never referenced by any caller. Aligned to the Go names
+// (`noAuthError`, `accountStatusUpdateErr`,
+// `relayRedemptionLotSizeTooSmallErr`) so future additions stay
+// mechanically verifiable by diffing the two files.
 export enum Errors {
   walletErr,
   walletAuthErr,
-  noAuthErr,
+  noAuthError,
   walletBalanceErr,
   dupeDEXErr,
   assetSupportErr,
@@ -71,7 +88,7 @@ export enum Errors {
   fileReadErr,
   unknownDEXErr,
   accountRetrieveErr,
-  accountDisableErr,
+  accountStatusUpdateErr,
   suspendedAcctErr,
   existenceCheckErr,
   createWalletErr,
@@ -82,5 +99,5 @@ export enum Errors {
   bondAssetErr,
   bondPostErr,
   insufficientRedeemFundsErr,
-  insufficientRedeemFundsRelayErr,
+  relayRedemptionLotSizeTooSmallErr,
 }
