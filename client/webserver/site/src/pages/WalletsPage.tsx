@@ -1,7 +1,7 @@
 import {
   useState, useEffect, useCallback, useMemo
 } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
@@ -1664,7 +1664,6 @@ function RecentOrdersView ({ assetID, assets }: {
   assets: Record<number, SupportedAsset>
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -1694,14 +1693,16 @@ function RecentOrdersView ({ assetID, assets }: {
         <h4 className="mb-0">{t('Recent')} {asset.name} {t('Activity')}</h4>
         {/* WP-21: "View All" link to the orders page pre-filtered to
             this asset. The OrdersPage `assets` URL param is consumed
-            by its initial filter state. */}
-        <button
-          type="button"
-          className="btn btn-sm btn-link p-0"
-          onClick={() => navigate(`${ROUTES.ORDERS}?assets=${assetID}`)}
+            by its initial filter state. Uses `<Link>` (rather than a
+            button + navigate) so it routes via react-router with
+            proper link semantics, supports cmd-click / middle-click
+            for new-tab, and reads as a link to assistive tech. */}
+        <Link
+          to={`${ROUTES.ORDERS}?assets=${assetID}`}
+          className="fs14"
         >
           {t('View All')}
-        </button>
+        </Link>
       </div>
 
       {loading && (
@@ -1770,14 +1771,15 @@ function RecentOrdersView ({ assetID, assets }: {
                   <td>{statusStr}</td>
                   <td className="d-none d-md-table-cell">{filledPct}%</td>
                   <td className="text-nowrap">{ageSince(ord.submitTime)}</td>
-                  {/* WP-21 drive-by: use react-router navigate so
-                      we don't trigger a full page reload (the
-                      previous `<a href>` reset the SPA state). */}
+                  {/* WP-21 drive-by: use react-router `<Link>` instead
+                      of the original `<a href>` so navigation stays
+                      within the SPA (no full page reload) AND keeps
+                      proper link semantics for assistive tech +
+                      cmd-click new-tab support. */}
                   <td>
-                    <button
-                      type="button"
-                      className="btn p-0 ico-open fs14 border-0 bg-transparent plainlink"
-                      onClick={() => navigate(`/order/${ord.id}`)}
+                    <Link
+                      to={`/order/${ord.id}`}
+                      className="ico-open fs14 plainlink"
                       aria-label={t('View order')}
                     />
                   </td>
