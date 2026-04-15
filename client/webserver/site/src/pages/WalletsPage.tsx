@@ -9,6 +9,7 @@ import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { DepositAddress } from '../components/common/DepositAddress'
 import { CopyButton } from '../components/common/CopyButton'
+import { NewWalletForm } from '../components/common/NewWalletForm'
 import {
   formatCoinValue, formatFullPrecision, formatFiatConversion,
   formatFourSigFigs
@@ -574,7 +575,7 @@ export default function WalletsPage () {
                   {!selectedWallet && (
                     <NoWalletView
                       asset={selectedAsset}
-                      onCreated={() => fetchUser()}
+                      onCreate={() => setActiveForm('newWallet')}
                     />
                   )}
                 </div>
@@ -799,6 +800,29 @@ export default function WalletsPage () {
           )}
         </div>
       </FormOverlay>
+
+      {/* WP-17: new wallet wizard. Mirrors vanilla `wallets.ts`
+          `showNewWallet()` (L930) which just hands off to the shared
+          NewWalletForm component. The form handles its own wallet-type
+          tabs, config-option rendering (via WalletConfigForm), defaults
+          loading from /api/defaultwalletcfg, and password prompt (when
+          the wallet definition requires one). `onSuccess` refreshes
+          the user state so the newly-created wallet appears in the
+          sidebar + detail view immediately. */}
+      <FormOverlay show={activeForm === 'newWallet'} onClose={() => setActiveForm(null)}>
+        <div className="bg-body border rounded p-4" style={{ minWidth: 440, maxWidth: 560, maxHeight: '85vh', overflowY: 'auto' }}>
+          {selectedAsset && (
+            <NewWalletForm
+              assetID={selectedAsset.id}
+              onSuccess={async () => {
+                await fetchUser()
+                setActiveForm(null)
+              }}
+              onBack={() => setActiveForm(null)}
+            />
+          )}
+        </div>
+      </FormOverlay>
     </div>
   )
 }
@@ -807,35 +831,28 @@ export default function WalletsPage () {
 // NoWalletView
 // ---------------------------------------------------------------------------
 
-function NoWalletView ({ asset, onCreated }: {
+// WP-17: shows the "no wallet configured" placeholder with a button
+// that opens the full NewWalletForm modal (previously a stub that
+// posted to /api/newwallet with an empty body -- never actually
+// worked for assets with required config). Mirrors vanilla
+// `wallets.ts` `showNewWallet()` (L930) which also just hands off
+// to the shared NewWalletForm component.
+function NoWalletView ({ asset, onCreate }: {
   asset: SupportedAsset
-  onCreated: () => void
+  onCreate: () => void
 }) {
   const { t } = useTranslation()
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState('')
 
   return (
     <div className="text-center py-4">
       <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} className="mb-3" />
       <div className="fs18 mb-2">{asset.name}</div>
       <p className="text-secondary fs14 mb-3">{t('No wallet configured for this asset.')}</p>
-      {error && <div className="text-danger fs14 mb-2">{error}</div>}
       <button
         className="btn btn-primary"
-        disabled={creating}
-        onClick={async () => {
-          setCreating(true)
-          setError('')
-          // For simple wallet creation without config, use the API directly.
-          // Full wallet config forms would need the NewWalletForm component.
-          onCreated()
-          setCreating(false)
-        }}
+        onClick={onCreate}
       >
-        {creating
-          ? '...'
-          : t('Create Wallet')}
+        {t('Create Wallet')}
       </button>
     </div>
   )
