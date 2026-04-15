@@ -255,6 +255,23 @@ export default function WalletsPage () {
   // WS subscriptions
   // -----------------------------------------------------------------------
 
+  // WP-01: vanilla `wallets.ts` L464-465 routes both `walletstate` AND
+  // `walletconfig` to `handleWalletStateNote`. The two notifications
+  // carry the same `WalletStateNote` shape; `walletconfig` fires when
+  // a wallet's config (e.g. node URL, password) is updated, while
+  // `walletstate` fires for runtime state changes (sync, peers,
+  // balance metadata). Both should refresh the same local state.
+  const handleWalletStateNote = useCallback((note: CoreNote) => {
+    const n = note as WalletStateNote
+    const store = useAuthStore.getState()
+    const assetID = n.wallet.assetID
+    const asset = store.assets[assetID]
+    if (!asset) return
+    asset.wallet = n.wallet
+    store.walletMap[assetID] = n.wallet
+    bump()
+  }, [bump])
+
   const noteReceivers = useMemo(() => ({
     balance: (note: CoreNote) => {
       const n = note as BalanceNote
@@ -265,16 +282,10 @@ export default function WalletsPage () {
       store.walletMap[n.assetID] = asset.wallet
       bump()
     },
-    walletstate: (note: CoreNote) => {
-      const n = note as WalletStateNote
-      const store = useAuthStore.getState()
-      const assetID = n.wallet.assetID
-      const asset = store.assets[assetID]
-      if (!asset) return
-      asset.wallet = n.wallet
-      store.walletMap[assetID] = n.wallet
-      bump()
-    },
+    walletstate: handleWalletStateNote,
+    // WP-01: same handler as `walletstate`. Mirrors vanilla
+    // `wallets.ts` L464-465.
+    walletconfig: handleWalletStateNote,
     walletsync: (_note: CoreNote) => {
       bump()
     },
@@ -289,8 +300,45 @@ export default function WalletsPage () {
     },
     transaction: (_note: CoreNote) => {
       bump()
-    }
-  }), [bump, fetchUser])
+    },
+    // WP-02: minimal `walletnote` (custom wallet note) handler.
+    // Vanilla `wallets.ts` `handleCustomWalletNote()` (L2767) switches
+    // on `payload.route` to dispatch:
+    //   - `tipChange`         → updates per-asset sync height + DCR ticket stats
+    //   - `ticketPurchaseUpdate` → processes Decred staking ticket updates
+    //   - `transaction`       → forwards to tx-history + bridging popup
+    // The DCR staking surfaces (B-L15) and the bridging popup (B-L16)
+    // haven't been ported yet, so the React handler here is a stub
+    // that just bumps the render tick for the `tipChange` /
+    // `transaction` routes (which the existing tx-history table can
+    // pick up reactively). Unknown routes are logged so they show
+    // up in dev tools without crashing.
+    walletnote: (note: CoreNote) => {
+      const n = note as { payload?: { route?: string } }
+      const route = n.payload?.route
+      switch (route) {
+        case 'tipChange':
+        case 'transaction':
+          bump()
+          break
+        case 'ticketPurchaseUpdate':
+          // Decred ticket UI is a B-L15 item; bumping the render
+          // tick is harmless until the consumer exists.
+          bump()
+          break
+        default:
+          if (route) console.debug('walletnote: unhandled route', route)
+      }
+    },
+    // WP-03: minimal `bridge` notification handler. Vanilla
+    // `handleBridgeNote()` (L2752) forwards updates to the bridging
+    // popup, which doesn't exist in React yet (B-L16). Subscribe to
+    // the channel so the note isn't silently dropped, and bump for
+    // any future consumer.
+    bridge: (_note: CoreNote) => {
+      bump()
+    },
+  }), [bump, fetchUser, handleWalletStateNote])
 
   useNotifications(noteReceivers)
 
