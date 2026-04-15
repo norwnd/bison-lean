@@ -15,6 +15,8 @@ import {
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 import { filled } from '../components/AccountUtils'
+import BridgingPopup from '../components/bridging/BridgingPopup'
+import { allBridgePaths } from '../components/bridging/bridgeApi'
 import { ROUTES } from '../router/routes'
 import type {
   SupportedAsset, WalletState,
@@ -320,10 +322,32 @@ export default function WalletsPage () {
   // Restoration cards returned from /api/restorewalletinfo. Set when
   // the password modal succeeds; cleared on close.
   const [restorationInfo, setRestorationInfo] = useState<WalletRestoration[] | null>(null)
+  // WP-15: bridge topology, fetched once on mount via
+  // /api/allbridgepaths. Used to (a) gate the Bridge button visibility
+  // on whether any paths exist for the selected ticker's network
+  // siblings, and (b) hand the topology to BridgingPopup so it doesn't
+  // need its own fetch. `null` = not yet loaded; `{}` = loaded but
+  // empty. Vanilla loads this on app start; we keep it page-local
+  // since no other page needs it.
+  const [bridgePaths, setBridgePaths] = useState<Record<number, Record<number, string[]>> | null>(null)
 
   // Force re-render on note arrival so balances refresh.
   const [, setTick] = useState(0)
   const bump = useCallback(() => setTick(n => n + 1), [])
+
+  // WP-15: lazy-load bridge paths on mount. Failure is non-fatal --
+  // the Bridge button just stays hidden. Avoid blocking the page
+  // render on this.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const res = await allBridgePaths()
+      if (cancelled) return
+      if (res.ok) setBridgePaths(res.paths)
+      else setBridgePaths({})
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // -----------------------------------------------------------------------
   // WS subscriptions
@@ -404,11 +428,12 @@ export default function WalletsPage () {
           if (route) console.debug('walletnote: unhandled route', route)
       }
     },
-    // WP-03: minimal `bridge` notification handler. Vanilla
-    // `handleBridgeNote()` (L2752) forwards updates to the bridging
-    // popup, which doesn't exist in React yet (B-L16). Subscribe to
-    // the channel so the note isn't silently dropped, and bump for
-    // any future consumer.
+    // WP-03 / WP-15: `bridge` notification handler. As of B-L16,
+    // BridgingPopup also subscribes to this channel directly via its
+    // own useNotifications hook, so this parent-level handler only
+    // exists to bump the page render tick -- bridge txs move balance
+    // between same-ticker network siblings, and the wallet detail
+    // view should reflect that even when the popup is closed.
     bridge: (_note: CoreNote) => {
       bump()
     },
@@ -437,6 +462,33 @@ export default function WalletsPage () {
     : null
   const selectedWallet = selectedAsset?.wallet ?? null
   const net = user?.net ?? 0
+
+  // WP-15: derive the same-ticker network sibling asset IDs for the
+  // currently-selected asset. Used by both the Bridge button
+  // visibility check and the BridgingPopup `networkAssetIDs` prop.
+  const selectedTickerNetworkIDs = useMemo<number[]>(() => {
+    if (!selectedAssetID) return []
+    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAssetID))
+    return group ? group.assetIDs : []
+  }, [selectedAssetID, tickerGroups])
+
+  // WP-15: bridge button visibility check. Mirrors vanilla
+  // `wallets.ts` `hasBridgingSupport()` (L2835): the asset must have
+  // a wallet, paths must exist for it, and at least one destination
+  // must also have a wallet.
+  const hasBridge = useMemo<boolean>(() => {
+    if (!bridgePaths) return false
+    for (const id of selectedTickerNetworkIDs) {
+      if (!assets[id]?.wallet) continue
+      const dests = bridgePaths[id]
+      if (!dests) continue
+      for (const destIDStr of Object.keys(dests)) {
+        const destID = Number(destIDStr)
+        if (assets[destID]?.wallet) return true
+      }
+    }
+    return false
+  }, [bridgePaths, selectedTickerNetworkIDs, assets])
 
   // -----------------------------------------------------------------------
   // Render
@@ -510,6 +562,7 @@ export default function WalletsPage () {
                       assets={assets}
                       fiatRatesMap={fiatRatesMap}
                       setActiveForm={setActiveForm}
+                      hasBridge={hasBridge}
                     />
                   )}
                   {!selectedWallet && (
@@ -675,6 +728,21 @@ export default function WalletsPage () {
           )}
         </div>
       </FormOverlay>
+
+      {/* WP-15: bridging popup. Mounts when the user clicks the
+          Bridge button. The popup itself owns the BridgeState reducer
+          + WS subscriptions (via its own useNotifications hook), so
+          the parent only manages visibility. Mounting also triggers
+          the lazy /api/pendingbridges + /api/bridgehistory loads. */}
+      <FormOverlay show={activeForm === 'bridge'} onClose={() => setActiveForm(null)}>
+        {bridgePaths && hasBridge && (
+          <BridgingPopup
+            networkAssetIDs={selectedTickerNetworkIDs}
+            bridgePaths={bridgePaths}
+            onClose={() => setActiveForm(null)}
+          />
+        )}
+      </FormOverlay>
     </div>
   )
 }
@@ -727,11 +795,15 @@ interface WalletDetailProps {
   assets: Record<number, SupportedAsset>
   fiatRatesMap: Record<number, number>
   setActiveForm: (f: string | null) => void
+  // WP-15: whether to render the Bridge button. Computed by the
+  // parent from the global bridge topology + the selected ticker's
+  // network siblings.
+  hasBridge: boolean
 }
 
 function WalletDetail ({
   asset, wallet, assets, fiatRatesMap,
-  setActiveForm
+  setActiveForm, hasBridge
 }: WalletDetailProps) {
   const { t } = useTranslation()
   const bal = wallet.balance
@@ -855,7 +927,7 @@ function WalletDetail ({
           </div>
         )}
 
-        {/* ---- Receive / Send buttons ---- */}
+        {/* ---- Receive / Send / Bridge buttons ---- */}
         <div className="d-flex align-items-stretch border-top">
           <div
             className="flex-grow-1 flex-center p-2 pointer hoverbg border-end"
@@ -865,13 +937,26 @@ function WalletDetail ({
             <span className="fs20">{t('Receive')}</span>
           </div>
           <button
-            className="flex-grow-1 flex-center p-2 noborder"
+            className={`flex-grow-1 flex-center p-2 noborder${hasBridge ? ' border-end' : ''}`}
             onClick={() => setActiveForm('send')}
             disabled={!wallet.open}
           >
             <span className="ico-send me-1"></span>
             <span className="fs20">{t('Send')}</span>
           </button>
+          {/* WP-15: bridge button. Vanilla `wallets.tmpl` renders
+              this next to Send/Receive inside the same flex row, gated
+              on `hasBridgingSupport()`. */}
+          {hasBridge && (
+            <button
+              className="flex-grow-1 flex-center p-2 noborder"
+              onClick={() => setActiveForm('bridge')}
+              disabled={!wallet.open}
+            >
+              <span className="ico-exchange me-1"></span>
+              <span className="fs20">{t('BRIDGE')}</span>
+            </button>
+          )}
         </div>
       </section>
 
