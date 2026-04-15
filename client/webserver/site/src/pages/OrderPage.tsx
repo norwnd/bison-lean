@@ -7,7 +7,7 @@ import { useNotifications } from '../hooks/useNotifications'
 import { formatCoinValue, conventionalRate } from '../hooks/useFormatters'
 import {
   filled, settled, isMarketBuy, averageRate, baseToQuote,
-  isCancellable, hasActiveMatches
+  isCancellable, canAccelerateOrder
 } from '../components/AccountUtils'
 import { explorerURL, formatCoinID } from '../components/CoinExplorers'
 import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
@@ -18,9 +18,9 @@ import type {
 } from '../stores/types'
 import {
   OrderTypeLimit, OrderTypeMarket,
-  StatusBooked, StatusExecuted,
+  StatusEpoch, StatusBooked, StatusExecuted, StatusCanceled, StatusRevoked,
   MatchSideMaker, MatchSideTaker,
-  MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
+  NewlyMatched, MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
   ImmediateTiF
 } from '../stores/types'
 
@@ -70,8 +70,20 @@ function ageSince (ms: number): string {
 function statusString (order: Order, t: (k: string) => string): string {
   if (!order.id) return t('ORDER_SUBMITTING')
   const isLive = order.matches?.some(m => m.active) ?? false
+  // OP-02: use named constants from `stores/types.ts` instead of
+  // hardcoded numeric cases (`case 1:`, `case 4:`, `case 5:`).
   switch (order.status) {
-    case 1: return t('EPOCH')
+    case StatusEpoch:
+      // OP-05: an epoch order whose cancel POST has succeeded should
+      // reflect "Canceling" immediately, not wait for the next WS
+      // order note. `submitCancel` sets `cancelling: true` synchronously
+      // after a successful `/api/cancel` response. Vanilla bypassed
+      // `statusString()` entirely with `page.status.textContent =
+      // intl.prep(intl.ID_CANCELING)`; React's data-driven equivalent
+      // is to honor the `cancelling` flag in both cancellable status
+      // cases (Epoch and Booked).
+      if (order.cancelling) return t('CANCELING')
+      return t('EPOCH')
     case StatusBooked:
       if (order.cancelling) return t('CANCELING')
       return isLive
@@ -81,11 +93,11 @@ function statusString (order: Order, t: (k: string) => string): string {
       if (isLive) return t('SETTLING')
       if (filled(order) === 0 && order.type !== 3) return t('NO_MATCH')
       return t('EXECUTED')
-    case 4:
+    case StatusCanceled:
       return isLive
         ? t('SETTLING')
         : t('CANCELED')
-    case 5:
+    case StatusRevoked:
       return isLive
         ? t('SETTLING')
         : t('REVOKED')
@@ -156,7 +168,10 @@ function matchStatusString (m: Match, t: (k: string, opts?: Record<string, strin
   }
 
   switch (m.status) {
-    case 0: return t('MATCH_STATUS_NEWLY_MATCHED')
+    // OP-06 drive-by (low-severity from the audit): use the named
+    // `NewlyMatched` constant instead of the hardcoded `0` to match
+    // the rest of the switch's named cases.
+    case NewlyMatched: return t('MATCH_STATUS_NEWLY_MATCHED')
     case MakerSwapCast: return t('MATCH_STATUS_MAKER_SWAP_CAST')
     case TakerSwapCast: return t('MATCH_STATUS_TAKER_SWAP_CAST')
     case MakerRedeemed:
@@ -179,6 +194,7 @@ export default function OrderPage () {
 
   const assets = useAuthStore(s => s.assets)
   const exchanges = useAuthStore(s => s.exchanges)
+  const walletMap = useAuthStore(s => s.walletMap)
   const user = useAuthStore(s => s.user)
   const net = user?.net ?? 0
 
@@ -280,9 +296,18 @@ export default function OrderPage () {
   }, [oid])
 
   // Accelerate success handler.
-  const handleAccelerateSuccess = useCallback(() => {
+  // OP-08: refresh the order data immediately rather than waiting for
+  // the next WS note. Vanilla relied on its global note dispatcher to
+  // update the order via `handleOrderNote()`, but if the user closed
+  // the form before the next note arrived they'd see stale match
+  // confs. The refetch closes that gap with a single round trip and
+  // keeps the Accelerate button visibility in sync with the new
+  // (likely now-confirmed) swap state.
+  const handleAccelerateSuccess = useCallback(async () => {
     setShowAccelerate(false)
-  }, [])
+    const fresh = await fetchOrder()
+    if (fresh) setOrder(fresh)
+  }, [fetchOrder])
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -312,7 +337,14 @@ export default function OrderPage () {
   const qUnit = quoteUnitInfo?.conventional.unit ?? ''
 
   const canCancel = isCancellable(order)
-  const canAccelerate = hasActiveMatches(order)
+  // OP-01: full vanilla parity for the Accelerate button. Previously
+  // used `hasActiveMatches()` which only checked whether ANY match
+  // was still active -- it returned true even for matches well past
+  // the swap step and for orders whose "from" wallet didn't support
+  // acceleration. `canAccelerateOrder` (in `AccountUtils.ts`) checks
+  // wallet trait + has-unconfirmed-swap, mirroring vanilla `app.ts`
+  // `canAccelerateOrder()` (L1517-1532).
+  const canAccelerate = canAccelerateOrder(order, walletMap)
 
   const filledPct = order.qty > 0
     ? (filled(order) / order.qty * 100).toFixed(1)
@@ -735,14 +767,24 @@ export default function OrderPage () {
       )}
 
       {/* Accelerate form overlay */}
+      {/* OP-04: slide-in animation. Wrap the form card in
+          `overflow-hidden` to clip the off-screen `translateX(100%)`
+          start state so the `slide-in-from-right` keyframe (defined
+          in `utilities.scss`) doesn't leak into the surrounding
+          modal layout. CSS animation replays automatically on each
+          mount because `FormOverlay` returns null when `show` is
+          false. Mirrors the same pattern applied in B-L3 to the
+          Proposals/Proposal forms. */}
       <FormOverlay show={showAccelerate} onClose={() => setShowAccelerate(false)}>
-        <div className="bg-body border rounded p-3" style={{ minWidth: 340 }}>
-          {order && (
-            <AccelerateOrderForm
-              order={order}
-              onSuccess={handleAccelerateSuccess}
-            />
-          )}
+        <div className="overflow-hidden">
+          <div className="bg-body border rounded p-3 slide-in-from-right" style={{ minWidth: 340 }}>
+            {order && (
+              <AccelerateOrderForm
+                order={order}
+                onSuccess={handleAccelerateSuccess}
+              />
+            )}
+          </div>
         </div>
       </FormOverlay>
     </div>

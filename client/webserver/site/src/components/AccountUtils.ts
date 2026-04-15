@@ -105,6 +105,35 @@ export function hasActiveMatches (order: Order): boolean {
   return false
 }
 
+// OP-01: bit 4 of `WalletState.traits` indicates the wallet supports
+// transaction acceleration. Mirrors vanilla `app.ts`
+// `canAccelerateOrder()` (L1517) `walletTraitAccelerator = 1 << 4`.
+const walletTraitAccelerator = 1 << 4
+
+// canAccelerateOrder returns true iff the order's "from" wallet
+// supports acceleration AND the order has at least one un-revoked
+// match whose swap is still unconfirmed (`confs.count === 0`).
+// Mirrors vanilla `app.ts` `canAccelerateOrder()` (L1517-1532). The
+// React port previously used `hasActiveMatches()` for this check
+// (OP-01) which also returned true for matches well past the swap
+// step, so users with non-accelerator wallets or fully-confirmed
+// swaps still saw the Accelerate button.
+export function canAccelerateOrder (
+  order: Order,
+  walletMap: Record<number, { traits: number }>
+): boolean {
+  const fromAssetID = order.sell ? order.baseID : order.quoteID
+  const wallet = walletMap[fromAssetID]
+  if (!wallet || !(wallet.traits & walletTraitAccelerator)) return false
+  if (!order.matches) return false
+  for (const match of order.matches) {
+    if (match.swap?.confs && match.swap.confs.count === 0 && !match.revoked) {
+      return true
+    }
+  }
+  return false
+}
+
 export function filled (order: Order): number {
   if (!order.matches) return 0
   const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
