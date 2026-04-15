@@ -99,11 +99,6 @@ export default function ProposalPage () {
     setVoteFormOpen(true)
   }
 
-  // Stable ref so SuccessCheckmarkModal's auto-close `useEffect` isn't
-  // re-triggered on every parent render (which would reset the timer
-  // and effectively prevent the modal from ever auto-closing).
-  const closeSuccessModal = useCallback(() => setShowSuccessModal(false), [])
-
   if (loading) {
     return (
       <div id="main" className="py-5 overflow-y-auto">
@@ -152,7 +147,7 @@ export default function ProposalPage () {
         <SuccessCheckmarkModal
           show={showSuccessModal}
           message={t('VOTE_CAST_MESSAGE')}
-          onClose={closeSuccessModal}
+          onClose={() => setShowSuccessModal(false)}
         />
 
         {/* Proposal header */}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { FormOverlay } from './FormOverlay'
 
 // SuccessCheckmarkModal is the animated success-checkmark overlay shared
@@ -43,11 +43,22 @@ const CHECKMARK_HOLD_MS = 1500
 const CHECKMARK_TOTAL_MS = CHECKMARK_ANIMATION_MS + CHECKMARK_HOLD_MS
 
 export function SuccessCheckmarkModal ({ show, message, onClose }: Props) {
+  // Capture the latest `onClose` in a ref so the auto-close `useEffect`
+  // can depend on `[show]` alone. Without this the effect would re-run
+  // on every parent re-render that produces a new `onClose` reference,
+  // resetting the auto-close timer and potentially holding the modal
+  // open indefinitely. Consumers no longer need to memoize their
+  // `onClose` callback to make the modal close reliably.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
   useEffect(() => {
     if (!show) return
-    const timer = setTimeout(() => onClose(), CHECKMARK_TOTAL_MS)
+    const timer = setTimeout(() => onCloseRef.current(), CHECKMARK_TOTAL_MS)
     return () => clearTimeout(timer)
-  }, [show, onClose])
+  }, [show])
 
   return (
     <FormOverlay show={show} onClose={onClose}>
