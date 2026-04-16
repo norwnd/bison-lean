@@ -27,24 +27,63 @@ body {
 }
 
 header#header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   height: 55px;
   min-height: 55px;
   z-index: 100;
   background-color: var(--section-bg);
+  border-bottom: 1px solid var(--border-color);
 
-  a,
-  a:visited,
-  a:hover,
-  .plainlink,
-  .plainlink:visited,
-  .plainlink:hover {
-    cursor: pointer;
-    text-decoration: none;
+  #headerSlot {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+    overflow: hidden;
   }
 
   .hoverbright:hover {
     color: var(--subtle-link-hover);
+  }
+}
+
+.header-nav {
+  display: flex;
+  height: 55px;
+  margin-left: auto;
+  padding-right: 0.5rem;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.header-btn {
+  display: flex;
+  align-items: center;
+  height: 55px;
+  padding: 0 0.75rem;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  user-select: none;
+  box-shadow: inset 0 -3px 0 transparent; // active indicator (box-shadow avoids box-model impact)
+  transition: box-shadow 0.15s, color 0.15s, background-color 0.15s;
+
+  &:hover {
+    background-color: var(--tertiary-bg);
+  }
+
+  &.active {
+    color: var(--text-color);
+    box-shadow: inset 0 -3px 0 var(--text-color);
+    background-color: var(--tertiary-bg);
+  }
+}
+
+@include media-breakpoint-up(md) {
+  .header-btn {
+    padding: 0 1rem;
   }
 }
 
@@ -60,35 +99,6 @@ div.main {
   flex-grow: 1;
   min-height: 0;
   position: relative;
-}
-
-div.mainlinks {
-  margin-left: auto;
-  padding-right: 0.5rem;
-  align-self: stretch; // fill full header height (overrides header's align-items: center)
-
-  &>div,
-  &>a {
-    color: var(--text-color-secondary);
-    padding: 0.5rem 0.75rem;
-  }
-
-  .navlink {
-    border-bottom: 3px solid transparent;
-    transition: border-color 0.15s, color 0.15s, background-color 0.15s;
-
-    &.active {
-      color: var(--text-color);
-      border-bottom-color: var(--text-color);
-    }
-  }
-}
-
-@include media-breakpoint-up(md) {
-  div.mainlinks>div,
-  div.mainlinks>a {
-    padding: 0.75rem 1rem;
-  }
 }
 
 .spinner {

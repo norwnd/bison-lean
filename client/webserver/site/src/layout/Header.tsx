@@ -1,45 +1,60 @@
-import { Link, useLocation } from 'react-router-dom'
+import { startTransition, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { ROUTES } from '../router/routes'
 
-function navCls (path: string, current: string): string {
-  const active = current.startsWith(path) ? ' active' : ''
-  return `navlink hoverbg d-flex align-items-center${active}`
-}
-
 export function Header () {
   const { t } = useTranslation()
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const authed = useAuthStore(s => s.authed)
   const exchanges = useAuthStore(s => s.exchanges)
   const hasConnection = Object.keys(exchanges).length > 0
 
-  const settingsPath = authed ? ROUTES.SETTINGS : ROUTES.LOGIN
+  const go = useCallback((to: string) => () => {
+    startTransition(() => { navigate(to) })
+  }, [navigate])
+
+  const isActive = (path: string) => pathname.startsWith(path)
 
   return (
-    <header id="header" className="d-flex align-items-center justify-content-between border-bottom">
+    <header id="header">
       {/* Left side: portal slot for page-specific header content (e.g. market stats) */}
-      <div id="headerSlot" className="d-flex align-items-center flex-grow-1 overflow-hidden" />
+      <div id="headerSlot" />
 
-      <div className="mainlinks fs18 text-nowrap d-flex">
+      <nav className="header-nav">
         {authed && (
-          <Link to={ROUTES.WALLETS} className={`demi ${navCls(ROUTES.WALLETS, pathname)}`}>
+          <div
+            className={`header-btn demi${isActive(ROUTES.WALLETS) ? ' active' : ''}`}
+            onClick={go(ROUTES.WALLETS)}
+          >
             {t('Wallet')}
-          </Link>
+          </div>
         )}
         {authed && hasConnection && (
-          <Link to={ROUTES.MARKETS} className={`demi ${navCls(ROUTES.MARKETS, pathname)}`}>
+          <div
+            className={`header-btn demi${isActive(ROUTES.MARKETS) ? ' active' : ''}`}
+            onClick={go(ROUTES.MARKETS)}
+          >
             {t('Trade')}
-          </Link>
+          </div>
         )}
         {authed && hasConnection && (
-          <Link to={ROUTES.MM} className={`ico-robot lh1 fs32 ${navCls(ROUTES.MM, pathname)}`} />
+          <div
+            className={`header-btn${isActive(ROUTES.MM) ? ' active' : ''}`}
+            onClick={go(ROUTES.MM)}
+          >
+            <span className="ico-robot fs32 lh1" />
+          </div>
         )}
-        <Link to={settingsPath} className={navCls(settingsPath, pathname)}>
+        <div
+          className={`header-btn${isActive(authed ? ROUTES.SETTINGS : ROUTES.LOGIN) ? ' active' : ''}`}
+          onClick={go(authed ? ROUTES.SETTINGS : ROUTES.LOGIN)}
+        >
           <span className="ico-hamburger fs20" />
-        </Link>
-      </div>
+        </div>
+      </nav>
     </header>
   )
 }
