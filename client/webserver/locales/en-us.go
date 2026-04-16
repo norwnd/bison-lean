@@ -617,7 +617,6 @@ var EnUS = map[string]*intl.Translation{
 	"Booking reserves":            {T: "Booking reserves"},
 	"Swap funding":                {T: "Swap funding"},
 	"swaps":                       {T: "swaps"},
-	"register_to_enable_mm":       {T: `Register with <span data-tmpl="host"></span> enable trading`},
 	"No markets available":        {T: "No markets available"},
 	"Arb":                         {T: "Arb"},
 	"Choose Your Bot":             {T: "Choose Your Bot"},

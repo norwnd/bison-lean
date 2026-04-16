@@ -634,7 +634,7 @@ function EventDetailView ({ event, assets, baseID, quoteID, net, t }: EventDetai
   if (event.cexOrderEvent) return <CEXOrderDetail e={event.cexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} t={t} />
   if (event.depositEvent) return <DepositDetail e={event.depositEvent} pending={event.pending} assets={assets} net={net} t={t} />
   if (event.withdrawalEvent) return <WithdrawalDetail e={event.withdrawalEvent} pending={event.pending} assets={assets} net={net} t={t} />
-  return <div className="form-closer p-3">{t('Unknown event type')}</div>
+  return <div className="p-3">{t('Unknown event type')}</div>
 }
 
 // ---- DEX Order Detail ----
@@ -662,7 +662,7 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, net, t }: DEXOrderDetailP
   const rate = e.rate * (baseFactor / quoteFactor) / RateEncodingFactor
 
   return (
-    <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
+    <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
       <h5>{t('DEX Order Details')}</h5>
       <table className="table table-sm mb-3">
         <tbody>
@@ -770,7 +770,7 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t 
   const qtyUI = isMarketBuy ? qui : bui
 
   return (
-    <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
+    <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
       <h5>{t('CEX Order Details')}</h5>
       <table className="table table-sm">
         <tbody>
@@ -858,7 +858,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
     : null
 
   return (
-    <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
+    <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
       <h5>{t('Deposit Details')}</h5>
       <table className="table table-sm">
         <tbody>
@@ -943,7 +943,7 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
     : null
 
   return (
-    <div className="form-closer p-3" style={{ minWidth: 400, maxWidth: 600 }}>
+    <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
       <h5>{t('Withdrawal Details')}</h5>
       <table className="table table-sm">
         <tbody>

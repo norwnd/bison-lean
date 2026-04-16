@@ -243,20 +243,18 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   // ---- Asset selection view ----
   if (view === 'whatsABond') {
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          <div className="fs20 mb-2">{t('What is a fidelity bond?')}</div>
-          <p className="fs15">
-            {t('WHATS_A_BOND_DESC')}
-          </p>
-          <div className="d-flex gap-2">
-            <button className="btn btn-secondary" onClick={() => setView('assets')}>
-              {t('Back')}
-            </button>
-            <button className="btn btn-primary" onClick={() => setView('assets')}>
-              {t('Got it')}
-            </button>
-          </div>
+      <div className="px-3 py-2">
+        <div className="fs20 mb-2">{t('What is a fidelity bond?')}</div>
+        <p className="fs15">
+          {t('WHATS_A_BOND_DESC')}
+        </p>
+        <div className="d-flex gap-2">
+          <button className="btn btn-secondary" onClick={() => setView('assets')}>
+            {t('Back')}
+          </button>
+          <button className="btn btn-primary" onClick={() => setView('assets')}>
+            {t('Got it')}
+          </button>
         </div>
       </div>
     )
@@ -264,30 +262,28 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
 
   if (view === 'prepaid') {
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          <div className="fs20 mb-2">{t('Prepaid Bond')}</div>
-          <div className="mb-3">
-            <label>{t('Bond Code')}</label>
-            <input
-              type="text"
-              className="form-control"
-              value={prepaidCode}
-              onChange={e => setPrepaidCode(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitPrepaidBond() }}
-            />
-          </div>
-          {prepaidError && (
-            <div className="fs15 text-danger mb-2">{prepaidError}</div>
-          )}
-          <div className="d-flex gap-2">
-            <button className="btn btn-secondary" onClick={() => { setView('assets'); setPrepaidError('') }}>
-              {t('Back')}
-            </button>
-            <button className="btn btn-primary" onClick={submitPrepaidBond}>
-              {t('Submit')}
-            </button>
-          </div>
+      <div className="px-3 py-2">
+        <div className="fs20 mb-2">{t('Prepaid Bond')}</div>
+        <div className="mb-3">
+          <label>{t('Bond Code')}</label>
+          <input
+            type="text"
+            className="form-control"
+            value={prepaidCode}
+            onChange={e => setPrepaidCode(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitPrepaidBond() }}
+          />
+        </div>
+        {prepaidError && (
+          <div className="fs15 text-danger mb-2">{prepaidError}</div>
+        )}
+        <div className="d-flex gap-2">
+          <button className="btn btn-secondary" onClick={() => { setView('assets'); setPrepaidError('') }}>
+            {t('Back')}
+          </button>
+          <button className="btn btn-primary" onClick={submitPrepaidBond}>
+            {t('Submit')}
+          </button>
         </div>
       </div>
     )
@@ -295,53 +291,51 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
 
   if (view === 'assets') {
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          <div className="fs20 mb-2">{t('Choose your bond asset')}</div>
+      <div className="px-3 py-2">
+        <div className="fs20 mb-2">{t('Choose your bond asset')}</div>
 
-          {/* Bond asset list */}
-          <div className="flex-stretch-column">
-            {bondAssetRows.map(row => (
-              <div
-                key={row.assetID}
-                className="known-exchange d-flex align-items-center p-2 pointer"
-                onClick={() => handleAssetSelected(row.assetID)}
-              >
-                <img className="micro-icon me-2" src={logoPath(row.symbol)} alt="" />
-                <div className="flex-grow-1">
-                  <div className="fs16">{row.name}</div>
-                  <div className="fs14 text-secondary">
-                    {formatBestWeCan(row.bondSizeConventional)} {row.unit}
-                    {row.fiatBondAmount !== null && (
-                      <span className="ms-1">(~${formatBestWeCan(row.fiatBondAmount)})</span>
-                    )}
-                  </div>
+        {/* Bond asset list */}
+        <div className="flex-stretch-column">
+          {bondAssetRows.map(row => (
+            <div
+              key={row.assetID}
+              className="known-exchange d-flex align-items-center p-2 pointer"
+              onClick={() => handleAssetSelected(row.assetID)}
+            >
+              <img className="micro-icon me-2" src={logoPath(row.symbol)} alt="" />
+              <div className="flex-grow-1">
+                <div className="fs16">{row.name}</div>
+                <div className="fs14 text-secondary">
+                  {formatBestWeCan(row.bondSizeConventional)} {row.unit}
+                  {row.fiatBondAmount !== null && (
+                    <span className="ms-1">(~${formatBestWeCan(row.fiatBondAmount)})</span>
+                  )}
                 </div>
-                {row.walletReady && (
-                  <span className="fs14 text-success">{t('WALLET_READY')}</span>
-                )}
               </div>
-            ))}
-          </div>
+              {row.walletReady && (
+                <span className="fs14 text-success">{t('WALLET_READY')}</span>
+              )}
+            </div>
+          ))}
+        </div>
 
-          {assetError && (
-            <div className="fs15 text-danger mt-2">{assetError}</div>
-          )}
+        {assetError && (
+          <div className="fs15 text-danger mt-2">{assetError}</div>
+        )}
 
-          <div className="d-flex gap-2 mt-3">
-            <button
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => setView('whatsABond')}
-            >
-              {t('What is a bond?')}
-            </button>
-            <button
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => setView('prepaid')}
-            >
-              {t('Use a prepaid bond')}
-            </button>
-          </div>
+        <div className="d-flex gap-2 mt-3">
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            onClick={() => setView('whatsABond')}
+          >
+            {t('What is a bond?')}
+          </button>
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            onClick={() => setView('prepaid')}
+          >
+            {t('Use a prepaid bond')}
+          </button>
         </div>
       </div>
     )
@@ -349,121 +343,119 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
 
   // ---- Tier configuration view ----
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('Trading Tier')}</div>
+    <div className="px-3 py-2">
+      <div className="fs20 mb-2">{t('Trading Tier')}</div>
 
-        {tierInfo && (
-          <>
-            <div className="fs15 mb-1">
-              {t('Bond size')}: {tierInfo.bondSizeConventional} {tierInfo.unit}
-            </div>
-            <div className="fs15 mb-1">
-              {t('Tier')}: {tier}
-            </div>
-            <div className="fs15 mb-1">
-              {t('Total bond lock')}: {tierInfo.bondLockConventional} {tierInfo.unit}
-              {tierInfo.fiatLock && (
-                <span className="ms-1">(~${tierInfo.fiatLock})</span>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* Tier input with increment buttons */}
-        <div className="d-flex align-items-center gap-2 my-3">
-          <button className="btn btn-sm btn-outline-secondary" onClick={() => incrementTier(false)}>
-            -
-          </button>
-          <input
-            type="number"
-            className="form-control text-center"
-            style={{ width: '80px' }}
-            value={tier}
-            min={1}
-            onChange={e => handleTierInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') acceptTier() }}
-            autoFocus
-          />
-          <button className="btn btn-sm btn-outline-secondary" onClick={() => incrementTier(true)}>
-            +
-          </button>
-        </div>
-
-        {tierError && (
-          <div className="fs15 text-danger mb-2">{tierError}</div>
-        )}
-
-        {/* Current bonds */}
-        {currentBonds.length > 0 && (
-          <div className="mb-3">
-            <div className="fs16 mb-1">{t('Current bonds')}</div>
-            {currentBonds.map(({ assetID, bonded }) => {
-              const a = assets[assetID]
-              if (!a) return null
-              const { unitInfo: ui, symbol, name } = a
-              const { conventional: { conversionFactor, unit } } = ui
-              const fiatRate = fiatRatesMap[assetID]
-              return (
-                <div key={assetID} className="d-flex align-items-center gap-2 fs14 mb-1">
-                  <img className="micro-icon" src={logoPath(symbol)} alt="" />
-                  <span>{name}</span>
-                  <span>{formatFullPrecision(bonded, ui)} {unit}</span>
-                  {fiatRate && (
-                    <span>(~${formatBestWeCan(bonded / conversionFactor * fiatRate)})</span>
-                  )}
-                </div>
-              )
-            })}
+      {tierInfo && (
+        <>
+          <div className="fs15 mb-1">
+            {t('Bond size')}: {tierInfo.bondSizeConventional} {tierInfo.unit}
           </div>
-        )}
+          <div className="fs15 mb-1">
+            {t('Tier')}: {tier}
+          </div>
+          <div className="fs15 mb-1">
+            {t('Total bond lock')}: {tierInfo.bondLockConventional} {tierInfo.unit}
+            {tierInfo.fiatLock && (
+              <span className="ms-1">(~${tierInfo.fiatLock})</span>
+            )}
+          </div>
+        </>
+      )}
 
-        {/* Market limits table */}
-        {marketLimits.length > 0 && (
-          <div className="mb-3">
-            <div className="fs16 mb-1">{t('Market Limits')}</div>
-            <table className="table table-sm fs14">
-              <thead>
-                <tr>
-                  <th>{t('Market')}</th>
-                  <th>{t('Starting')}</th>
-                  <th>{t('Privileged')}</th>
+      {/* Tier input with increment buttons */}
+      <div className="d-flex align-items-center gap-2 my-3">
+        <button className="btn btn-sm btn-outline-secondary" onClick={() => incrementTier(false)}>
+          -
+        </button>
+        <input
+          type="number"
+          className="form-control text-center"
+          style={{ width: '80px' }}
+          value={tier}
+          min={1}
+          onChange={e => handleTierInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') acceptTier() }}
+          autoFocus
+        />
+        <button className="btn btn-sm btn-outline-secondary" onClick={() => incrementTier(true)}>
+          +
+        </button>
+      </div>
+
+      {tierError && (
+        <div className="fs15 text-danger mb-2">{tierError}</div>
+      )}
+
+      {/* Current bonds */}
+      {currentBonds.length > 0 && (
+        <div className="mb-3">
+          <div className="fs16 mb-1">{t('Current bonds')}</div>
+          {currentBonds.map(({ assetID, bonded }) => {
+            const a = assets[assetID]
+            if (!a) return null
+            const { unitInfo: ui, symbol, name } = a
+            const { conventional: { conversionFactor, unit } } = ui
+            const fiatRate = fiatRatesMap[assetID]
+            return (
+              <div key={assetID} className="d-flex align-items-center gap-2 fs14 mb-1">
+                <img className="micro-icon" src={logoPath(symbol)} alt="" />
+                <span>{name}</span>
+                <span>{formatFullPrecision(bonded, ui)} {unit}</span>
+                {fiatRate && (
+                  <span>(~${formatBestWeCan(bonded / conversionFactor * fiatRate)})</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Market limits table */}
+      {marketLimits.length > 0 && (
+        <div className="mb-3">
+          <div className="fs16 mb-1">{t('Market Limits')}</div>
+          <table className="table table-sm fs14">
+            <thead>
+              <tr>
+                <th>{t('Market')}</th>
+                <th>{t('Starting')}</th>
+                <th>{t('Privileged')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {marketLimits.map(({ market, baseSymbol, quoteSymbol, baseUnit, limits }) => (
+                <tr key={`${market.baseid}-${market.quoteid}`}>
+                  <td className="d-flex align-items-center gap-1">
+                    <img className="micro-icon" src={logoPath(baseSymbol)} alt="" />
+                    <img className="micro-icon" src={logoPath(quoteSymbol)} alt="" />
+                  </td>
+                  <td>
+                    {formatBestWeCan(limits.low)} {baseUnit}
+                    {limits.fiatLow !== null && (
+                      <span className="text-secondary ms-1">(~${formatBestWeCan(limits.fiatLow)})</span>
+                    )}
+                  </td>
+                  <td>
+                    {formatBestWeCan(limits.high)} {baseUnit}
+                    {limits.fiatHigh !== null && (
+                      <span className="text-secondary ms-1">(~${formatBestWeCan(limits.fiatHigh)})</span>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {marketLimits.map(({ market, baseSymbol, quoteSymbol, baseUnit, limits }) => (
-                  <tr key={`${market.baseid}-${market.quoteid}`}>
-                    <td className="d-flex align-items-center gap-1">
-                      <img className="micro-icon" src={logoPath(baseSymbol)} alt="" />
-                      <img className="micro-icon" src={logoPath(quoteSymbol)} alt="" />
-                    </td>
-                    <td>
-                      {formatBestWeCan(limits.low)} {baseUnit}
-                      {limits.fiatLow !== null && (
-                        <span className="text-secondary ms-1">(~${formatBestWeCan(limits.fiatLow)})</span>
-                      )}
-                    </td>
-                    <td>
-                      {formatBestWeCan(limits.high)} {baseUnit}
-                      {limits.fiatHigh !== null && (
-                        <span className="text-secondary ms-1">(~${formatBestWeCan(limits.fiatHigh)})</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="d-flex gap-2">
-          <button className="btn btn-secondary" onClick={() => setView('assets')}>
-            {t('Back')}
-          </button>
-          <button className="btn btn-primary" onClick={acceptTier}>
-            {t('Submit')}
-          </button>
+              ))}
+            </tbody>
+          </table>
         </div>
+      )}
+
+      <div className="d-flex gap-2">
+        <button className="btn btn-secondary" onClick={() => setView('assets')}>
+          {t('Back')}
+        </button>
+        <button className="btn btn-primary" onClick={acceptTier}>
+          {t('Submit')}
+        </button>
       </div>
     </div>
   )

@@ -94,60 +94,58 @@ export function ConfirmRegistrationForm ({
   }
 
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('Confirm Registration')}</div>
+    <div className="px-3 py-2">
+      <div className="fs20 mb-2">{t('Confirm Registration')}</div>
 
-        <div className="fs15 mb-1">
-          <strong>{t('Host')}:</strong> {exchange.host}
-        </div>
+      <div className="fs15 mb-1">
+        <strong>{t('Host')}:</strong> {exchange.host}
+      </div>
 
-        {displayInfo && (
-          <>
-            <div className="d-flex align-items-center gap-2 fs15 mb-1">
-              <strong>{t('Bond Asset')}:</strong>
-              <img className="micro-icon" src={logoPath(displayInfo.symbol)} alt="" />
-            </div>
+      {displayInfo && (
+        <>
+          <div className="d-flex align-items-center gap-2 fs15 mb-1">
+            <strong>{t('Bond Asset')}:</strong>
+            <img className="micro-icon" src={logoPath(displayInfo.symbol)} alt="" />
+          </div>
 
-            <div className="fs15 mb-1">
-              <strong>{t('Trading Tier')}:</strong> {tier}
-            </div>
+          <div className="fs15 mb-1">
+            <strong>{t('Trading Tier')}:</strong> {tier}
+          </div>
 
-            <div className="fs15 mb-1">
-              <strong>{t('Bond Lock')}:</strong> {displayInfo.bondLockFormatted} {displayInfo.unit}
-              {displayInfo.fiatBondLock && (
-                <span className="ms-1">(~${displayInfo.fiatBondLock})</span>
-              )}
-            </div>
-
-            {displayInfo.feeReserves && (
-              <div className="fs15 mb-1">
-                <strong>{t('Fee Reserves')}:</strong> {displayInfo.feeReserves} {displayInfo.unit}
-              </div>
+          <div className="fs15 mb-1">
+            <strong>{t('Bond Lock')}:</strong> {displayInfo.bondLockFormatted} {displayInfo.unit}
+            {displayInfo.fiatBondLock && (
+              <span className="ms-1">(~${displayInfo.fiatBondLock})</span>
             )}
-          </>
-        )}
+          </div>
 
-        {error && (
-          <div className="fs15 text-danger mb-2">{error}</div>
-        )}
+          {displayInfo.feeReserves && (
+            <div className="fs15 mb-1">
+              <strong>{t('Fee Reserves')}:</strong> {displayInfo.feeReserves} {displayInfo.unit}
+            </div>
+          )}
+        </>
+      )}
 
-        <div className="d-flex gap-2 mt-3">
-          <button
-            className="btn btn-secondary"
-            onClick={onBack}
-            disabled={loading}
-          >
-            {t('Back')}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={submitForm}
-            disabled={loading}
-          >
-            {loading ? '...' : t('Submit')}
-          </button>
-        </div>
+      {error && (
+        <div className="fs15 text-danger mb-2">{error}</div>
+      )}
+
+      <div className="d-flex gap-2 mt-3">
+        <button
+          className="btn btn-secondary"
+          onClick={onBack}
+          disabled={loading}
+        >
+          {t('Back')}
+        </button>
+        <button
+          className="btn btn-primary"
+          onClick={submitForm}
+          disabled={loading}
+        >
+          {loading ? '...' : t('Submit')}
+        </button>
       </div>
     </div>
   )

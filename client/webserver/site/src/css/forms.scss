@@ -187,74 +187,6 @@ select {
   cursor: not-allowed;
 }
 
-#forms {
-  @extend .stylish-overflow;
-  @extend .flex-center;
-
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 25px 0;
-  background-color: var(--forms-bg);
-  backdrop-filter: blur(5px);
-  z-index: 101;
-
-  & > form {
-    @extend .flex-stretch-column;
-
-    box-sizing: content-box;
-    margin: auto;
-    position: relative;
-    padding-bottom: 1rem;
-
-    & > div {
-      padding: 0.5rem 1rem;
-
-      &.form-closer-unbound,
-      &.form-closer {
-        @extend .flex-center;
-        @extend .hoverbg;
-
-        cursor: pointer;
-        line-height: 1;
-        font-size: 0.8rem;
-        padding: 0.75rem;
-        position: absolute;
-        top: 0;
-        right: 0;
-        z-index: 1;
-
-        span {
-          opacity: 0.6;
-
-          &:hover {
-            opacity: 1;
-          }
-        }
-      }
-    }
-
-    header {
-      @extend .flex-center;
-
-      padding: 1rem;
-      line-height: 1;
-      border-bottom: 1px solid var(--border-color);
-      font-size: 1.6rem;
-    }
-  }
-}
-
-div[data-handler=init],
-div[data-handler=login],
-div[data-handler=register] {
- #forms {
-  margin-top: 70px;
-  z-index: 99;
- } 
-}
 
 #walletWait {
   .icons {
@@ -483,13 +415,6 @@ span[data-tmpl=scorePointer] {
   width: 2px;
   z-index: 2;
   background-color: black;
-}
-
-div[data-handler=init] {
-  .quickconfig-asset-logo {
-    width: 25px;
-    height: 25px;
-  }
 }
 
 .anitoggle {

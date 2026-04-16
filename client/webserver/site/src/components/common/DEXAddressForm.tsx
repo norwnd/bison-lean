@@ -77,109 +77,107 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
   }
 
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        {/* Header */}
-        <div className="flex-center pt-2">
-          {!dexToUpdate && <div className="fs24">{t('Add a DEX')}</div>}
-          {dexToUpdate && <div className="fs24">{t('update dex host')}</div>}
-        </div>
-
-        {/* Known exchanges list */}
-        {hasKnown && (
-          <>
-            <div className="fs20 mt-2 border-top">{t('Pick a server')}</div>
-            <div className="flex-stretch-column">
-              {knownExchanges.map(host => (
-                <div
-                  key={host}
-                  className={`known-exchange${selectedKnown === host ? ' selected' : ''}`}
-                  onClick={() => handleKnownClick(host)}
-                >
-                  <img
-                    className="micro-icon me-1"
-                    src={`/img/coins/${host.split('.')[0]}.png`}
-                    alt=""
-                  />
-                  {host}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Skip registration checkbox */}
-        {!dexToUpdate && (
-          <div className="fs14">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="skipRegistration"
-              checked={skipRegistration}
-              onChange={e => setSkipRegistration(e.target.checked)}
-            />
-            <label htmlFor="skipRegistration" className="ps-1">
-              {t('Skip Registration')}
-            </label>
-          </div>
-        )}
-
-        {/* Show custom toggle */}
-        {hasKnown && !showCustom && (
-          <div
-            className="px-1 mb-2 fs14 pointer d-flex justify-content-start align-items-center"
-            onClick={() => setShowCustom(true)}
-          >
-            <span className="ico-plus fs11" />
-            <div className="ps-2">{t('add a different server')}</div>
-          </div>
-        )}
-
-        {/* Custom address input */}
-        {showCustom && (
-          <div className="mt-2 border-top">
-            {hasKnown && (
-              <div className="fs20">{t('Add a custom server')}</div>
-            )}
-            <div className="mb-3">
-              <label htmlFor="dexAddr">{t('DEX Address')}</label>
-              <input
-                id="dexAddr"
-                type="text"
-                className="form-control"
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') checkDEX() }}
-                disabled={loading}
-              />
-            </div>
-
-            {/* Certificate picker */}
-            <div className="mb-3">
-              <CertificatePicker ref={certRef} />
-            </div>
-
-            {needCert && (
-              <div className="fs15 text-warning mb-2">
-                {t('TLS certificate required')}
-              </div>
-            )}
-
-            <button
-              className="btn btn-primary w-100"
-              onClick={() => checkDEX()}
-              disabled={loading}
-            >
-              {loading ? '...' : t('Submit')}
-            </button>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="fs15 text-danger mt-2">{error}</div>
-        )}
+    <div className="px-3 py-2">
+      {/* Header */}
+      <div className="flex-center pt-2">
+        {!dexToUpdate && <div className="fs24">{t('Add a DEX')}</div>}
+        {dexToUpdate && <div className="fs24">{t('update dex host')}</div>}
       </div>
+
+      {/* Known exchanges list */}
+      {hasKnown && (
+        <>
+          <div className="fs20 mt-2 border-top">{t('Pick a server')}</div>
+          <div className="flex-stretch-column">
+            {knownExchanges.map(host => (
+              <div
+                key={host}
+                className={`known-exchange${selectedKnown === host ? ' selected' : ''}`}
+                onClick={() => handleKnownClick(host)}
+              >
+                <img
+                  className="micro-icon me-1"
+                  src={`/img/coins/${host.split('.')[0]}.png`}
+                  alt=""
+                />
+                {host}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Skip registration checkbox */}
+      {!dexToUpdate && (
+        <div className="fs14">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="skipRegistration"
+            checked={skipRegistration}
+            onChange={e => setSkipRegistration(e.target.checked)}
+          />
+          <label htmlFor="skipRegistration" className="ps-1">
+            {t('Skip Registration')}
+          </label>
+        </div>
+      )}
+
+      {/* Show custom toggle */}
+      {hasKnown && !showCustom && (
+        <div
+          className="px-1 mb-2 fs14 pointer d-flex justify-content-start align-items-center"
+          onClick={() => setShowCustom(true)}
+        >
+          <span className="ico-plus fs11" />
+          <div className="ps-2">{t('add a different server')}</div>
+        </div>
+      )}
+
+      {/* Custom address input */}
+      {showCustom && (
+        <div className="mt-2 border-top">
+          {hasKnown && (
+            <div className="fs20">{t('Add a custom server')}</div>
+          )}
+          <div className="mb-3">
+            <label htmlFor="dexAddr">{t('DEX Address')}</label>
+            <input
+              id="dexAddr"
+              type="text"
+              className="form-control"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') checkDEX() }}
+              disabled={loading}
+            />
+          </div>
+
+          {/* Certificate picker */}
+          <div className="mb-3">
+            <CertificatePicker ref={certRef} />
+          </div>
+
+          {needCert && (
+            <div className="fs15 text-warning mb-2">
+              {t('TLS certificate required')}
+            </div>
+          )}
+
+          <button
+            className="btn btn-primary w-100"
+            onClick={() => checkDEX()}
+            disabled={loading}
+          >
+            {loading ? '...' : t('Submit')}
+          </button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="fs15 text-danger mt-2">{error}</div>
+      )}
     </div>
   )
 }

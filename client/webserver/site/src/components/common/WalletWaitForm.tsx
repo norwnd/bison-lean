@@ -187,7 +187,7 @@ export function WalletWaitForm ({
   }), [assetID, reportProgress, reportBalance, walletMap]))
 
   if (!asset || !bondAsset) {
-    return <div className="form-closer"><div className="px-3 py-2">{t('Loading...')}</div></div>
+    return <div className="px-3 py-2">{t('Loading...')}</div>
   }
 
   const { symbol, unitInfo: ui } = asset
@@ -198,110 +198,108 @@ export function WalletWaitForm ({
   const isToken = !!asset.token
 
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs20 mb-2 d-flex align-items-center gap-2">
-          <img className="mini-icon" src={logoPath(symbol)} alt="" />
-          {t('Waiting for wallet sync and funds')}
-        </div>
+    <div className="px-3 py-2">
+      <div className="fs20 mb-2 d-flex align-items-center gap-2">
+        <img className="mini-icon" src={logoPath(symbol)} alt="" />
+        {t('Waiting for wallet sync and funds')}
+      </div>
 
-        {/* Sync status */}
-        <div className="d-flex align-items-center gap-2 mb-2">
-          {synced
+      {/* Sync status */}
+      <div className="d-flex align-items-center gap-2 mb-2">
+        {synced
 ? (
-            <span className="ico-check text-success" />
-          )
+          <span className="ico-check text-success" />
+        )
 : syncProgress >= 1
 ? (
-            <span className="ico-spinner spinner" />
-          )
+          <span className="ico-spinner spinner" />
+        )
 : (
-            <span className="ico-cross text-secondary" />
-          )}
-          <span className="fs15">
-            {t('Sync')}: {(syncProgress * 100).toFixed(1)}%
-          </span>
-          {!synced && remainingTime && !finishingUp && (
-            <span className="fs14 text-secondary">
-              (~{remainingTime} {t('remaining')})
-            </span>
-          )}
-          {!synced && finishingUp && (
-            <span className="fs14 text-secondary">{t('WALLET_SYNC_FINISHING_UP')}</span>
-          )}
-        </div>
-
-        {/* Balance status */}
-        <div className="d-flex align-items-center gap-2 mb-2">
-          {funded
-? (
-            <span className="ico-check text-success" />
-          )
-: (
-            <span className="ico-cross text-secondary" />
-          )}
-          <span className="fs15">
-            {t('Balance')}: {formatFullPrecision(balance, ui)} {ui.conventional.unit}
-          </span>
-        </div>
-
-        {/* Deposit info (shown when not yet funded) */}
-        {!funded && (
-          <div className="mb-3">
-            {bondFeeBuffer > 0
-? (
-              <div className="fs14 mb-1">
-                <div>{t('Bond lock')}: {formatFullPrecision(bondLock, ui)} {ui.conventional.unit}</div>
-                <div>{t('Fee buffer')}: {formatFullPrecision(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
-                <div className="fw-bold">
-                  {t('Amount needed')}: {formatFullPrecision(needMore, ui)} {ui.conventional.unit}
-                </div>
-
-                {isToken && parentAsset && (
-                  <div className="mt-1">
-                    <div>
-                      {t('Parent fees')}: {formatFullPrecision(bondFeeBuffer, parentAsset.unitInfo)}{' '}
-                      {parentAsset.unitInfo.conventional.unit}
-                    </div>
-                    <div>
-                      {t('Parent balance')}: {formatFullPrecision(parentBalance, parentAsset.unitInfo)}{' '}
-                      {parentAsset.unitInfo.conventional.unit}
-                    </div>
-                  </div>
-                )}
-
-                {!isToken && (
-                  <div className="fs14 mt-1 text-secondary">
-                    {t('Total')}: {formatFullPrecision(totalNeeded, ui)} {ui.conventional.unit}
-                  </div>
-                )}
-              </div>
-            )
-: (
-              <div className="fs14 mb-1">
-                {t('Send enough funds to cover the bond.')}
-              </div>
-            )}
-
-            {depositAddress && (
-              <div className="mb-2">
-                <label className="fs14">{t('Deposit Address')}</label>
-                <div className="fs13 text-break user-select-all border rounded p-2">
-                  {depositAddress}
-                </div>
-              </div>
-            )}
-          </div>
+          <span className="ico-cross text-secondary" />
         )}
+        <span className="fs15">
+          {t('Sync')}: {(syncProgress * 100).toFixed(1)}%
+        </span>
+        {!synced && remainingTime && !finishingUp && (
+          <span className="fs14 text-secondary">
+            (~{remainingTime} {t('remaining')})
+          </span>
+        )}
+        {!synced && finishingUp && (
+          <span className="fs14 text-secondary">{t('WALLET_SYNC_FINISHING_UP')}</span>
+        )}
+      </div>
 
-        <div className="d-flex gap-2">
-          <button
-            className="btn btn-secondary"
-            onClick={() => onBack()}
-          >
-            {t('Back')}
-          </button>
+      {/* Balance status */}
+      <div className="d-flex align-items-center gap-2 mb-2">
+        {funded
+? (
+          <span className="ico-check text-success" />
+        )
+: (
+          <span className="ico-cross text-secondary" />
+        )}
+        <span className="fs15">
+          {t('Balance')}: {formatFullPrecision(balance, ui)} {ui.conventional.unit}
+        </span>
+      </div>
+
+      {/* Deposit info (shown when not yet funded) */}
+      {!funded && (
+        <div className="mb-3">
+          {bondFeeBuffer > 0
+? (
+            <div className="fs14 mb-1">
+              <div>{t('Bond lock')}: {formatFullPrecision(bondLock, ui)} {ui.conventional.unit}</div>
+              <div>{t('Fee buffer')}: {formatFullPrecision(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
+              <div className="fw-bold">
+                {t('Amount needed')}: {formatFullPrecision(needMore, ui)} {ui.conventional.unit}
+              </div>
+
+              {isToken && parentAsset && (
+                <div className="mt-1">
+                  <div>
+                    {t('Parent fees')}: {formatFullPrecision(bondFeeBuffer, parentAsset.unitInfo)}{' '}
+                    {parentAsset.unitInfo.conventional.unit}
+                  </div>
+                  <div>
+                    {t('Parent balance')}: {formatFullPrecision(parentBalance, parentAsset.unitInfo)}{' '}
+                    {parentAsset.unitInfo.conventional.unit}
+                  </div>
+                </div>
+              )}
+
+              {!isToken && (
+                <div className="fs14 mt-1 text-secondary">
+                  {t('Total')}: {formatFullPrecision(totalNeeded, ui)} {ui.conventional.unit}
+                </div>
+              )}
+            </div>
+          )
+: (
+            <div className="fs14 mb-1">
+              {t('Send enough funds to cover the bond.')}
+            </div>
+          )}
+
+          {depositAddress && (
+            <div className="mb-2">
+              <label className="fs14">{t('Deposit Address')}</label>
+              <div className="fs13 text-break user-select-all border rounded p-2">
+                {depositAddress}
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      <div className="d-flex gap-2">
+        <button
+          className="btn btn-secondary"
+          onClick={() => onBack()}
+        >
+          {t('Back')}
+        </button>
       </div>
     </div>
   )

@@ -337,9 +337,9 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
             className="bg-body border rounded p-4 position-relative"
             style={{ maxWidth: '525px' }}
           >
-            <div className="form-closer" style={{ position: 'absolute', top: 8, right: 12 }}>
-              <span className="ico-cross pointer" onClick={() => setSelectedTxID(null)}></span>
-            </div>
+            <button type="button" className="form-close-btn" onClick={() => setSelectedTxID(null)} aria-label="Close">
+              <span className="ico-cross"></span>
+            </button>
             <BridgeDetails tx={selectedTx} />
           </div>
         </BridgeDispatchContext.Provider>
@@ -354,9 +354,9 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
           className="bg-body border rounded p-4 position-relative"
           style={{ maxWidth: '525px' }}
         >
-          <div className="form-closer" style={{ position: 'absolute', top: 8, right: 12 }}>
-            <span className="ico-cross pointer" onClick={onClose}></span>
-          </div>
+          <button type="button" className="form-close-btn" onClick={onClose} aria-label="Close">
+            <span className="ico-cross"></span>
+          </button>
 
           {/* Header */}
           <header className="d-flex align-items-center mb-3">

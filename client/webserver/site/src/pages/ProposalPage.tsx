@@ -234,9 +234,9 @@ export default function ProposalPage () {
         <FormOverlay show={voteFormOpen} onClose={() => setVoteFormOpen(false)}>
           <div className="overflow-hidden">
             <div className="modal-form mw-425 slide-in-from-right">
-              <div className="form-closer" onClick={() => setVoteFormOpen(false)}>
+              <button type="button" className="form-close-btn" onClick={() => setVoteFormOpen(false)} aria-label="Close">
                 <span className="ico-cross" />
-              </div>
+              </button>
               <header>{t('Vote')}</header>
               <p className="text-muted mt-2">{t('Cast your vote on this proposal')}</p>
               <div>{t('Voting power')}: {proposal.votingPower}</div>

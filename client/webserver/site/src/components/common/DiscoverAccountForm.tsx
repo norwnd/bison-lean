@@ -68,20 +68,18 @@ export function DiscoverAccountForm ({ addr, onSuccess, onPaid }: Props) {
   }, [])
 
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs18 mb-2">{addr}</div>
-        {error && (
-          <div className="fs15 text-danger mb-2">{error}</div>
-        )}
-        <button
-          className="btn btn-primary w-100"
-          onClick={submit}
-          disabled={loading}
-        >
-          {loading ? '...' : t('Submit')}
-        </button>
-      </div>
+    <div className="px-3 py-2">
+      <div className="fs18 mb-2">{addr}</div>
+      {error && (
+        <div className="fs15 text-danger mb-2">{error}</div>
+      )}
+      <button
+        className="btn btn-primary w-100"
+        onClick={submit}
+        disabled={loading}
+      >
+        {loading ? '...' : t('Submit')}
+      </button>
     </div>
   )
 }

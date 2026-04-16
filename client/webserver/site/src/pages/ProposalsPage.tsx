@@ -165,9 +165,9 @@ export default function ProposalsPage () {
         <FormOverlay show={filterOpen} onClose={() => setFilterOpen(false)}>
           <div className="overflow-hidden">
             <div className="modal-form filter-form mw-500 slide-in-from-right">
-              <div className="form-closer" onClick={() => setFilterOpen(false)}>
+              <button type="button" className="form-close-btn" onClick={() => setFilterOpen(false)} aria-label="Close">
                 <span className="ico-cross" />
-              </div>
+              </button>
               <div className="fs22 fw-bold mb-3">{t('Filter')}</div>
               <div className="filter-list-wrap">
                 <div className="filter-list">

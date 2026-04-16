@@ -351,9 +351,9 @@ export function RightPanel ({
       <FormOverlay show={approveAssetID !== null} onClose={() => setApproveAssetID(null)}>
         {approveAssetID !== null && (
           <div className="form-panel bg-dark-2 p-3 border position-relative" style={{ maxWidth: 500 }}>
-            <div className="form-closer" onClick={() => setApproveAssetID(null)}>
+            <button type="button" className="form-close-btn" onClick={() => setApproveAssetID(null)} aria-label="Close">
               <span className="ico-cross"></span>
-            </div>
+            </button>
             <header className="fs20 mb-2">
               {t('Approve')}{' '}
               <span className="d-inline-block">

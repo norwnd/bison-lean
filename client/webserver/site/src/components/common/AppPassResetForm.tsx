@@ -52,7 +52,7 @@ export function AppPassResetForm ({ onSuccess }: Props) {
   }
 
   return (
-    <form className="form-closer" onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit}>
       <div className="px-3 py-2">
         <div className="fs18 mb-2">{t('Reset App Password')}</div>
         <p className="fs15">{t('reset_app_pw_msg')}</p>

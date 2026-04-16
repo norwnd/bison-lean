@@ -81,69 +81,67 @@ export function CEXConfigurationForm ({ cexName, onUpdated }: Props) {
   }
 
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs20 mb-2">{cexName} {t('Configuration')}</div>
+    <div className="px-3 py-2">
+      <div className="fs20 mb-2">{cexName} {t('Configuration')}</div>
 
-        {showPrompt && (
-          <div className="fs15 mb-2 text-secondary">
-            {t('Enter your API credentials for')} {cexName}
-          </div>
-        )}
-
-        {connectErr && (
-          <div className="fs14 text-danger mb-2">
-            <strong>{t('Connection error')}:</strong> {connectErr}
-          </div>
-        )}
-
-        <div className="mb-2">
-          <label className="fs14">{t('API Key')}</label>
-          <input
-            type="text"
-            className="form-control"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            disabled={loading}
-          />
+      {showPrompt && (
+        <div className="fs15 mb-2 text-secondary">
+          {t('Enter your API credentials for')} {cexName}
         </div>
+      )}
 
+      {connectErr && (
+        <div className="fs14 text-danger mb-2">
+          <strong>{t('Connection error')}:</strong> {connectErr}
+        </div>
+      )}
+
+      <div className="mb-2">
+        <label className="fs14">{t('API Key')}</label>
+        <input
+          type="text"
+          className="form-control"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          disabled={loading}
+        />
+      </div>
+
+      <div className="mb-2">
+        <label className="fs14">{t('API Secret')}</label>
+        <input
+          type="password"
+          className="form-control"
+          value={apiSecret}
+          onChange={e => setApiSecret(e.target.value)}
+          disabled={loading}
+        />
+      </div>
+
+      {requiresPassphrase && (
         <div className="mb-2">
-          <label className="fs14">{t('API Secret')}</label>
+          <label className="fs14">{t('API Passphrase')}</label>
           <input
             type="password"
             className="form-control"
-            value={apiSecret}
-            onChange={e => setApiSecret(e.target.value)}
+            value={apiPassphrase}
+            onChange={e => setApiPassphrase(e.target.value)}
             disabled={loading}
           />
         </div>
+      )}
 
-        {requiresPassphrase && (
-          <div className="mb-2">
-            <label className="fs14">{t('API Passphrase')}</label>
-            <input
-              type="password"
-              className="form-control"
-              value={apiPassphrase}
-              onChange={e => setApiPassphrase(e.target.value)}
-              disabled={loading}
-            />
-          </div>
-        )}
+      {error && (
+        <div className="fs15 text-danger mb-2">{error}</div>
+      )}
 
-        {error && (
-          <div className="fs15 text-danger mb-2">{error}</div>
-        )}
-
-        <button
-          className="btn btn-primary w-100"
-          onClick={submit}
-          disabled={loading}
-        >
-          {loading ? '...' : t('Submit')}
-        </button>
-      </div>
+      <button
+        className="btn btn-primary w-100"
+        onClick={submit}
+        disabled={loading}
+      >
+        {loading ? '...' : t('Submit')}
+      </button>
     </div>
   )
 }

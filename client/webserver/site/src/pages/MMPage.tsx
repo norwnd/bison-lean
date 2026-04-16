@@ -466,7 +466,7 @@ export default function MMPage () {
 
       {/* Remove Bot Confirmation Overlay */}
       <FormOverlay show={showRemoveConfirm} onClose={() => setShowRemoveConfirm(false)}>
-        <div className="form-closer p-3">
+        <div className="p-3">
           <h5>{t('Remove Bot Configuration')}</h5>
           {removingBot && (
             <p>

@@ -105,16 +105,9 @@
   animation: slide-in-from-right 300ms cubic-bezier(0.215, 0.61, 0.355, 1) both;
 }
 
-// T17: .modal-form is the React-side equivalent of vanilla's
-// `#forms > form:not(.plain)` styling (see components.scss L324-331).
-// Vanilla wraps every modal form inside a single `#forms` fixed-overlay
-// container and lets the per-page data-handler selector apply the
-// card appearance to any form inside. The React rewrite uses the
-// shared `FormOverlay` component instead, which just provides the
-// backdrop -- individual forms bring their own card class. This
-// gives modal forms the same border + background + shadow look as
-// vanilla without relying on the dead `div[data-handler=...]`
-// selector path.
+// Card appearance (border + background + shadow) for forms rendered
+// inside `FormOverlay`. The overlay itself just dims the backdrop; the
+// inner card brings its own `.modal-form` class for the panel look.
 .modal-form {
   background-color: var(--form-bg);
   border-radius: 5px;
@@ -124,6 +117,38 @@
   box-shadow: 0 3px 6px #00000021, 0 2px 7px #00000041;
   padding: 1rem;
   position: relative;
+}
+
+// Subtle close-X button, absolutely positioned in the top-right of a
+// positioned wrapper (e.g. `.modal-form`). Renders as a semantic
+// `<button>`, so we reset the default browser chrome.
+.form-close-btn {
+  @extend .flex-center;
+  @extend .hoverbg;
+
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.6rem;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+
+  span {
+    opacity: 0.55;
+    transition: opacity 150ms ease;
+  }
+
+  &:hover span {
+    opacity: 1;
+  }
 }
 
 .ease-color {

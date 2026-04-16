@@ -128,32 +128,30 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
   if (showEarlyConfirm && earlyAcceleration) {
     const minutesPast = Math.floor(earlyAcceleration.timePast / 60)
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          {earlyAcceleration.wasAcceleration
+      <div className="px-3 py-2">
+        {earlyAcceleration.wasAcceleration
 ? (
-            <div className="fs15 mb-2">
-              {t('Your last acceleration was only')} {minutesPast} {t('minutes ago.')}
-              {' '}{t('Are you sure you want to accelerate again?')}
-            </div>
-          )
-: (
-            <div className="fs15 mb-2">
-              {t('The swap transaction was broadcast only')} {minutesPast} {t('minutes ago.')}
-              {' '}{t('Are you sure you want to accelerate?')}
-            </div>
-          )}
-          <div className="d-flex gap-2">
-            <button
-              className="btn btn-secondary"
-              onClick={() => { setShowEarlyConfirm(false) }}
-            >
-              {t('Back')}
-            </button>
-            <button className="btn btn-primary" onClick={sendAccelerateRequest}>
-              {t('Confirm')}
-            </button>
+          <div className="fs15 mb-2">
+            {t('Your last acceleration was only')} {minutesPast} {t('minutes ago.')}
+            {' '}{t('Are you sure you want to accelerate again?')}
           </div>
+        )
+: (
+          <div className="fs15 mb-2">
+            {t('The swap transaction was broadcast only')} {minutesPast} {t('minutes ago.')}
+            {' '}{t('Are you sure you want to accelerate?')}
+          </div>
+        )}
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-secondary"
+            onClick={() => { setShowEarlyConfirm(false) }}
+          >
+            {t('Back')}
+          </button>
+          <button className="btn btn-primary" onClick={sendAccelerateRequest}>
+            {t('Confirm')}
+          </button>
         </div>
       </div>
     )
@@ -162,16 +160,14 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
   // Success view.
   if (showSuccess) {
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          <div className="fs18 text-success mb-2">{t('Acceleration Successful')}</div>
-          {txID && (
-            <div className="fs14 mb-2">
-              <strong>{t('Transaction ID')}:</strong>
-              <div className="text-break user-select-all">{txID}</div>
-            </div>
-          )}
-        </div>
+      <div className="px-3 py-2">
+        <div className="fs18 text-success mb-2">{t('Acceleration Successful')}</div>
+        {txID && (
+          <div className="fs14 mb-2">
+            <strong>{t('Transaction ID')}:</strong>
+            <div className="text-break user-select-all">{txID}</div>
+          </div>
+        )}
       </div>
     )
   }
@@ -179,67 +175,63 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
   // Pre-accelerate error view.
   if (preError) {
     return (
-      <div className="form-closer">
-        <div className="px-3 py-2">
-          <div className="fs15 text-danger">{preError}</div>
-        </div>
+      <div className="px-3 py-2">
+        <div className="fs15 text-danger">{preError}</div>
       </div>
     )
   }
 
   // Main configuration view.
   return (
-    <div className="form-closer">
-      <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('Accelerate Order')}</div>
+    <div className="px-3 py-2">
+      <div className="fs20 mb-2">{t('Accelerate Order')}</div>
 
-        <div className="fs14 mb-1">
-          {t('Average fee rate')}: {swapRate} {currencyUnit}
-        </div>
-        <div className="fs14 mb-2">
-          {t('Current fee rate')}: {currentFeeRate} {currencyUnit}
-        </div>
-
-        {/* Fee rate slider */}
-        {suggestedRange && (
-          <div className="mb-3">
-            <label className="fs14 mb-1">{t('New fee rate')}</label>
-            <input
-              type="range"
-              className="form-range"
-              min={0}
-              max={100}
-              value={sliderValue}
-              onChange={handleSliderChange}
-              disabled={loading}
-            />
-            <div className="d-flex justify-content-between fs13 text-secondary">
-              <span>{suggestedRange.start.y} {suggestedRange.yUnit}</span>
-              <span>{suggestedRange.end.y} {suggestedRange.yUnit}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Fee estimate */}
-        {showFeeEstimate && (
-          <div className="fs14 mb-2">
-            <div>{t('Selected rate')}: {feeRateEstimate}</div>
-            <div>{t('Estimated fee')}: {feeEstimate}</div>
-          </div>
-        )}
-
-        {error && (
-          <div className="fs15 text-danger mb-2">{error}</div>
-        )}
-
-        <button
-          className="btn btn-primary"
-          onClick={submit}
-          disabled={loading}
-        >
-          {loading ? '...' : t('Submit')}
-        </button>
+      <div className="fs14 mb-1">
+        {t('Average fee rate')}: {swapRate} {currencyUnit}
       </div>
+      <div className="fs14 mb-2">
+        {t('Current fee rate')}: {currentFeeRate} {currencyUnit}
+      </div>
+
+      {/* Fee rate slider */}
+      {suggestedRange && (
+        <div className="mb-3">
+          <label className="fs14 mb-1">{t('New fee rate')}</label>
+          <input
+            type="range"
+            className="form-range"
+            min={0}
+            max={100}
+            value={sliderValue}
+            onChange={handleSliderChange}
+            disabled={loading}
+          />
+          <div className="d-flex justify-content-between fs13 text-secondary">
+            <span>{suggestedRange.start.y} {suggestedRange.yUnit}</span>
+            <span>{suggestedRange.end.y} {suggestedRange.yUnit}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Fee estimate */}
+      {showFeeEstimate && (
+        <div className="fs14 mb-2">
+          <div>{t('Selected rate')}: {feeRateEstimate}</div>
+          <div>{t('Estimated fee')}: {feeEstimate}</div>
+        </div>
+      )}
+
+      {error && (
+        <div className="fs15 text-danger mb-2">{error}</div>
+      )}
+
+      <button
+        className="btn btn-primary"
+        onClick={submit}
+        disabled={loading}
+      >
+        {loading ? '...' : t('Submit')}
+      </button>
     </div>
   )
 }

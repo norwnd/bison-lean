@@ -604,16 +604,6 @@ div[data-handler=markets] {
   }
 
   #verifyForm {
-    header {
-      &.buygreen-bg {
-        background-color: var(--market-buygreen-bg);
-      }
-
-      &.sellred-bg {
-        background-color: var(--market-sellred-bg);
-      }
-    }
-
     button {
       &.buygreen-bg {
         background-color: var(--market-buygreen-bg);

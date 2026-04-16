@@ -50,11 +50,3 @@
   border-bottom: $width $style $color;
 }
 
-@mixin border-left($width: 1px, $style: solid, $color: var(--border-color)) {
-  border-left: $width $style $color;
-}
-
-@mixin border-right($width: 1px, $style: solid, $color: var(--border-color)) {
-  border-right: $width $style $color;
-}
-
