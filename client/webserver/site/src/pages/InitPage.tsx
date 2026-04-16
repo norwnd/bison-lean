@@ -225,16 +225,21 @@ export default function InitPage () {
     return (
       <div className="d-flex align-items-center justify-content-center py-5">
         <div className="col-12 col-sm-8 col-md-6 col-lg-4">
-          <div className="form-closer">
-            <div className="px-3 py-2">
-              <div className="fs20 mb-2">{t('Set App Password')}</div>
+          <div>
+            <header className="flex-center py-3 lh1 border-bottom fs26">
+              <span className="ico-locked fs20 grey me-2" />
+              <span>{t('Set App Password')}</span>
+            </header>
 
-              <div className="mb-3">
+            <div className="px-2">
+              <div className="fs18 py-3">{t('reg_set_app_pw_msg', { brand: 'Bison Wallet' })}</div>
+
+              <div className="mt-3 border-top pt-3">
                 <label htmlFor="appPW">{t('Password')}</label>
                 <input
                   id="appPW"
                   type="password"
-                  className="form-control"
+                  autoComplete="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') document.getElementById('appPWAgain')?.focus() }}
@@ -243,12 +248,12 @@ export default function InitPage () {
                 />
               </div>
 
-              <div className="mb-3">
-                <label htmlFor="appPWAgain">{t('Confirm Password')}</label>
+              <div className="pt-2">
+                <label htmlFor="appPWAgain">{t('Password Again')}</label>
                 <input
                   id="appPWAgain"
                   type="password"
-                  className="form-control"
+                  autoComplete="off"
                   value={passwordConfirm}
                   onChange={e => setPasswordConfirm(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') submitPassword() }}
@@ -256,39 +261,46 @@ export default function InitPage () {
                 />
               </div>
 
-              <div
-                className="d-flex align-items-center gap-1 fs14 pointer mb-2"
-                onClick={() => setShowSeedInput(!showSeedInput)}
-              >
-                <span className={showSeedInput ? 'ico-minus' : 'ico-plus'} />
-                <span>{t('Restore from seed')}</span>
+              <div className="d-flex pt-3">
+                <div className="flex-grow-1 d-flex align-items-center">
+                  <label
+                    className="pointer d-flex align-items-center"
+                    onClick={() => setShowSeedInput(!showSeedInput)}
+                  >
+                    <span className={`fs11 ${showSeedInput ? 'ico-minus' : 'ico-plus'} me-1`} />
+                    {t('Restoration Seed')}
+                  </label>
+                </div>
+                <button
+                  className="feature flex-grow-1 ms-2"
+                  onClick={submitPassword}
+                  disabled={passwordLoading}
+                >
+                  {passwordLoading ? '...' : t('Submit')}
+                </button>
               </div>
 
               {showSeedInput && (
-                <div className="mb-3">
-                  <label htmlFor="seedInput">{t('Seed')}</label>
+                <div className="pt-2">
                   <textarea
                     id="seedInput"
-                    className="form-control"
-                    rows={3}
+                    className="w-100 mono"
+                    rows={4}
+                    autoComplete="off"
+                    spellCheck={false}
                     value={seed}
                     onChange={e => setSeed(e.target.value)}
                     disabled={passwordLoading}
                   />
+                  <div className="pt-2 text-center fs15 text-warning">
+                    {t('seed_same_wallet_warning')}
+                  </div>
                 </div>
               )}
 
               {passwordError && (
-                <div className="fs15 text-danger mb-2">{passwordError}</div>
+                <div className="fs15 text-center text-danger text-break pt-2">{passwordError}</div>
               )}
-
-              <button
-                className="btn btn-primary w-100"
-                onClick={submitPassword}
-                disabled={passwordLoading}
-              >
-                {passwordLoading ? '...' : t('Submit')}
-              </button>
             </div>
           </div>
         </div>
@@ -300,95 +312,95 @@ export default function InitPage () {
     return (
       <div className="d-flex align-items-center justify-content-center py-5">
         <div className="col-12 col-sm-8 col-md-6 col-lg-4">
-          <div className="form-closer">
-            <div className="px-3 py-2" style={{ position: 'relative', minHeight: quickConfigLoading ? '200px' : undefined }}>
-              {quickConfigLoading && (
-                <Wave message={quickConfigMessage} backgroundColor={true} />
-              )}
+          <div style={{ position: 'relative', minHeight: quickConfigLoading ? '200px' : undefined }}>
+            {quickConfigLoading && (
+              <Wave message={quickConfigMessage} backgroundColor={true} />
+            )}
 
-              {!quickConfigLoading && !showErrors && (
-                <>
-                  <div className="fs20 mb-2">{t('Quick Configuration')}</div>
+            {!quickConfigLoading && !showErrors && (
+              <>
+                <header className="flex-center py-3 lh1 border-bottom fs26">
+                  <span className="ico-settings fs22 grey me-2" />
+                  <span>{t('Quick Configuration')}</span>
+                </header>
 
-                  {servers.length > 0 && (
-                    <div className="mb-3">
-                      <div className="fs16 mb-1">{t('Servers')}</div>
-                      {servers.map((srv, idx) => (
-                        <label key={srv.host} className="d-flex align-items-center gap-2 p-1 pointer">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={srv.checked}
-                            onChange={() => toggleServer(idx)}
-                          />
-                          <span className="fs15">{srv.host}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
+                <div className="px-2 pt-3">
+                  <div className="fs18 mb-2">{t('quickconfig_wallet_header')}</div>
+                  <div className="mt-2">
+                    {wallets.map((wRow, idx) => (
+                      <label key={wRow.asset.id} className="p-1 d-flex justify-content-start align-items-center hoverbg pointer">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={wRow.checked}
+                          onChange={() => toggleWallet(idx)}
+                        />
+                        <img
+                          className="quickconfig-asset-logo mx-2"
+                          src={logoPath(wRow.asset.symbol)}
+                          alt=""
+                        />
+                        <span className="fs20">{wRow.asset.name}</span>
+                      </label>
+                    ))}
+                  </div>
 
-                  {wallets.length > 0 && (
-                    <div className="mb-3">
-                      <div className="fs16 mb-1">{t('Wallets')}</div>
-                      {wallets.map((wRow, idx) => (
-                        <label key={wRow.asset.id} className="d-flex align-items-center gap-2 p-1 pointer">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={wRow.checked}
-                            onChange={() => toggleWallet(idx)}
-                          />
-                          <img
-                            className="micro-icon"
-                            src={logoPath(wRow.asset.symbol)}
-                            alt=""
-                          />
-                          <span className="fs15">{wRow.asset.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
+                  <div className="fs18 mt-3 pt-3 border-top">{t('quickconfig_server_header')}</div>
+                  <div>
+                    {servers.map((srv, idx) => (
+                      <label key={srv.host} className="d-flex justify-content-start align-items-center p-1 hoverbg pointer my-1">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={srv.checked}
+                          onChange={() => toggleServer(idx)}
+                        />
+                        <span className="ms-2 fs18 lh1">{srv.host}</span>
+                      </label>
+                    ))}
+                  </div>
 
                   <button
-                    className="btn btn-primary w-100"
+                    className="feature my-2 w-100"
                     onClick={submitQuickConfig}
                   >
                     {t('Submit')}
                   </button>
-                </>
-              )}
+                </div>
+              </>
+            )}
 
-              {!quickConfigLoading && showErrors && (
-                <>
-                  <div className="fs20 mb-2">{t('Configuration Errors')}</div>
-
-                  {failedHosts.length > 0 && (
-                    <div className="mb-3">
-                      <div className="fs16 mb-1 text-danger">{t('Failed to add servers')}</div>
-                      {failedHosts.map(host => (
-                        <div key={host} className="fs14">{host}</div>
-                      ))}
-                    </div>
-                  )}
-
-                  {failedWallets.length > 0 && (
-                    <div className="mb-3">
-                      <div className="fs16 mb-1 text-danger">{t('Failed to create wallets')}</div>
+            {!quickConfigLoading && showErrors && (
+              <div className="px-2 pt-3">
+                {failedWallets.length > 0 && (
+                  <div className="my-1">
+                    <span className="fs16">{t('quickconfig_wallet_error_header')}</span>
+                    <div className="p-2 my-1">
                       {failedWallets.map(name => (
-                        <div key={name} className="fs14">{name}</div>
+                        <div key={name}>{name}</div>
                       ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  <button
-                    className="btn btn-primary w-100"
-                    onClick={acknowledgeErrors}
-                  >
+                {failedHosts.length > 0 && (
+                  <div className="my-1">
+                    <span className="fs16">{t('quickconfig_server_error_header')}</span>
+                    <div className="p-2 my-1">
+                      {failedHosts.map(host => (
+                        <div key={host}>{host}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="d-flex justify-content-end my-1">
+                  <button className="go" onClick={acknowledgeErrors}>
                     {t('Continue')}
                   </button>
-                </>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -399,44 +411,51 @@ export default function InitPage () {
   return (
     <div className="d-flex align-items-center justify-content-center py-5">
       <div className="col-12 col-sm-8 col-md-6 col-lg-4">
-        <div className="form-closer">
-          <div className="px-3 py-2">
-            <div className="fs20 mb-2">{t('Back Up App Seed')}</div>
+        <div>
+          <header className="flex-center py-3 lh1 border-bottom fs26">
+            <span>{t('Backup App Seed')}</span>
+          </header>
 
-            {!seedRevealed
+          {!seedRevealed
 ? (
-              <div>
-                <p className="fs15">
-                  {t('SEED_BACKUP_MSG')}
-                </p>
-                <button
-                  className="btn btn-primary w-100 mb-2"
-                  onClick={() => setSeedRevealed(true)}
-                >
-                  {t('Show Seed')}
-                </button>
-                <button
-                  className="btn btn-secondary w-100"
-                  onClick={finishSeedBackup}
-                >
-                  {t('Skip')}
+            <div className="px-2 pt-3">
+              <div className="fs18 mb-3">
+                {t('SEED_BACKUP_MSG')}
+              </div>
+              <div className="flex-stretch-column pt-2">
+                <button className="feature" onClick={() => setSeedRevealed(true)}>
+                  {t('Backup Now')}
                 </button>
               </div>
-            )
+              <div className="d-flex justify-content-end pt-3">
+                <div
+                  className="d-block plainlink fs15 flex-center hoverbg pointer"
+                  onClick={finishSeedBackup}
+                >
+                  <span>{t('Skip this step for now')}</span>
+                  <span
+                    className="ico-info mx-1"
+                    title="You can backup your seed at any time in the Settings view"
+                  />
+                </div>
+              </div>
+            </div>
+          )
 : (
-              <div>
-                <div className="fs14 text-break user-select-all border rounded p-3 mb-3">
+            <div className="px-2 pt-3">
+              <div className="fs18 mb-3">{t('save_seed_instructions')}</div>
+              <div className="mt-2 border-top flex-center">
+                <div className="fs18 mono mx-auto user-select-all text-break py-3">
                   {mnemonic}
                 </div>
-                <button
-                  className="btn btn-primary w-100"
-                  onClick={finishSeedBackup}
-                >
-                  {t("I've backed it up")}
+              </div>
+              <div className="d-flex justify-content-end">
+                <button className="feature" onClick={finishSeedBackup}>
+                  {t('Done')}
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

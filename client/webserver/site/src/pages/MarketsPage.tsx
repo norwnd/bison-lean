@@ -1467,7 +1467,7 @@ interface VerifyOrderFormProps {
   onUnackDisclaimer: () => void
   onClose: () => void
   onSubmit: () => void
-  t: (key: string) => string
+  t: (key: string, opts?: Record<string, string>) => string
 }
 
 function VerifyOrderForm ({
@@ -1485,21 +1485,14 @@ function VerifyOrderForm ({
   const orderTypeLabel = order?.tifnow ? `${orderDesc} (immediate)` : orderDesc
 
   // MP-51: disclaimer HTML interpolation. The `order_disclaimer` i18n key
-  // still contains the Go template's `<span class=brand>` and
-  // `<span data-*-ticker>` placeholders (see en-US.json L137 + app.ts
-  // `updateMarketElements` L909-928). Vanilla populates those at runtime
-  // via a DOM walk; React replaces them at render time with string
-  // substitution before feeding to `dangerouslySetInnerHTML`.
-  const disclaimerHtml = (() => {
-    let raw = t('order_disclaimer')
-    raw = raw.replace(
-      /<span\s+class=("brand"|brand)\s*><\/span>/g,
-      'Bison Wallet'
-    )
-    raw = raw.replace(/<span\s+data-base-ticker\s*><\/span>/g, buiUnit)
-    raw = raw.replace(/<span\s+data-quote-ticker\s*><\/span>/g, quiUnit)
-    return raw
-  })()
+  // still contains `<span class="red">IMPORTANT</span>` presentational HTML,
+  // so we need `dangerouslySetInnerHTML`. Brand and ticker placeholders are
+  // now handled via react-i18next `{{ }}` interpolation in en-US.json.
+  const disclaimerHtml = t('order_disclaimer', {
+    brand: 'Bison Wallet',
+    baseTicker: buiUnit,
+    quoteTicker: quiUnit,
+  })
 
   // MP-52: fiat total. Vanilla `showFiatValue` (markets.ts L2507-2513)
   // multiplies the atomic youGet qty by `fiatRatesMap[youGetAsset.id]` and
