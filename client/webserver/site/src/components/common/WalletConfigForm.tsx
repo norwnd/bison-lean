@@ -287,6 +287,15 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     const isDisabled = Boolean(opt.disablewhenactive && hasActiveOrders)
     const regAssetSymbol = opt.regAsset !== undefined ? assets[opt.regAsset]?.symbol : undefined
 
+    const label = (
+      <label htmlFor={el.id} title={opt.description || undefined}>
+        {regAssetSymbol && (
+          <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
+        )}
+        {opt.displayname}
+      </label>
+    )
+
     if (opt.isboolean) {
       return (
         <div key={el.id} className="form-check mb-2" style={isHidden ? { display: 'none' } : undefined}>
@@ -312,12 +321,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     if (opt.isdate) {
       return (
         <div key={el.id} className="mb-2" style={isHidden ? { display: 'none' } : undefined}>
-          <label htmlFor={el.id} title={opt.description || undefined}>
-            {regAssetSymbol && (
-              <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
-            )}
-            {opt.displayname}
-          </label>
+          {label}
           <input
             id={el.id}
             type="date"
@@ -335,12 +339,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     if (opt.repeatable) {
       return (
         <div key={el.id} className="mb-2 repeatable" style={isHidden ? { display: 'none' } : undefined}>
-          <label htmlFor={el.id} title={opt.description || undefined}>
-            {regAssetSymbol && (
-              <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
-            )}
-            {opt.displayname}
-          </label>
+          {label}
           <div className="d-flex align-items-center gap-1">
             <input
               id={el.id}
@@ -367,12 +366,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     // Default: text input.
     return (
       <div key={el.id} className="mb-2" style={isHidden ? { display: 'none' } : undefined}>
-        <label htmlFor={el.id} title={opt.description || undefined}>
-          {regAssetSymbol && (
-            <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
-          )}
-          {opt.displayname}
-        </label>
+        {label}
         <input
           id={el.id}
           type={opt.noecho ? 'password' : 'text'}
