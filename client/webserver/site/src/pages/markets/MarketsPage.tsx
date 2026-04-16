@@ -606,7 +606,7 @@ export default function MarketsPage () {
 
     return {
       buys: buildSide(book.buys, false),
-      sells: buildSide(book.sells, true).reverse()
+      sells: buildSide(book.sells, true)
     }
   }, [bookVersion, bui, qui, currentMkt, selected, externalPriceConv, activeOrders])
 
