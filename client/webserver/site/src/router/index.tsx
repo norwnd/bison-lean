@@ -8,7 +8,7 @@ import { ROUTES } from './routes'
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const RegisterPage = lazy(() => import('../pages/RegisterPage'))
 const InitPage = lazy(() => import('../pages/InitPage'))
-const MarketsPage = lazy(() => import('../pages/MarketsPage'))
+const MarketsPage = lazy(() => import('../pages/markets'))
 const WalletsPage = lazy(() => import('../pages/WalletsPage'))
 const OrdersPage = lazy(() => import('../pages/OrdersPage'))
 const OrderPage = lazy(() => import('../pages/OrderPage'))
