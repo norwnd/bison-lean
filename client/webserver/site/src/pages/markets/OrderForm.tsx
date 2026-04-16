@@ -7,7 +7,7 @@ import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor
+  adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor, shortSymbol
 } from '../../hooks/useFormatters'
 import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo, MaxOrderEstimate, WalletState } from '../../stores/types'
@@ -382,11 +382,13 @@ export function OrderForm ({
     if (!selected) return ''
     const baseW = walletMap[selected.baseID]
     const quoteW = walletMap[selected.quoteID]
-    if (!baseW && !quoteW) return `Create ${baseSymbol} and ${quoteSymbol} wallet to trade`
-    if (!baseW) return `Create a ${baseSymbol} wallet to trade`
-    if (!quoteW) return `Create a ${quoteSymbol} wallet to trade`
-    if (baseW.disabled || !baseW.running) return `Enable / Activate a ${baseSymbol} wallet to trade`
-    if (quoteW.disabled || !quoteW.running) return `Enable / Activate a ${quoteSymbol} wallet to trade`
+    const bs = shortSymbol(baseSymbol)
+    const qs = shortSymbol(quoteSymbol)
+    if (!baseW && !quoteW) return `Create ${bs} and ${qs} wallet to trade`
+    if (!baseW) return `Create a ${bs} wallet to trade`
+    if (!quoteW) return `Create a ${qs} wallet to trade`
+    if (baseW.disabled || !baseW.running) return `Enable / Activate a ${bs} wallet to trade`
+    if (quoteW.disabled || !quoteW.running) return `Enable / Activate a ${qs} wallet to trade`
     return ''
   }, [selected, walletMap, baseSymbol, quoteSymbol])
 
@@ -576,7 +578,7 @@ export function OrderForm ({
             disabled={!submitEnabled || !!walletMsg}
             onClick={stepSubmit}
           >
-            {isSell ? t('Sell') : t('Buy')} {baseSymbol}
+            {isSell ? t('Sell') : t('Buy')} {shortSymbol(baseSymbol)}
           </button>
           {orderError && <div className="m-1 fs17 text-center text-danger text-break">{orderError}</div>}
         </form>

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatFullPrecision, formatBestWeCan } from '../../hooks/useFormatters'
+import { formatFullPrecision, formatBestWeCan, logoPath } from '../../hooks/useFormatters'
 import {
   bondReserveMultiplier,
   perTierBaseParcelLimit,
@@ -12,11 +12,6 @@ import {
 import type {
   Exchange, Market, WalletCreationNote
 } from '../../stores/types'
-
-function logoPath (symbol: string): string {
-  const base = symbol.split('.')[0]
-  return `/img/coins/${base === 'weth' ? 'eth' : base}.png`
-}
 
 interface BondAssetRow {
   assetID: number

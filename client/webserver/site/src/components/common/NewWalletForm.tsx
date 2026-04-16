@@ -11,17 +11,12 @@ import type {
   Token,
   ConfigOption,
 } from '../../stores/types'
+import { logoPath } from '../../hooks/useFormatters'
 
 // --- Utility ---
 
 function toUnixDate (date: Date): number {
   return Math.floor(date.getTime() / 1000)
-}
-
-function logoPath (symbol: string): string {
-  symbol = symbol.split('.')[0]
-  if (symbol === 'weth') symbol = 'eth'
-  return `/img/coins/${symbol}.png`
 }
 
 interface CurrentAsset {

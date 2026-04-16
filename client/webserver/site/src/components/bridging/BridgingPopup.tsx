@@ -21,6 +21,7 @@ import { useReducer, useCallback, useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
+import { shortSymbol, logoPath } from '../../hooks/useFormatters'
 import {
   BridgeStateContext,
   BridgeDispatchContext,
@@ -33,7 +34,6 @@ import BridgeHistory from './BridgeHistory'
 import BridgeDetails from './BridgeDetails'
 import { bridgeApprovalStatus as apiBridgeApprovalStatus } from './bridgeApi'
 import { loadInitialBridgeHistory, type BridgeTransaction } from './bridgeData'
-import { assetLogoPath } from './bridgeUtils'
 import type {
   CoreNote, BridgeNote, WalletStateNote, BalanceNote,
   WalletNote, TransactionNote
@@ -73,8 +73,7 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
   const headerSymbol = (() => {
     if (!headerAsset) return ''
     const unit = headerAsset.unitInfo?.conventional?.unit
-    const raw = (unit && unit.length > 0) ? unit : headerAsset.symbol
-    return raw.split('.')[0].toUpperCase()
+    return shortSymbol((unit && unit.length > 0) ? unit : headerAsset.symbol)
   })()
 
   // Filter the raw paths to only include:
@@ -366,7 +365,7 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
               <>
                 <span className="fs22 ms-2">{headerSymbol}</span>
                 <img
-                  src={assetLogoPath(headerAsset.symbol)}
+                  src={logoPath(headerAsset.symbol)}
                   className="micro-icon ms-2"
                   alt=""
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

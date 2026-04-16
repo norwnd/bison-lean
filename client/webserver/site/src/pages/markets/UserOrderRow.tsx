@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
   formatCoinAtomToLotSizeBaseCurrency,
-  formatRateAtomToRateStep
+  formatRateAtomToRateStep,
+  shortSymbol
 } from '../../hooks/useFormatters'
 import {
   filled, settled, isCancellable, hasActiveMatches
@@ -216,7 +217,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
         <span className="ms-1 fs16">
           {headerQtyStr}
         </span>
-        <span className="ms-1 grey fs16">{mkt?.basesymbol?.toUpperCase() ?? ''}</span>
+        <span className="ms-1 grey fs16">{mkt ? shortSymbol(mkt.basesymbol) : ''}</span>
         <span className="ms-1 fs16">
           {headerRateStr}
         </span>

@@ -9,10 +9,10 @@
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue } from '../../hooks/useFormatters'
+import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
 import { useBridgeState, useBridgeDispatch } from './BridgeState'
 import { loadMoreBridgeHistory, type BridgeTransaction } from './bridgeData'
-import { bridgeDisplayName, bridgeLogoPath, formatDateTime, networkInfo, assetLogoPath } from './bridgeUtils'
+import { bridgeDisplayName, bridgeLogoPath, formatDateTime, networkInfo } from './bridgeUtils'
 
 interface BridgeHistoryProps {
   networkAssetIDs: number[]
@@ -122,7 +122,7 @@ function BridgeHistory ({ networkAssetIDs, onSelectTx }: BridgeHistoryProps) {
       <div className="d-flex align-items-center">
         {sourceAsset && (
           <img
-            src={assetLogoPath(networkInfo(tx.sourceAssetID, assets).symbol)}
+            src={logoPath(networkInfo(tx.sourceAssetID, assets).symbol)}
             className="mini-icon"
             alt=""
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
@@ -131,7 +131,7 @@ function BridgeHistory ({ networkAssetIDs, onSelectTx }: BridgeHistoryProps) {
         <span className="mx-1">&rarr;</span>
         {destAsset && destAssetID !== undefined && (
           <img
-            src={assetLogoPath(networkInfo(destAssetID, assets).symbol)}
+            src={logoPath(networkInfo(destAssetID, assets).symbol)}
             className="mini-icon"
             alt=""
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

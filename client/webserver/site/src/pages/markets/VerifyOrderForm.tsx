@@ -2,7 +2,7 @@ import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  formatFiatConversion
+  formatFiatConversion, shortSymbol
 } from '../../hooks/useFormatters'
 import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo } from '../../stores/types'
@@ -166,7 +166,7 @@ export function VerifyOrderForm ({
           >
             <span id="vSideSubmit">{buySellStr}</span>
             {' '}
-            <span>{baseSymbol}</span>
+            <span>{shortSymbol(baseSymbol)}</span>
           </button>
         )}
         {submitting && (

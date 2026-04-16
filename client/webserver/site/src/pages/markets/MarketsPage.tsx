@@ -8,7 +8,7 @@ import { useAuthStore } from '../../stores/useAuthStore'
 import { useWebSocketStore } from '../../stores/useWebSocketStore'
 import { useNotifications } from '../../hooks/useNotifications'
 import OrderBook from '../../components/OrderBook'
-import { formatRateAtomToRateStep } from '../../hooks/useFormatters'
+import { formatRateAtomToRateStep, shortSymbol } from '../../hooks/useFormatters'
 import { hasActiveMatches } from '../../components/AccountUtils'
 import type {
   MiniOrder, MarketOrderBook, Order,
@@ -651,8 +651,8 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Display helpers
   // -------------------------------------------------------------------------
-  const baseSymbol = baseAsset?.symbol?.toUpperCase() ?? ''
-  const quoteSymbol = quoteAsset?.symbol?.toUpperCase() ?? ''
+  const baseSymbol = baseAsset?.symbol ?? ''
+  const quoteSymbol = quoteAsset?.symbol ?? ''
   const buiConv = bui?.conventional
 
   // MP-61: "why can't the user trade right now" string. Computed directly
@@ -693,11 +693,11 @@ export default function MarketsPage () {
     // 3. Missing / disabled wallet (noWalletMsg equivalent)
     const bw = baseAsset.wallet
     const qw = quoteAsset.wallet
-    if (!bw && !qw) return t('NO_WALLET_MSG', { asset1: baseSymbol, asset2: quoteSymbol })
-    if (!bw) return t('CREATE_ASSET_WALLET_MSG', { asset: baseSymbol })
-    if (!qw) return t('CREATE_ASSET_WALLET_MSG', { asset: quoteSymbol })
-    if (bw.disabled || !bw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: baseSymbol })
-    if (qw.disabled || !qw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: quoteSymbol })
+    if (!bw && !qw) return t('NO_WALLET_MSG', { asset1: shortSymbol(baseSymbol), asset2: shortSymbol(quoteSymbol) })
+    if (!bw) return t('CREATE_ASSET_WALLET_MSG', { asset: shortSymbol(baseSymbol) })
+    if (!qw) return t('CREATE_ASSET_WALLET_MSG', { asset: shortSymbol(quoteSymbol) })
+    if (bw.disabled || !bw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: shortSymbol(baseSymbol) })
+    if (qw.disabled || !qw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: shortSymbol(quoteSymbol) })
 
     // 4. Token approval (tokenApprovalStatus equivalent)
     const checkApproval = (assetID: number, asset: SupportedAsset) => {
@@ -739,7 +739,7 @@ export default function MarketsPage () {
   }, [])
   useEffect(() => {
     if (!selected) return
-    const symPair = `${baseSymbol}/${quoteSymbol}`
+    const symPair = `${shortSymbol(baseSymbol)}/${shortSymbol(quoteSymbol)}`
     const og = ogTitleRef.current || 'Bison'
     if (midGap && bui && qui && currentMkt) {
       const midStr = formatRateAtomToRateStep(midGap, bui, qui, currentMkt.ratestep)

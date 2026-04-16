@@ -157,3 +157,22 @@ export function conventionalRate (baseID: number, quoteID: number, encRate: numb
   const r = bui.conventional.conversionFactor / qui.conventional.conversionFactor
   return encRate * r / RateEncodingFactor
 }
+
+// shortSymbol returns the ticker string to show in the UI for an asset symbol.
+// Strips any parent-chain suffix (`usdc.polygon` → `USDC`) and renames the
+// native Polygon asset from `POLYGON` to `POL` for display (internal symbol
+// stays `polygon`; external exchanges like Binance already use `POL`).
+export function shortSymbol (symbol: string): string {
+  const s = symbol.split('.')[0].toUpperCase()
+  if (s === 'POLYGON') return 'POL'
+  return s
+}
+
+// logoPath returns the `/img/coins/` asset-icon URL for a given symbol.
+// Strips any token-network suffix (`usdc.polygon` → `usdc`) and special-cases
+// the `weth` → `eth` alias (all ETH tokens share the ETH logo).
+export function logoPath (symbol: string): string {
+  let s = symbol.split('.')[0].toLowerCase()
+  if (s === 'weth') s = 'eth'
+  return `/img/coins/${s}.png`
+}

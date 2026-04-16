@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { orderPath } from '../router/routes'
-import { formatCoinValue, conventionalRate } from '../hooks/useFormatters'
+import { formatCoinValue, conventionalRate, shortSymbol, logoPath } from '../hooks/useFormatters'
 import {
   filled, settled, averageRate
 } from '../components/AccountUtils'
@@ -22,12 +22,6 @@ const ORDER_BATCH_SIZE = 50
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
-}
 
 function statusString (order: Order, t: (k: string) => string): string {
   if (!order.id) return t('ORDER_SUBMITTING')
@@ -467,7 +461,7 @@ export default function OrdersPage () {
                       onChange={() => setAssetFilter(prev => toggle(prev, id))}
                     />
                     <img src={logoPath(symbol)} alt={symbol} className="micro-icon me-1" />
-                    {symbol.toUpperCase()}
+                    {shortSymbol(symbol)}
                   </label>
                 )
               })}

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
-import { formatCoinValue, conventionalRate } from '../hooks/useFormatters'
+import { formatCoinValue, conventionalRate, shortSymbol, logoPath } from '../hooks/useFormatters'
 import {
   filled, settled, isMarketBuy, averageRate, baseToQuote,
   isCancellable, canAccelerateOrder
@@ -36,12 +36,6 @@ const lockTimeTakerMs = 8 * 60 * 60 * 1000
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
-}
 
 function ageSince (ms: number): string {
   let dur = Date.now() - ms
@@ -694,7 +688,7 @@ export default function OrderPage () {
       {/* Order header */}
       <div className="mb-3">
         <h5 className="mb-1">
-          {bUnit.toUpperCase()}/{qUnit.toUpperCase()} @ {order.host}
+          {shortSymbol(bUnit)}/{shortSymbol(qUnit)} @ {order.host}
         </h5>
         <div className="fs14 text-break text-secondary mb-2">{order.id}</div>
       </div>

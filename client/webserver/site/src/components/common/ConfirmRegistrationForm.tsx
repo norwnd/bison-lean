@@ -2,14 +2,9 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatBestWeCan } from '../../hooks/useFormatters'
+import { formatBestWeCan, logoPath } from '../../hooks/useFormatters'
 import { bondReserveMultiplier } from '../AccountUtils'
 import type { Exchange } from '../../stores/types'
-
-function logoPath (symbol: string): string {
-  const base = symbol.split('.')[0]
-  return `/img/coins/${base === 'weth' ? 'eth' : base}.png`
-}
 
 interface Props {
   exchange: Exchange

@@ -74,12 +74,6 @@ export interface ExchangeMarket {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-export function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0].toLowerCase()
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
-}
-
 export function ageSince (ms: number): string {
   let dur = Date.now() - ms
   if (dur < 1000) return '0s'
@@ -258,13 +252,6 @@ export function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMa
     return volB - volA
   })
   return result
-}
-
-// shortSymbol — port of vanilla `Doc.shortSymbol` (doc.ts L709). Strips any
-// parent-chain suffix and upper-cases. Drive-by: this helper is duplicated in
-// several pages (see cleanup notes); a shared util would consolidate them.
-export function shortSymbol (symbol: string): string {
-  return symbol.split('.')[0].toUpperCase()
 }
 
 // ---------------------------------------------------------------------------

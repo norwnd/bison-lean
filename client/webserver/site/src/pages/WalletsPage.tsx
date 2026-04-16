@@ -13,7 +13,7 @@ import { NewWalletForm } from '../components/common/NewWalletForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
   formatCoinValue, formatFullPrecision, formatFiatConversion,
-  formatFourSigFigs
+  formatFourSigFigs, shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 import { filled } from '../components/AccountUtils'
@@ -164,12 +164,6 @@ const SCAN_START_MEMPOOL = -1
 // Helpers
 // ---------------------------------------------------------------------------
 
-function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
-}
-
 function ageSince (ms: number): string {
   let dur = Date.now() - ms
   if (dur < 1000) return '0s'
@@ -229,7 +223,7 @@ function buildTickerGroups (
 ): TickerGroup[] {
   const groups: Record<string, TickerGroup> = {}
   for (const asset of Object.values(assets)) {
-    const baseSym = asset.symbol.split('.')[0].toUpperCase()
+    const baseSym = shortSymbol(asset.symbol)
     const ticker = baseSym === 'WETH'
       ? 'ETH'
       : baseSym
@@ -1314,7 +1308,7 @@ function MarketsSection ({ assetName, marketRows, assets }: {
                       <img src={logoPath(row.baseSymbol)} alt={row.baseSymbol} className="micro-icon me-1" />
                       <img src={logoPath(row.quoteSymbol)} alt={row.quoteSymbol} className="micro-icon me-1" />
                       <span className="demi">
-                        {row.baseSymbol.toUpperCase()}-{row.quoteSymbol.toUpperCase()}
+                        {shortSymbol(row.baseSymbol)}-{shortSymbol(row.quoteSymbol)}
                       </span>
                     </td>
                     <td className="d-none d-md-table-cell d-lg-none d-xxl-table-cell">
@@ -2059,18 +2053,18 @@ function RecentOrdersView ({ assetID, assets }: {
                       ? <>
                           <span>{qtyStr}</span>
                           <img src={logoPath(ord.baseSymbol)} alt={ord.baseSymbol} className="micro-icon mx-1" />
-                          <span className="d-none d-md-inline">{ord.baseSymbol.toUpperCase()}</span>
+                          <span className="d-none d-md-inline">{shortSymbol(ord.baseSymbol)}</span>
                           <span>&rarr;</span>
                           <img src={logoPath(ord.quoteSymbol)} alt={ord.quoteSymbol} className="micro-icon mx-1" />
-                          <span className="d-none d-md-inline">{ord.quoteSymbol.toUpperCase()}</span>
+                          <span className="d-none d-md-inline">{shortSymbol(ord.quoteSymbol)}</span>
                         </>
                       : <>
                           <img src={logoPath(ord.quoteSymbol)} alt={ord.quoteSymbol} className="micro-icon mx-1" />
-                          <span className="d-none d-md-inline">{ord.quoteSymbol.toUpperCase()}</span>
+                          <span className="d-none d-md-inline">{shortSymbol(ord.quoteSymbol)}</span>
                           <span>&rarr;</span>
                           <span>{qtyStr}</span>
                           <img src={logoPath(ord.baseSymbol)} alt={ord.baseSymbol} className="micro-icon mx-1" />
-                          <span className="d-none d-md-inline">{ord.baseSymbol.toUpperCase()}</span>
+                          <span className="d-none d-md-inline">{shortSymbol(ord.baseSymbol)}</span>
                         </>}
                   </td>
                   <td>{statusStr}</td>

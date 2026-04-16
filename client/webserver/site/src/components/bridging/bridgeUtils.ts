@@ -5,6 +5,7 @@
 // rather than reaching into the `app()` singleton.
 
 import type { SupportedAsset, UnitInfo, BridgeFeesAndLimits } from '../../stores/types'
+import { logoPath } from '../../hooks/useFormatters'
 
 export function bridgeDisplayName (bridgeName: string, variant: 'short' | 'long' = 'short'): string {
   const b = bridgeName.toLowerCase()
@@ -22,17 +23,7 @@ export function bridgeLogoPath (bridgeName: string): string {
   if (b.includes('polygon')) return '/img/coins/polygon.png'
   if (b.includes('usdc')) return '/img/coins/usdc.png'
   if (b.includes('across')) return '/img/coins/across.png'
-  return assetLogoPath(bridgeName)
-}
-
-// assetLogoPath mirrors WalletsPage.tsx's local `logoPath` helper,
-// which strips token-network suffixes (`weth.bsc` → `weth`) and
-// special-cases `weth` → `eth`. Re-implemented here to keep the
-// bridging module self-contained.
-export function assetLogoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
+  return logoPath(bridgeName)
 }
 
 // networkInfo resolves an asset ID to a (name, symbol) pair using

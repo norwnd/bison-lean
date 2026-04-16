@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { Wave } from '../components/charts/Wave'
 import { ROUTES } from '../router/routes'
 import type { SupportedAsset, WalletDefinition } from '../stores/types'
+import { logoPath } from '../hooks/useFormatters'
 
 type Step = 'password' | 'quickConfig' | 'seedBackup'
 
@@ -18,11 +19,6 @@ interface WalletRow {
   asset: SupportedAsset
   walletType: string
   checked: boolean
-}
-
-function logoPath (symbol: string): string {
-  const base = symbol.split('.')[0]
-  return `/img/coins/${base === 'weth' ? 'eth' : base}.png`
 }
 
 /** Build a config map from a wallet definition's default values. */

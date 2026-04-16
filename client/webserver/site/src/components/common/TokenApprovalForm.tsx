@@ -3,15 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatCoinValue, formatFiatConversion } from '../../hooks/useFormatters'
+import { formatCoinValue, formatFiatConversion, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { explorerURL } from '../CoinExplorers'
 import type { BalanceNote } from '../../stores/types'
-
-function logoPath (symbol: string): string {
-  symbol = symbol.split('.')[0]
-  if (symbol === 'weth') symbol = 'eth'
-  return `/img/coins/${symbol}.png`
-}
 
 interface Props {
   assetID: number
@@ -149,7 +143,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       {/* Token symbol header */}
       <div className="d-flex align-items-center gap-2 mb-3">
         <span className="fs18 fw-bold">
-          {tokenTicker.toUpperCase()}
+          {shortSymbol(tokenTicker)}
           {isToken && (
             <img src={logoPath(tokenParentSymbol)} alt={tokenParentSymbol} width={15} height={15} className="ms-1 token-parent" />
           )}

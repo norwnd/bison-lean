@@ -3,14 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import type { SupportedAsset, WalletTransaction } from '../../stores/types'
+import { logoPath } from '../../hooks/useFormatters'
 
 const traitNewAddresser = 1 << 1
-
-function logoPath (symbol: string): string {
-  symbol = symbol.split('.')[0]
-  if (symbol === 'weth') symbol = 'eth'
-  return `/img/coins/${symbol}.png`
-}
 
 export interface DepositAddressHandle {
   handleTx: (assetID: number, tx: WalletTransaction) => void

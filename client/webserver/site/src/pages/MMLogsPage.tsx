@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
-import { formatCoinValue, formatFourSigFigs, formatFiatValue } from '../hooks/useFormatters'
+import { formatCoinValue, formatFourSigFigs, formatFiatValue, logoPath } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CopyButton } from '../components/common/CopyButton'
 import { AssetSymbol } from '../components/common/AssetSymbol'
@@ -27,11 +27,6 @@ import type {
 } from '../stores/types'
 
 const logsBatchSize = 50
-
-const logoPath = (sym: string) => {
-  const b = sym.split('.')[0]
-  return `/img/coins/${b === 'weth' ? 'eth' : b}.png`
-}
 
 interface LogFilters {
   dexSells: boolean

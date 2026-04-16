@@ -1,10 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import {
   formatRateAtomToRateStep, formatRateToRateStep,
-  formatBestWeCan
+  formatBestWeCan, shortSymbol, logoPath
 } from '../../hooks/useFormatters'
 import { useMarketPageContext } from './MarketPageContext'
-import { logoPath } from './helpers'
 
 // ---------------------------------------------------------------------------
 // MarketStatsHeader -- the market stats strip rendered into the page header
@@ -58,7 +57,7 @@ export function MarketStatsHeader ({
           <img className="small-icon ms-1" src={logoPath(quoteSymbol)} alt="" />
         </div>
         <div className="d-flex align-items-end fs24 demi ms-1">
-          <span>{baseSymbol}</span> / <span>{quoteSymbol}</span>
+          <span>{shortSymbol(baseSymbol)}</span> / <span>{shortSymbol(quoteSymbol)}</span>
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
-import { formatProfit } from '../hooks/useFormatters'
+import { formatProfit, shortSymbol, logoPath } from '../hooks/useFormatters'
 import { ROUTES, type MMLogsReturnPage } from '../router/routes'
 
 interface MarketMakingRun {
@@ -73,9 +73,9 @@ export default function MMArchivesPage () {
               <tr key={i}>
                 <td>{new Date(startTime * 1000).toLocaleString()}</td>
                 <td className="d-flex align-items-center gap-1">
-                  {baseSym && <img src={`/img/coins/${baseSym}.png`} width={20} height={20} alt={baseSym} />}
-                  {quoteSym && <img src={`/img/coins/${quoteSym}.png`} width={20} height={20} alt={quoteSym} />}
-                  <span>{baseSym.toUpperCase()}-{quoteSym.toUpperCase()}</span>
+                  {baseSym && <img src={logoPath(baseSym)} width={20} height={20} alt={baseSym} />}
+                  {quoteSym && <img src={logoPath(quoteSym)} width={20} height={20} alt={quoteSym} />}
+                  <span>{shortSymbol(baseSym)}-{shortSymbol(quoteSym)}</span>
                 </td>
                 <td className={p.cls}>{p.text}</td>
                 <td>

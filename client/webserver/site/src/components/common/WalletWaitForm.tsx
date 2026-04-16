@@ -2,15 +2,10 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatFullPrecision } from '../../hooks/useFormatters'
+import { formatFullPrecision, logoPath } from '../../hooks/useFormatters'
 import type {
   Exchange, WalletStateNote, WalletSyncNote, BalanceNote
 } from '../../stores/types'
-
-function logoPath (symbol: string): string {
-  const base = symbol.split('.')[0]
-  return `/img/coins/${base === 'weth' ? 'eth' : base}.png`
-}
 
 interface ProgressPoint {
   stamp: number

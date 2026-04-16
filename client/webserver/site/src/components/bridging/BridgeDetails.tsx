@@ -9,11 +9,11 @@
 
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue } from '../../hooks/useFormatters'
+import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
 import { CopyButton } from '../common/CopyButton'
 import {
   bridgeDisplayName, bridgeLogoPath, formatDateTime, getFeeAsset,
-  networkInfo, trimStringWithEllipsis, assetLogoPath
+  networkInfo, trimStringWithEllipsis
 } from './bridgeUtils'
 import type { BridgeTransaction } from './bridgeData'
 
@@ -75,7 +75,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
                 {sourceAsset && (
                   <>
                     <img
-                      src={assetLogoPath(networkInfo(tx.sourceAssetID, assets).symbol)}
+                      src={logoPath(networkInfo(tx.sourceAssetID, assets).symbol)}
                       className="micro-icon me-1"
                       alt=""
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
@@ -87,7 +87,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
                 {destAsset && destAssetID !== undefined && (
                   <>
                     <img
-                      src={assetLogoPath(networkInfo(destAssetID, assets).symbol)}
+                      src={logoPath(networkInfo(destAssetID, assets).symbol)}
                       className="micro-icon me-1"
                       alt=""
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

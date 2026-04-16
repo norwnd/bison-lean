@@ -11,7 +11,7 @@ import { useEffect, useCallback, useMemo, useRef } from 'react'
 import type React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue } from '../../hooks/useFormatters'
+import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
 import { BridgeApprovalPending } from '../../stores/types'
 import {
   approvalStatusFromBridgeApproval,
@@ -31,8 +31,7 @@ import {
   bridgeLogoPath,
   calculateMaxBridgeableAmount,
   networkInfo,
-  parseConventionalToAtomic,
-  assetLogoPath
+  parseConventionalToAtomic
 } from './bridgeUtils'
 import type { BridgeTransaction } from './bridgeData'
 
@@ -397,7 +396,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         <label className="form-label">{t('From')}</label>
         <div className="position-relative">
           <img
-            src={sourceAsset ? assetLogoPath(networkInfo(sourceAssetID, assets).symbol) : ''}
+            src={sourceAsset ? logoPath(networkInfo(sourceAssetID, assets).symbol) : ''}
             className="mini-icon position-absolute"
             alt=""
             style={{ left: '10px', top: '50%', transform: 'translateY(-50%)', visibility: sourceAsset ? 'visible' : 'hidden', zIndex: 1, pointerEvents: 'none' }}
@@ -442,7 +441,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         <label className="form-label">{t('To')}</label>
         <div className="position-relative">
           <img
-            src={destAsset ? assetLogoPath(networkInfo(destAssetID, assets).symbol) : ''}
+            src={destAsset ? logoPath(networkInfo(destAssetID, assets).symbol) : ''}
             className="mini-icon position-absolute"
             alt=""
             style={{ left: '10px', top: '50%', transform: 'translateY(-50%)', visibility: destAsset ? 'visible' : 'hidden', zIndex: 1, pointerEvents: 'none' }}

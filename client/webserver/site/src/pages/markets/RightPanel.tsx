@@ -4,7 +4,7 @@ import { FormOverlay } from '../../components/common/FormOverlay'
 import { TokenApprovalForm } from '../../components/common/TokenApprovalForm'
 import { useAuthStore } from '../../stores/useAuthStore'
 import {
-  formatBestWeCan, RateEncodingFactor
+  formatBestWeCan, RateEncodingFactor, shortSymbol
 } from '../../hooks/useFormatters'
 import {
   hasActiveMatches, strongTier, tradingLimits
@@ -55,8 +55,8 @@ export function RightPanel ({
   const currentXc = exchanges[selected.host]
   const baseAsset = assets[selected.baseID] ?? null
   const quoteAsset = assets[selected.quoteID] ?? null
-  const baseSymbol = baseAsset?.symbol?.toUpperCase() ?? ''
-  const quoteSymbol = quoteAsset?.symbol?.toUpperCase() ?? ''
+  const baseSymbol = baseAsset ? shortSymbol(baseAsset.symbol) : ''
+  const quoteSymbol = quoteAsset ? shortSymbol(quoteAsset.symbol) : ''
 
   // MP-27/MP-59: ID of the asset currently being approved. null = modal hidden.
   const [approveAssetID, setApproveAssetID] = useState<number | null>(null)
@@ -85,14 +85,13 @@ export function RightPanel ({
       })
     }
     if (!quoteSupported) {
-      // Note: vanilla passes `base.unitInfo.conventional.unit` here too -- parity bug preserved.
       return t('VERSION_NOT_SUPPORTED', {
-        asset: bui.conventional.unit,
+        asset: qui.conventional.unit,
         version: String(quoteXcAsset.version)
       })
     }
     return ''
-  }, [currentXc, baseAsset, quoteAsset, bui, selected, t])
+  }, [currentXc, baseAsset, quoteAsset, bui, qui, selected, t])
 
   // MP-33: noWalletMsg
   const noWalletMsg = useMemo<string>(() => {
@@ -209,8 +208,8 @@ export function RightPanel ({
       visible: true,
       baseStatus,
       quoteStatus,
-      baseSymbolUpper: baseAsset.symbol.toUpperCase(),
-      quoteSymbolUpper: quoteAsset.symbol.toUpperCase(),
+      baseSymbolUpper: shortSymbol(baseAsset.symbol),
+      quoteSymbolUpper: shortSymbol(quoteAsset.symbol),
       noticeKey,
     }
   }, [currentXc, baseAsset, quoteAsset, selected])

@@ -1,13 +1,5 @@
 import type { SupportedAsset } from '../../stores/types'
-
-// logoPath mirrors `Doc.logoPath` from vanilla `doc.ts` — strip any
-// network suffix (`usdc.polygon` → `usdc`) and special-case the
-// `weth` → `eth` alias (all ETH tokens share the ETH logo).
-function logoPath (symbol: string): string {
-  let s = symbol.split('.')[0]
-  if (s === 'weth') s = 'eth'
-  return `/img/coins/${s}.png`
-}
+import { shortSymbol, logoPath } from '../../hooks/useFormatters'
 
 interface Props {
   asset: SupportedAsset
@@ -32,7 +24,7 @@ interface Props {
 // — wallets page token allowance forms, markets page base/quote
 // pairs, etc.
 export function AssetSymbol ({ asset, useLogo = false }: Props) {
-  const ticker = (asset.unitInfo?.conventional?.unit || asset.symbol.split('.')[0]).toUpperCase()
+  const ticker = shortSymbol(asset.unitInfo?.conventional?.unit || asset.symbol)
   const parts = asset.symbol.split('.')
   const isToken = parts.length === 2
 

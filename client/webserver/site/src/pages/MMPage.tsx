@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
-import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit } from '../hooks/useFormatters'
+import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit, shortSymbol, logoPath } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
 import { ROUTES } from '../router/routes'
@@ -32,11 +32,6 @@ const CEXDisplayInfos: Record<string, { name: string; logo: string }> = {
   Bitget: { name: 'Bitget', logo: '/img/bitget.com.png' },
   Coinbase: { name: 'Coinbase', logo: '/img/coinbase.com.png' },
   MEXC: { name: 'MEXC', logo: '/img/mexc.com.png' },
-}
-
-const logoPath = (sym: string) => {
-  const b = sym.split('.')[0]
-  return `/img/coins/${b === 'weth' ? 'eth' : b}.png`
 }
 
 function hostedMarketID (host: string, baseID: number, quoteID: number) {
@@ -379,7 +374,7 @@ export default function MMPage () {
                     <td className="d-flex align-items-center gap-1">
                       <img src={logoPath(baseSym)} width={20} height={20} alt={baseSym} />
                       <img src={logoPath(quoteSym)} width={20} height={20} alt={quoteSym} />
-                      <span>{baseSym.toUpperCase()}-{quoteSym.toUpperCase()}</span>
+                      <span>{shortSymbol(baseSym)}-{shortSymbol(quoteSym)}</span>
                     </td>
                     <td>{botTypeLabel(cfg, t)}</td>
                     <td>

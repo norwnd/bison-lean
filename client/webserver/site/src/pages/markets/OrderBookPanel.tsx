@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
-import { formatRateToRateStep } from '../../hooks/useFormatters'
+import { formatRateToRateStep, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { ConnectionStatus } from '../../stores/types'
 import type { Exchange } from '../../stores/types'
 import { useUIStore } from '../../stores/useUIStore'
 import { useMarketPageContext } from './MarketPageContext'
 import { OrderBookRow } from './OrderBookRow'
-import { logoPath, type OrderBookDisplayRow, type ExchangeMarket } from './helpers'
+import { type OrderBookDisplayRow, type ExchangeMarket } from './helpers'
 
 // ---------------------------------------------------------------------------
 // OrderBookPanel -- the leftmost section containing either the market list
@@ -117,7 +117,7 @@ export function OrderBookPanel ({
                     </div>
                     <div className="d-flex flex-column flex-grow-1 ps-1">
                       <span className="fs22 demi">
-                        {m.baseSymbol.toUpperCase()} / {m.quoteSymbol.toUpperCase()}
+                        {shortSymbol(m.baseSymbol)} / {shortSymbol(m.quoteSymbol)}
                       </span>
                     </div>
                   </div>

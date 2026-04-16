@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
+import { shortSymbol, logoPath } from '../hooks/useFormatters'
 import { postJSON, checkResponse } from '../services/api'
 import { fetchLocal, storeLocal } from '../services/state'
 import { ROUTES } from '../router/routes'
@@ -62,11 +63,6 @@ const CEXDisplayInfos: Record<string, { name: string; logo: string }> = {
   Bitget: { name: 'Bitget', logo: '/img/bitget.com.png' },
   Coinbase: { name: 'Coinbase', logo: '/img/coinbase.com.png' },
   MEXC: { name: 'MEXC', logo: '/img/mexc.com.png' },
-}
-
-const logoPath = (sym: string) => {
-  const b = sym.split('.')[0]
-  return `/img/coins/${b === 'weth' ? 'eth' : b}.png`
 }
 
 interface AvailableMarket {
@@ -363,7 +359,7 @@ export default function MMSettingsPage () {
                 const key = `${m.host}|${m.baseID}|${m.quoteID}`
                 return (
                   <option key={key} value={key}>
-                    {m.baseSymbol.toUpperCase()}/{m.quoteSymbol.toUpperCase()} @ {m.host}
+                    {shortSymbol(m.baseSymbol)}/{shortSymbol(m.quoteSymbol)} @ {m.host}
                   </option>
                 )
               })}
