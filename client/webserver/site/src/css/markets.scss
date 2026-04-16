@@ -28,11 +28,11 @@ div[data-handler=markets] {
   .ordertable-wrap {
     width: 100%;
 
-    &:first-child {
+    &:has(#sellRows) {
       @include border-bottom;
     }
 
-    &:last-child {
+    &:has(#buyRows) {
       @include border-top;
     }
 
@@ -43,6 +43,18 @@ div[data-handler=markets] {
 
   #orderFormBuy,
   #orderFormSell {
+    // Make the section a flex column so the inner <form> can fill the
+    // full section height via `flex-grow: 1`. Combined with the
+    // `mt-auto` on the submit button, this keeps the button anchored
+    // to the bottom of the form — so when the preview row is empty
+    // (no rate entered), the button doesn't float mid-form.
+    display: flex;
+    flex-direction: column;
+
+    > form {
+      flex-grow: 1;
+    }
+
     // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
     // OrderForms when `cantTradeReason` is non-null. Renders as an
     // absolute-positioned sibling inside the `.d-flex.flex-stretch-row`

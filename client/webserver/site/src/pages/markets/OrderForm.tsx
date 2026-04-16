@@ -540,13 +540,16 @@ export function OrderForm ({
             <div className={`slider-mark slider-mark-75${sliderValue > 0.75 ? ' mark-enabled' : ''}`}></div>
             <div className={`slider-mark slider-mark-100${sliderValue >= 1.0 ? ' mark-enabled' : ''}`}></div>
           </div>
-          {/* Preview total */}
+          {/* Preview total — the conversion display ("qty ⇄ previewTotal").
+              All three cells gate on `previewTotal`: when no rate has been
+              entered, the conversion is meaningless so we render an empty
+              row (not the naked qty input echoed back). */}
           <div className="d-flex flex-stretch-row m-1">
             {isSell
               ? (
                 <>
                   <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {qtyInput && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                    {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
                   </div>
                   <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
                   <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
@@ -561,7 +564,7 @@ export function OrderForm ({
                   </div>
                   <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
                   <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {qtyInput && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                    {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
                   </div>
                 </>
               )}
@@ -569,7 +572,7 @@ export function OrderForm ({
           {(walletMsg || submitMsg) && <div className="m-1 fs14 text-center grey">{walletMsg || submitMsg}</div>}
           <button
             type="button"
-            className={`flex-center border pointer hoverbg border-rounded3 m-1 submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+            className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
             disabled={!submitEnabled || !!walletMsg}
             onClick={stepSubmit}
           >
