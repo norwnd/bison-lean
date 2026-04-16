@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import type { ConfigOption } from '../../stores/types'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { logoPath } from '../../hooks/useFormatters'
 
 // --- Utility helpers (ported from forms.ts) ---
 
@@ -92,6 +93,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
 ) {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
+  const assets = useAuthStore(s => s.assets)
   const hiddenFields = user?.extensionModeConfig?.restrictedWallets?.[String(assetID)]?.hiddenFields ?? []
 
   // Internal state managed by the parent via handle methods OR by props.
@@ -283,6 +285,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     const { opt } = el
     const isHidden = hiddenFields.includes(opt.key)
     const isDisabled = Boolean(opt.disablewhenactive && hasActiveOrders)
+    const regAssetSymbol = opt.regAsset !== undefined ? assets[opt.regAsset]?.symbol : undefined
 
     if (opt.isboolean) {
       return (
@@ -310,8 +313,8 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
       return (
         <div key={el.id} className="mb-2" style={isHidden ? { display: 'none' } : undefined}>
           <label htmlFor={el.id} title={opt.description || undefined}>
-            {opt.regAsset !== undefined && (
-              <img src={`/img/coins/${opt.regAsset}.png`} width={15} height={15} alt="" className="me-1" />
+            {regAssetSymbol && (
+              <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
             )}
             {opt.displayname}
           </label>
@@ -333,8 +336,8 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
       return (
         <div key={el.id} className="mb-2 repeatable" style={isHidden ? { display: 'none' } : undefined}>
           <label htmlFor={el.id} title={opt.description || undefined}>
-            {opt.regAsset !== undefined && (
-              <img src={`/img/coins/${opt.regAsset}.png`} width={15} height={15} alt="" className="me-1" />
+            {regAssetSymbol && (
+              <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
             )}
             {opt.displayname}
           </label>
@@ -365,8 +368,8 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     return (
       <div key={el.id} className="mb-2" style={isHidden ? { display: 'none' } : undefined}>
         <label htmlFor={el.id} title={opt.description || undefined}>
-          {opt.regAsset !== undefined && (
-            <img src={`/img/coins/${opt.regAsset}.png`} width={15} height={15} alt="" className="me-1" />
+          {regAssetSymbol && (
+            <img src={logoPath(regAssetSymbol)} width={15} height={15} alt="" className="me-1" />
           )}
           {opt.displayname}
         </label>
