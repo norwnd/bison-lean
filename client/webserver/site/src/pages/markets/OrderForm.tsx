@@ -551,7 +551,7 @@ export function OrderForm ({
                   <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
                     {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
                   </div>
-                  <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
+                  <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
                   <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
                     {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
                   </div>
@@ -562,7 +562,7 @@ export function OrderForm ({
                   <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
                     {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
                   </div>
-                  <span className="d-flex align-items-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
+                  <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
                   <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
                     {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
                   </div>

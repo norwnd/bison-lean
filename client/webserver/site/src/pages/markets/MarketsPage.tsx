@@ -615,7 +615,6 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   const spotRate = currentMkt?.spot?.rate ?? 0
   const midGap = midGapRate(bookRef.current)
-  const displayRate = midGap || spotRate
   const spot = currentMkt?.spot
   const change24 = spot?.change24 ?? 0
   const vol24 = spot?.vol24 ?? 0
@@ -810,7 +809,6 @@ export default function MarketsPage () {
                   selected={selected}
                   selectMarket={selectMarket}
                   orderBookData={orderBookData}
-                  displayRate={displayRate}
                   externalPriceConv={externalPriceConv}
                   fillRateFromBook={fillRateFromBook}
                   isConnected={isConnected}

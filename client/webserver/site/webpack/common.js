@@ -9,6 +9,23 @@ function git(command) {
   return child_process.execSync(`git ${command}`, { encoding: 'utf8' }).trim();
 }
 
+// Sass-loader config shared by both the CSS-modules and plain-SCSS rules.
+// `quietDeps` silences deprecations that originate inside node_modules
+// (i.e. Bootstrap's own SCSS). `silenceDeprecations` suppresses three
+// deprecation classes that fire against our own files: `import` (our
+// @import-based entry points), `global-builtin` (map-merge in bootstrap.scss),
+// and `legacy-js-api` (sass-loader 13.x still uses sass's legacy JS API).
+// Revisit when Bootstrap upgrades to @use/@forward or when Dart Sass 3.0
+// forces a migration — see the Sass modules migration guide.
+const sassLoaderOptions = {
+  implementation: require("sass"),
+  sourceMap: true,
+  sassOptions: {
+    quietDeps: true,
+    silenceDeprecations: ['import', 'global-builtin', 'legacy-js-api']
+  }
+}
+
 module.exports = {
   target: "web",
   entry: path.resolve(__dirname, '../src/index.tsx'),
@@ -30,10 +47,7 @@ module.exports = {
           },
           {
             loader: 'sass-loader',
-            options: {
-              implementation: require("sass"),
-              sourceMap: true
-            }
+            options: sassLoaderOptions
           }
         ]
       },
@@ -52,10 +66,7 @@ module.exports = {
           },
           {
             loader: 'sass-loader',
-            options: {
-              implementation: require("sass"), // dart-sass
-              sourceMap: true
-            }
+            options: sassLoaderOptions
           }
         ]
       },

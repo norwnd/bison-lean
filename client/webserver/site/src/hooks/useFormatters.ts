@@ -82,15 +82,6 @@ export function formatBestWeCan (n: number, maxDecimals?: number): string {
   return fullPrecisionFormatter(maxDecimals).format(n)
 }
 
-export function formatRateFullPrecision (encRate: number, bui: UnitInfo, qui: UnitInfo, rateStepEnc: number): string {
-  const r = bui.conventional.conversionFactor / qui.conventional.conversionFactor
-  const convRate = encRate * r / RateEncodingFactor
-  const rateStepDigits = log10RateEncodingFactor - Math.floor(Math.log10(rateStepEnc)) -
-    Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
-  if (rateStepDigits <= 0) return intFormatter.format(convRate)
-  return fullPrecisionFormatter(rateStepDigits).format(convRate)
-}
-
 export function adjRateAtomsBuy (rateAtom: number, rateStepAtom: number): number {
   return rateAtom - (rateAtom % rateStepAtom)
 }

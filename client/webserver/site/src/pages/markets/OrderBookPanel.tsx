@@ -1,7 +1,5 @@
 import { useState, useMemo } from 'react'
-import {
-  formatRateFullPrecision, formatRateToRateStep
-} from '../../hooks/useFormatters'
+import { formatRateToRateStep } from '../../hooks/useFormatters'
 import { ConnectionStatus } from '../../stores/types'
 import type { Exchange } from '../../stores/types'
 import { useUIStore } from '../../stores/useUIStore'
@@ -12,7 +10,7 @@ import { logoPath, type OrderBookDisplayRow, type ExchangeMarket } from './helpe
 // ---------------------------------------------------------------------------
 // OrderBookPanel -- the leftmost section containing either the market list
 // dock (when showMarketList is true) or the order book (sell side +
-// spread/mid-gap + buy side). Reads currentMkt / bui / qui from
+// external reference price + buy side). Reads currentMkt / bui / qui from
 // MarketPageContext. Owns the `marketSearch` state internally.
 // ---------------------------------------------------------------------------
 
@@ -24,7 +22,6 @@ export interface OrderBookPanelProps {
   selected: { host: string; baseID: number; quoteID: number }
   selectMarket: (host: string, baseID: number, quoteID: number) => void
   orderBookData: { buys: OrderBookDisplayRow[]; sells: OrderBookDisplayRow[] }
-  displayRate: number
   externalPriceConv: number
   fillRateFromBook: (msgRate: number) => void
   isConnected: boolean
@@ -39,7 +36,6 @@ export function OrderBookPanel ({
   selected,
   selectMarket,
   orderBookData,
-  displayRate,
   externalPriceConv,
   fillRateFromBook,
   isConnected,
@@ -156,16 +152,7 @@ export function OrderBookPanel ({
           </table>
         </div>
 
-        {/* Spread / mid-gap + external price hint. MP-26 adds the
-             vanilla `obExternalPrice` inline under the mid-gap: when
-             both fiat rates are available, show the external reference
-             rate prefixed with `~`. */}
         <div id="obMidSection" className="d-flex flex-stretch-column align-items-center justify-content-center py-1 px-2">
-          {displayRate > 0 && (
-            <span className="text-warning fs17">
-              {formatRateFullPrecision(displayRate, bui, qui, currentMkt.ratestep)}
-            </span>
-          )}
           {externalPriceConv > 0 && (
             <span
               title="Price on external markets such as Binance"
