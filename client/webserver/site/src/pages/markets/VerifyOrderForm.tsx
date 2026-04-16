@@ -170,25 +170,27 @@ export function VerifyOrderForm ({
             className="disclaimer fs17 pt-3 mt-3 border-top"
             dangerouslySetInnerHTML={{ __html: disclaimerHtml }}
           />
-          <div
+          <button
             id="disclaimerAck"
-            className="d-flex align-items-center grey text-center pointer hoverbg fs17"
+            type="button"
+            className="d-flex justify-content-center align-items-center small grey mt-3 w-100"
             onClick={onAckDisclaimer}
           >
-            <span className="ico-check fs12 me-1"></span>
+            <span className="ico-check me-2"></span>
             <span>{t('acknowledge_and_hide')}</span>
-          </div>
+          </button>
         </>
       )}
       {disclaimerAcked && (
-        <div
+        <button
           id="showDisclaimer"
-          className="d-flex align-items-center grey text-center pointer hoverbg fs17"
+          type="button"
+          className="d-flex justify-content-center align-items-center small grey mt-3 w-100"
           onClick={onUnackDisclaimer}
         >
-          <span className="ico-plus fs8 me-1 mt-1"></span>
+          <span className="ico-plus me-2"></span>
           <span>{t('show_disclaimer')}</span>
-        </div>
+        </button>
       )}
     </form>
   )
