@@ -17,6 +17,7 @@ interface AuthState {
   user: User | null
   authed: boolean
   inited: boolean
+  initialFetchDone: boolean
   lang: string
   langs: string[]
   onionUrl: string
@@ -50,6 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   authed: false,
   inited: false,
+  initialFetchDone: false,
   lang: 'en-US',
   langs: ['en-US'],
   onionUrl: '',
@@ -64,12 +66,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchUser: async () => {
     const resp: UserResponse = await getJSON('/api/user')
-    if (!resp.requestSuccessful) return null
+    if (!resp.requestSuccessful) {
+      set({ initialFetchDone: true })
+      return null
+    }
     const user = resp.user
     if (!user) {
       set({
         inited: resp.inited,
         authed: false,
+        initialFetchDone: true,
         lang: resp.lang,
         langs: resp.langs,
         onionUrl: resp.onionUrl,
@@ -81,6 +87,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user,
       authed: true,
       inited: resp.inited,
+      initialFetchDone: true,
       lang: resp.lang,
       langs: resp.langs,
       onionUrl: resp.onionUrl,
