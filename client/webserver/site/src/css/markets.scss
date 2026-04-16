@@ -492,14 +492,22 @@ div[data-handler=markets] {
         flex-basis: 58%; /* width/height - depending on flex-direction */
 
         & > section {
+          // Lock chart and trade-forms to their flex-basis so conditional
+          // rows inside the forms (walletMsg, orderError) can never push
+          // the chart's height around. `min-height: 0` disables the
+          // default `min-height: auto` which would otherwise let content
+          // override flex-basis.
           &:first-child { // candle chart
             order: 1;
-            flex-basis: 68%; /* width/height - depending on flex-direction */
+            flex: 0 0 68%;
+            min-height: 0;
           }
 
-          &:last-child { // rightmost section
+          &:last-child { // trade forms
             order: 2;
-            flex-basis: 32%; /* width/height - depending on flex-direction */
+            flex: 0 0 32%;
+            min-height: 0;
+            overflow: hidden; // safety clip if inner form content exceeds 32%
 
             & > section {
               &:first-child { // buy form

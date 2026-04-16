@@ -2,10 +2,32 @@ import { useRef, useEffect, useCallback } from 'react'
 import { useUIStore } from '../../stores/useUIStore'
 import { Candle, CandlesPayload, Market, UnitInfo } from '../../stores/types'
 import { formatRateAtomToRateStep } from '../../hooks/useFormatters'
+import { fetchLocal, storeLocal, lastCandleZoomLevelLK } from '../../services/state'
 import {
   Extents, Region, Theme, darkTheme, lightTheme,
   line as drawLine, LabelSet, makeYLabels, makeCandleTimeLabels, truncate, Point
 } from './chartUtils'
+
+// Default zoom level (candle count) used when the user has no saved
+// preference yet. The preference is persisted to localStorage under
+// `lastCandleZoomLevelLK` and reused across market / duration switches
+// and across browser sessions. Live candle updates do NOT reset the zoom.
+const DEFAULT_ZOOM_CANDLES = 90
+
+// Snap a target candle count to the nearest valid zoom level (preferring
+// the largest level that does not exceed the target). Needed because
+// saved preferences may not land exactly on a level when the candle count
+// or duration changes.
+function snapToZoomLevel (target: number, levels: number[]): number {
+  if (levels.length === 0) return 0
+  if (levels.includes(target)) return target
+  let best = levels[0]
+  for (const lvl of levels) {
+    if (lvl > target) break
+    best = lvl
+  }
+  return best
+}
 
 export interface CandleReporters {
   mouse: (candle: Candle | null) => void
@@ -52,7 +74,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     stateRef.current.theme = darkMode ? darkTheme : lightTheme
   }, [darkMode])
 
-  // Initialize zoom levels when data changes
+  // Rebuild zoom levels on every data change. `numToShow` is derived from
+  // the user's saved preference (localStorage) or DEFAULT_ZOOM_CANDLES on
+  // first load, then preserved across live candle updates so the zoom
+  // doesn't snap back every time a new epoch arrives.
   useEffect(() => {
     if (!data || !data.candles?.length) return
     const candles = data.candles
@@ -64,8 +89,12 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     }
     if (levels[levels.length - 1] !== candles.length) levels.push(candles.length)
     stateRef.current.zoomLevels = levels
-    const defaultLvl = Math.min(35, levels.length)
-    stateRef.current.numToShow = levels[defaultLvl - 1]
+
+    const saved = fetchLocal(lastCandleZoomLevelLK)
+    const desired = (typeof saved === 'number' && saved > 0)
+      ? saved
+      : (stateRef.current.numToShow || DEFAULT_ZOOM_CANDLES)
+    stateRef.current.numToShow = snapToZoomLevel(Math.min(desired, candles.length), levels)
   }, [data])
 
   const resize = useCallback(() => {
@@ -249,6 +278,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       if (bigger && idx > 0) s.numToShow = s.zoomLevels[idx - 1]
       else if (!bigger && idx + 1 < s.zoomLevels.length) s.numToShow = s.zoomLevels[idx + 1]
       else return
+      storeLocal(lastCandleZoomLevelLK, s.numToShow)
       render()
     }
 
