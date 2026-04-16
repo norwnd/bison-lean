@@ -39,6 +39,7 @@ header#header {
   .plainlink,
   .plainlink:visited,
   .plainlink:hover {
+    cursor: pointer;
     text-decoration: none;
   }
 
@@ -63,11 +64,23 @@ div.main {
 
 div.mainlinks {
   margin-left: auto;
+  padding-right: 0.5rem;
+  align-self: stretch; // fill full header height (overrides header's align-items: center)
 
   &>div,
   &>a {
     color: var(--text-color-secondary);
     padding: 0.5rem 0.75rem;
+  }
+
+  .navlink {
+    border-bottom: 3px solid transparent;
+    transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+
+    &.active {
+      color: var(--text-color);
+      border-bottom-color: var(--text-color);
+    }
   }
 }
 
