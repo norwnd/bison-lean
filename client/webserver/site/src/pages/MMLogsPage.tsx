@@ -391,14 +391,14 @@ export default function MMLogsPage () {
                       </td>
                       <td>{diff.fmt}</td>
                       <td>{diff.fmtUSD}</td>
-                      <td>{formatFiatValue(fiatRates[assetID] ?? 0)} USD</td>
+                      <td>${formatFiatValue(fiatRates[assetID] ?? 0)}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
             <div className="fw-bold">
-              {t('Total P/L')}: {formatFiatValue(profitLoss.profit)} USD
+              {t('Total P/L')}: ${formatFiatValue(profitLoss.profit)}
             </div>
           </div>
         </div>

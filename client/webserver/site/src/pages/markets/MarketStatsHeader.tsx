@@ -112,7 +112,7 @@ export function MarketStatsHeader ({
               : '-'}
           </div>
           <div className="fs14 grey ms-1">
-            {spot && buiConv && baseFiatRate > 0 ? 'USD' : (buiConv?.unit ?? 'USD')}
+            {spot && buiConv && baseFiatRate > 0 ? '$' : (buiConv?.unit ?? '$')}
           </div>
         </div>
         <div className="px-2 fs14 border-right">

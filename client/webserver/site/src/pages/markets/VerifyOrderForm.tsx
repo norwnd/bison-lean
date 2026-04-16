@@ -56,11 +56,15 @@ export function VerifyOrderForm ({
     quoteTicker: quiUnit,
   })
 
-  // Fiat total: the `youGet` side of the trade depends on direction
-  // (buy = base is youGet; sell = quote is youGet). Pick the matching
-  // atomic qty + fiat rate + unit-info for the conversion below.
+  // Fiat estimate: both the `youSpend` and `youGet` sides depend on the
+  // trade direction (buy = base is youGet, quote is youSpend; sell
+  // reverses). Pick the matching atomic qty + fiat rate + unit-info
+  // for each side's conversion below.
   let youSpendText = ''
   let youGetText = ''
+  let youSpendAtom = 0
+  let youSpendFiatRate = 0
+  let youSpendUnitInfo: UnitInfo | null = null
   let youGetAtom = 0
   let youGetFiatRate = 0
   let youGetUnitInfo: UnitInfo | null = null
@@ -79,6 +83,9 @@ export function VerifyOrderForm ({
       youGetText = formatCoinAtomToLotSizeQuoteCurrency(quoteQty, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
       youSpendUnit = buiUnit
       youGetUnit = quiUnit
+      youSpendAtom = baseQty
+      youSpendFiatRate = baseFiatRate
+      youSpendUnitInfo = bui
       youGetAtom = quoteQty
       youGetFiatRate = quoteFiatRate
       youGetUnitInfo = qui
@@ -88,15 +95,22 @@ export function VerifyOrderForm ({
       youGetText = formatCoinAtomToLotSizeBaseCurrency(baseQty, bui, currentMkt.lotsize)
       youSpendUnit = quiUnit
       youGetUnit = buiUnit
+      youSpendAtom = quoteQty
+      youSpendFiatRate = quoteFiatRate
+      youSpendUnitInfo = qui
       youGetAtom = baseQty
       youGetFiatRate = baseFiatRate
       youGetUnitInfo = bui
     }
   }
 
-  // Hide the fiat row entirely when no rate is available.
-  const showFiatTotal = youGetFiatRate > 0 && youGetUnitInfo !== null
-  const fiatTotalText = showFiatTotal
+  // Hide each fiat row independently when its rate is unavailable.
+  const showSpendFiat = youSpendFiatRate > 0 && youSpendUnitInfo !== null
+  const showGetFiat = youGetFiatRate > 0 && youGetUnitInfo !== null
+  const spendFiatText = showSpendFiat
+    ? formatFiatConversion(youSpendAtom, youSpendFiatRate, youSpendUnitInfo ?? undefined)
+    : ''
+  const getFiatText = showGetFiat
     ? formatFiatConversion(youGetAtom, youGetFiatRate, youGetUnitInfo ?? undefined)
     : ''
 
@@ -122,14 +136,19 @@ export function VerifyOrderForm ({
               <span id="youSpend" className="fs18 demi">{'-' + youSpendText}</span>
               <span id="youSpendTicker" className="grey fs18 ms-2">{youSpendUnit}</span>
             </div>
+            {showSpendFiat && (
+              <span className="d-flex justify-content-end grey fs14 mt-1">
+                ~${spendFiatText}
+              </span>
+            )}
             <div className="d-flex align-items-center mt-3">
               <span className="grey fs18 flex-grow-1 text-start">{t('You Get')}</span>
               <span id="youGet" className="fs18 demi">{'+' + youGetText}</span>
               <span id="youGetTicker" className="grey fs18 ms-2">{youGetUnit}</span>
             </div>
-            {showFiatTotal && (
-              <span className="d-flex justify-content-end grey fs14 mt-2">
-                ~<span id="vFiatTotal" className="mx-1">{fiatTotalText}</span>USD
+            {showGetFiat && (
+              <span className="d-flex justify-content-end grey fs14 mt-1">
+                ~${getFiatText}
               </span>
             )}
           </div>

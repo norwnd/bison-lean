@@ -514,7 +514,6 @@ export default function WalletsPage () {
           <span className="grey fs16 lh1 mb-1">{t('Holdings')}</span>
           <span className="d-flex align-items-end lh1">
             <span className="fs20">${formatFourSigFigs(totalFiatBalance(assets, fiatRatesMap))}</span>
-            <span className="fs18 grey ms-1">USD</span>
           </span>
           <div className="border-bottom mt-2"></div>
         </div>
@@ -536,13 +535,7 @@ export default function WalletsPage () {
                   </div>
                   <div className="d-flex flex-column align-items-end">
                     {g.hasWallet
-                      ? <>
-                          <span className="fs22 lh1">{formatFourSigFigs(g.totalFiat, 2)}</span>
-                          <div className="d-flex align-items-end fs15 grey lh1 pt-1">
-                            <span className="me-1">${formatFourSigFigs(g.totalFiat, 2)}</span>
-                            <span className="ms-1 fs12 grey">USD</span>
-                          </div>
-                        </>
+                      ? <span className="fs22 lh1">${formatFourSigFigs(g.totalFiat, 2)}</span>
                       : <span className="grey me-1">—</span>}
                   </div>
                 </div>
@@ -911,7 +904,7 @@ function WalletDetail ({
             </div>
             {rate > 0 && (
               <div className="mt-1 lh1 grey fs15 d-flex justify-content-end align-items-center">
-                ~ <span className="me-1">{formatFiatConversion(totalBal, rate, ui)}</span> USD
+                ~${formatFiatConversion(totalBal, rate, ui)}
               </div>
             )}
           </div>
@@ -2974,14 +2967,13 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
     onSuccess()
   }, [asset.id, version, onSuccess])
 
-  // Build the fee display string. Mirrors vanilla L705-710:
-  // "{atomicFormatted} {unit} ({fiatFormatted} USD)" if a rate is
-  // available, otherwise just the atomic amount.
+  // Build the fee display string: "{atomicFormatted} {unit} (~$X)"
+  // if a rate is available, otherwise just the atomic amount.
   const feeText = useMemo(() => {
     if (feeEstimate === null || !parentAsset) return ''
     const atomicStr = `${formatCoinValue(feeEstimate, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
     if (parentRate > 0) {
-      return `${atomicStr} (${formatFiatConversion(feeEstimate, parentRate, parentAsset.unitInfo)} USD)`
+      return `${atomicStr} (~$${formatFiatConversion(feeEstimate, parentRate, parentAsset.unitInfo)})`
     }
     return atomicStr
   }, [feeEstimate, parentAsset, parentRate])
