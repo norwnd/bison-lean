@@ -43,7 +43,7 @@ export function TradeForms ({
         input survives wallet-state degradation. The overlay
         condition implicitly requires `currentMkt` to be truthy
         via the `cantTradeReason` cascade's early return. */
-    <section className="d-flex flex-stretch-row position-relative">
+    <section className="d-flex position-relative">
       <OrderForm
         key={`buy-${selected.host}-${selected.baseID}-${selected.quoteID}`}
         side="buy"

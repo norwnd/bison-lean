@@ -57,8 +57,8 @@ div[data-handler=markets] {
 
     // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
     // OrderForms when `cantTradeReason` is non-null. Renders as an
-    // absolute-positioned sibling inside the `.d-flex.flex-stretch-row`
-    // wrapper that has `position-relative`. The semi-transparent backdrop
+    // absolute-positioned sibling inside the `.d-flex.position-relative`
+    // TradeForms wrapper. The semi-transparent backdrop
     // lets the form be faintly visible underneath (Option 3 from the
     // design doc) so the user sees their work; the high z-index +
     // pointer-events: auto blocks all interaction with the form behind
@@ -509,16 +509,19 @@ div[data-handler=markets] {
             min-height: 0;
             overflow: hidden; // safety clip if inner form content exceeds 32%
 
-            & > section {
-              &:first-child { // buy form
-                order: 1;
-                flex-basis: 50%; /* width/height - depending on flex-direction */
-              }
+            // Target forms by ID rather than :first-child / :last-child.
+            // OrderForm renders its FormOverlay as a sibling <div> when
+            // the verify modal is open; with positional selectors, that
+            // extra sibling displaces :last-child and swaps the form
+            // order visually.
+            & > #orderFormBuy {
+              order: 1;
+              flex-basis: 50%; /* width/height - depending on flex-direction */
+            }
 
-              &:last-child { // sell form
-                order: 2;
-                flex-basis: 50%; /* width/height - depending on flex-direction */
-              }
+            & > #orderFormSell {
+              order: 2;
+              flex-basis: 50%; /* width/height - depending on flex-direction */
             }
           }
         }
@@ -617,32 +620,34 @@ div[data-handler=markets] {
     }
   }
 
-  #approveTokenForm {
-    width: 450px;
+}
+
+// `#verifyForm` is rendered via `FormOverlay`, which portals to
+// `document.body` — so it's outside the `div[data-handler=markets]`
+// scope above. CSS custom properties used here (`--market-buygreen-bg`,
+// `--sell-color`, etc.) are defined on `body` in `colors.scss`, so
+// they resolve globally.
+#verifyForm {
+  button {
+    &.buygreen-bg {
+      background-color: var(--market-buygreen-bg);
+    }
+
+    &.sellred-bg {
+      background-color: var(--market-sellred-bg);
+    }
   }
 
-  #verifyForm {
-    button {
-      &.buygreen-bg {
-        background-color: var(--market-buygreen-bg);
-      }
+  .loader {
+    height: 40px;
+  }
 
-      &.sellred-bg {
-        background-color: var(--market-sellred-bg);
-      }
-    }
+  #youSpend {
+    color: var(--sell-color);
+  }
 
-    .loader {
-      height: 40px;
-    }
-
-    #youSpend {
-      color: var(--sell-color);
-    }
-
-    #youGet {
-      color: var(--buy-color);
-    }
+  #youGet {
+    color: var(--buy-color);
   }
 }
 

@@ -447,7 +447,7 @@ export function OrderForm ({
               `.order-form-input`, so no JS class toggling is needed. */}
           <div
             ref={priceBoxRef}
-            className="d-flex flex-stretch-row align-items-center order-form-input select m-1"
+            className="d-flex align-items-center order-form-input select m-1"
             onClick={() => rateInputRef.current?.focus()}
           >
             <label className="form-label grey fs18 px-2">Price</label>
@@ -477,7 +477,7 @@ export function OrderForm ({
               as the price box (vanilla L392-394). */}
           <div
             ref={qtyBoxRef}
-            className="d-flex flex-stretch-row align-items-center order-form-input select m-1"
+            className="d-flex align-items-center order-form-input select m-1"
             onClick={() => qtyInputRef.current?.focus()}
           >
             <label className="form-label grey fs18 px-2">Quantity</label>
@@ -521,7 +521,7 @@ export function OrderForm ({
               All three cells gate on `previewTotal`: when no rate has been
               entered, the conversion is meaningless so we render an empty
               row (not the naked qty input echoed back). */}
-          <div className="d-flex flex-stretch-row m-1">
+          <div className="d-flex m-1">
             {isSell
               ? (
                 <>

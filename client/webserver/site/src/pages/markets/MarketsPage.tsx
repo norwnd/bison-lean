@@ -796,7 +796,7 @@ export default function MarketsPage () {
               ChartPanel, TradeForms, RightPanel). */}
           {ctxReady && (
             <MarketPageProvider value={{ selected, currentMkt, bui, qui }}>
-              <div id="mainContent" className="d-flex flex-grow-1 flex-stretch-row">
+              <div id="mainContent" className="d-flex flex-grow-1">
 
                 {/* LEFTMOST SECTION: Market list + Order book */}
                 <OrderBookPanel
@@ -854,7 +854,7 @@ export default function MarketsPage () {
             </MarketPageProvider>
           )}
           {!ctxReady && (
-            <div id="mainContent" className="d-flex flex-grow-1 flex-stretch-row" />
+            <div id="mainContent" className="d-flex flex-grow-1" />
           )}
         </div>
       </div>

@@ -123,7 +123,7 @@ export function OrdersSection ({
       {/* Completed Orders */}
       <div className="my-1 border-top">
         <div className="text-center demi fs20 p-1">{t('Completed Orders')}</div>
-        <div id="completedOrderHistoryDurBttnBox" className="d-flex flex-stretch-row justify-content-between px-2 pb-2">
+        <div id="completedOrderHistoryDurBttnBox" className="d-flex justify-content-between px-2 pb-2">
           {COMPLETED_PERIODS.map(p => (
             <button
               key={p.key}

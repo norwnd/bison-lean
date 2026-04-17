@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Props {
   show: boolean
@@ -30,7 +31,13 @@ export function FormOverlay ({ show, onClose, children }: Props) {
 
   if (!show) return null
 
-  return (
+  // Portal to body so the overlay is not a layout sibling of whatever
+  // parent mounted it. Keeps in-flow positional CSS selectors
+  // (:first-child / :last-child) from being displaced by the overlay
+  // when it's mounted. NOTE: any page-scoped CSS that targets modal
+  // content (e.g. `div[data-handler=markets] #verifyForm ...`) must
+  // be rewritten as global; see markets.scss for an example.
+  return createPortal(
     <div
       className="form-overlay d-flex align-items-center justify-content-center"
       style={{
@@ -47,6 +54,7 @@ export function FormOverlay ({ show, onClose, children }: Props) {
       <div ref={formRef}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
