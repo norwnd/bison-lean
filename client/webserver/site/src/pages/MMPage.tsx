@@ -4,10 +4,11 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
-import { postJSON, checkResponse } from '../services/api'
+import { availableBalances, removeBotConfig, stopBot as apiStopBot } from '../services/mmApi'
 import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit, shortSymbol, logoPath } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
+import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
 import { ROUTES } from '../router/routes'
 import type {
   MMBotStatus,
@@ -25,14 +26,6 @@ import type {
 const botTypeBasicMM = 'basicMM'
 const botTypeArbMM = 'arbMM'
 const botTypeBasicArb = 'basicArb'
-
-const CEXDisplayInfos: Record<string, { name: string; logo: string }> = {
-  Binance: { name: 'Binance', logo: '/img/binance.com.png' },
-  BinanceUS: { name: 'Binance U.S.', logo: '/img/binance.us.png' },
-  Bitget: { name: 'Bitget', logo: '/img/bitget.com.png' },
-  Coinbase: { name: 'Coinbase', logo: '/img/coinbase.com.png' },
-  MEXC: { name: 'MEXC', logo: '/img/mexc.com.png' },
-}
 
 function hostedMarketID (host: string, baseID: number, quoteID: number) {
   return `${host}-${baseID}-${quoteID}`
@@ -104,16 +97,11 @@ export default function MMPage () {
         const { host, baseID, quoteID, cexName, cexBaseID, cexQuoteID } = bot.config
         const id = hostedMarketID(host, baseID, quoteID)
         try {
-          const resp = await postJSON('/api/availablebalances', {
-            market: { host, baseID, quoteID },
-            cexBaseID,
-            cexQuoteID,
-            cexName,
-          })
-          if (resp.requestSuccessful) {
+          const resp = await availableBalances({ host, baseID, quoteID }, cexBaseID, cexQuoteID, cexName)
+          if (resp.ok) {
             newBalances[id] = {
-              dexBalances: resp.dexBalances ?? {},
-              cexBalances: resp.cexBalances ?? {},
+              dexBalances: resp.dexBalances,
+              cexBalances: resp.cexBalances,
             }
           } else if (resp.msg) {
             // MM-03: surface the failure rather than swallowing it
@@ -169,8 +157,8 @@ export default function MMPage () {
 
   const removeCfg = useCallback(async () => {
     if (!removingBot) { setShowRemoveConfirm(false); return }
-    const resp = await postJSON('/api/removebotconfig', removingBot)
-    if (!checkResponse(resp)) {
+    const resp = await removeBotConfig(removingBot.host, removingBot.baseID, removingBot.quoteID)
+    if (!resp.ok) {
       setRemoveErr(resp.msg || 'Failed to remove config')
       return
     }
@@ -233,8 +221,8 @@ export default function MMPage () {
   // from running → idle without waiting for the next WS note.
   const stopBot = useCallback(async (cfg: BotConfig) => {
     const market: MarketWithHost = { host: cfg.host, baseID: cfg.baseID, quoteID: cfg.quoteID }
-    const resp = await postJSON('/api/stopmarketmakingbot', { market })
-    if (!checkResponse(resp)) {
+    const resp = await apiStopBot(market)
+    if (!resp.ok) {
       console.warn('stopmarketmakingbot failed', resp.msg)
       return
     }

@@ -5,8 +5,9 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { shortSymbol, logoPath } from '../hooks/useFormatters'
-import { postJSON, checkResponse } from '../services/api'
-import { fetchLocal, storeLocal } from '../services/state'
+import { startBot as apiStartBot, stopBot as apiStopBot } from '../services/mmApi'
+import { fetchLocal, storeLocal, lastMMSpecsLK } from '../services/state'
+import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
 import { ROUTES } from '../router/routes'
 import type {
   BalanceNote,
@@ -14,13 +15,6 @@ import type {
   MarketWithHost,
   MMCEXStatus,
 } from '../stores/types'
-
-// MMS-05: localStorage key for persisting the user's last-selected
-// bot specs (host/baseID/quoteID/botType/cexName). Mirrors vanilla
-// `mmsettings.ts` `specLK = 'lastMMSpecs'` (L19) which restores the
-// form state across navigation/reloads when no URL params are
-// provided.
-const lastMMSpecsLK = 'lastMMSpecs'
 
 interface MMSpecs {
   host: string
@@ -55,14 +49,6 @@ const botTypeLabels: Record<string, string> = {
   [botTypeBasicMM]: 'Basic MM',
   [botTypeArbMM]: 'Arb MM',
   [botTypeBasicArb]: 'Simple Arb',
-}
-
-const CEXDisplayInfos: Record<string, { name: string; logo: string }> = {
-  Binance: { name: 'Binance', logo: '/img/binance.com.png' },
-  BinanceUS: { name: 'Binance U.S.', logo: '/img/binance.us.png' },
-  Bitget: { name: 'Bitget', logo: '/img/bitget.com.png' },
-  Coinbase: { name: 'Coinbase', logo: '/img/coinbase.com.png' },
-  MEXC: { name: 'MEXC', logo: '/img/mexc.com.png' },
 }
 
 interface AvailableMarket {
@@ -285,8 +271,8 @@ export default function MMSettingsPage () {
         baseID: selectedBaseID,
         quoteID: selectedQuoteID,
       }
-      const resp = await postJSON('/api/startmarketmakingbot', { config: market })
-      if (!checkResponse(resp)) {
+      const resp = await apiStartBot(market)
+      if (!resp.ok) {
         throw new Error(resp.msg || 'Failed to start bot')
       }
       setStatusMsg(t('Bot started successfully'))
@@ -309,8 +295,8 @@ export default function MMSettingsPage () {
         baseID: selectedBaseID,
         quoteID: selectedQuoteID,
       }
-      const resp = await postJSON('/api/stopmarketmakingbot', { market })
-      if (!checkResponse(resp)) {
+      const resp = await apiStopBot(market)
+      if (!resp.ok) {
         throw new Error(resp.msg || 'Failed to stop bot')
       }
       setStatusMsg(t('Bot stopped successfully'))
