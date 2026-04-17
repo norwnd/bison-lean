@@ -8,7 +8,7 @@
 // import statements across consumers (ErrorPopup, later tabs, etc.)
 // when the real component lands.
 
-import { createContext } from 'react'
+import React, { createContext, useContext } from 'react'
 
 export interface MMSettingsError {
   message: string
@@ -32,4 +32,24 @@ export interface AvailableMarket {
 // MMSettingsSetErrorContext lets any descendant surface a user-visible
 // error without threading callbacks through every intermediate component.
 // The provider (batch 9) holds the error state and renders `ErrorPopup`.
-export const MMSettingsSetErrorContext = createContext<((err: MMSettingsError | null) => void) | null>(null)
+export const MMSettingsSetErrorContext = createContext<React.Dispatch<MMSettingsError | null> | undefined>(undefined)
+
+// MMSettingsSetLoadingContext exposes a page-wide loading overlay
+// toggle for async operations (bridge fee lookups, etc.).
+export const MMSettingsSetLoadingContext = createContext<React.Dispatch<boolean> | undefined>(undefined)
+
+export const useMMSettingsSetError = () => {
+  const context = useContext(MMSettingsSetErrorContext)
+  if (context === undefined) {
+    throw new Error('useMMSettingsSetError must be used within a MMSettingsSetErrorProvider')
+  }
+  return context
+}
+
+export const useMMSettingsSetLoading = () => {
+  const context = useContext(MMSettingsSetLoadingContext)
+  if (context === undefined) {
+    throw new Error('useMMSettingsSetLoading must be used within a MMSettingsSetLoadingProvider')
+  }
+  return context
+}
