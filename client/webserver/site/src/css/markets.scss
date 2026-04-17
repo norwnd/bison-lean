@@ -499,6 +499,7 @@ div[data-handler=markets] {
           // basis values, any extra vertical margin would push the forms
           // past the bottom edge.
           margin: 0;
+          border: none; // drop the inherited global section border
 
           // Lock chart and trade-forms to their flex-basis so conditional
           // rows inside the forms (walletMsg, orderError) can never push
