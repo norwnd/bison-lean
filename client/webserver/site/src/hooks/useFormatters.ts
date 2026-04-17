@@ -49,8 +49,8 @@ function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number
 
 // Exported pure functions — no hooks, just formatting utilities.
 
-export function formatCoinValueAtom (vAtomic: number, unitInfo?: UnitInfo): string {
-  const [v, prec] = convertToConventional(vAtomic, unitInfo)
+export function formatCoinValueAtom (vAtom: number, unitInfo?: UnitInfo): string {
+  const [v, prec] = convertToConventional(vAtom, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
   return decimalFormatter(prec).format(v)
 }
@@ -107,9 +107,9 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
 }
 
-export function formatFiatConversion (vAtomic: number, rate: number, unitInfo?: UnitInfo): string {
+export function formatFiatConversion (vAtom: number, rate: number, unitInfo?: UnitInfo): string {
   if (!rate || rate === 0) return '—'
-  const [v] = convertToConventional(vAtomic, unitInfo)
+  const [v] = convertToConventional(vAtom, unitInfo)
   return formatFiatValue(v * rate)
 }
 
