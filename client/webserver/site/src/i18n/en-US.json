@@ -1116,6 +1116,8 @@
   "MM_REGISTER_HOST": "Register on {{ host }} to use this market for market making",
   "MM_PRICE_LEVELS_TOOLTIP": "How many distinct buy prices and sell prices the bot should target.",
   "MM_LOTS_PER_LEVEL": "Lots per level",
+  "MM_USD_PER_SIDE": "USD per side",
+  "MM_LOTS_USD_TOOLTIP": "Toggle between specifying the number of lots per price level and the total USD value per side of the book.",
   "MM_QUICK_PLACEMENTS": "Quick Placements",
   "MM_ADVANCED_PLACEMENTS": "Advanced Placements",
   "MM_SWITCH_TO_ADVANCED": "Switch to advanced",
