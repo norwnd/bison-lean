@@ -108,10 +108,10 @@ export function VerifyOrderForm ({
   const showSpendFiat = youSpendFiatRate > 0 && youSpendUnitInfo !== null
   const showGetFiat = youGetFiatRate > 0 && youGetUnitInfo !== null
   const spendFiatText = showSpendFiat
-    ? formatFiat(atomToConventional(youSpendAtom, youSpendUnitInfo ?? undefined)[0] * youSpendFiatRate)
+    ? formatFiat(atomToConventional(youSpendAtom, youSpendUnitInfo ?? undefined) *youSpendFiatRate)
     : ''
   const getFiatText = showGetFiat
-    ? formatFiat(atomToConventional(youGetAtom, youGetUnitInfo ?? undefined)[0] * youGetFiatRate)
+    ? formatFiat(atomToConventional(youGetAtom, youGetUnitInfo ?? undefined) *youGetFiatRate)
     : ''
 
   return (

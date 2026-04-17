@@ -94,7 +94,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       let feeText = `${formatCoinAtom(fee, ui)} ${ui.conventional.unit}`
       const rate = fiatRatesMap[pID]
       if (rate) {
-        feeText += ` (~$${formatFiat(atomToConventional(fee, ui)[0] * rate)})`
+        feeText += ` (~$${formatFiat(atomToConventional(fee, ui) * rate)})`
       }
       setFeeEstimate(feeText)
 

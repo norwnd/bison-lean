@@ -37,21 +37,17 @@ function fullPrecisionFormatterWithPreservingZeroes (prec: number, locales?: str
   return formatter(fullPrecisionFormatters, prec, prec, locales)
 }
 
-export function atomToConventional (v: number, unitInfo?: UnitInfo): [number, number] {
-  let prec = 8
-  if (unitInfo) {
-    const f = unitInfo.conventional.conversionFactor
-    v /= f
-    prec = Math.round(Math.log10(f))
-  }
-  return [v, prec]
+export function atomToConventional (v: number, unitInfo?: UnitInfo): number {
+  if (!unitInfo) return v
+  return v / unitInfo.conventional.conversionFactor
 }
 
 // Exported pure functions — no hooks, just formatting utilities.
 
 export function formatCoinAtom (vAtom: number, unitInfo?: UnitInfo): string {
-  const [v, prec] = atomToConventional(vAtom, unitInfo)
+  const v = atomToConventional(vAtom, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
+  const prec = unitInfo ? Math.round(Math.log10(unitInfo.conventional.conversionFactor)) : 8
   return decimalFormatter(prec).format(v)
 }
 
@@ -90,16 +86,16 @@ export function formatRateToRateStep (rateConv: number, bui: UnitInfo, qui: Unit
 }
 
 export function formatCoinAtomToLotSizeBaseCurrency (coinAtom: number, bui: UnitInfo, lotSizeAtom: number): string {
-  const [coin] = atomToConventional(coinAtom, bui)
-  const [lotSize] = atomToConventional(lotSizeAtom, bui)
+  const coin = atomToConventional(coinAtom, bui)
+  const lotSize = atomToConventional(lotSizeAtom, bui)
   const lotSizeDigits = -(Math.floor(Math.log10(lotSize)))
   if (lotSizeDigits <= 0) return intFormatter.format(coin)
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits).format(coin)
 }
 
 export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: UnitInfo, qui: UnitInfo, lotSizeAtom: number, rateStepAtom: number): string {
-  const [coin] = atomToConventional(coinAtom, qui)
-  const [lotSize] = atomToConventional(lotSizeAtom, bui)
+  const coin = atomToConventional(coinAtom, qui)
+  const lotSize = atomToConventional(lotSizeAtom, bui)
   const lotSizeDigits = -(Math.floor(Math.log10(lotSize)))
   const rateStepDigits = log10RateEncodingFactor - Math.floor(Math.log10(rateStepAtom)) -
     Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
