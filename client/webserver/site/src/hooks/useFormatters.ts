@@ -37,7 +37,7 @@ function fullPrecisionFormatterWithPreservingZeroes (prec: number, locales?: str
   return formatter(fullPrecisionFormatters, prec, prec, locales)
 }
 
-function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number] {
+function atomToConventional (v: number, unitInfo?: UnitInfo): [number, number] {
   let prec = 8
   if (unitInfo) {
     const f = unitInfo.conventional.conversionFactor
@@ -50,7 +50,7 @@ function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number
 // Exported pure functions — no hooks, just formatting utilities.
 
 export function formatCoinAtom (vAtom: number, unitInfo?: UnitInfo): string {
-  const [v, prec] = convertToConventional(vAtom, unitInfo)
+  const [v, prec] = atomToConventional(vAtom, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
   return decimalFormatter(prec).format(v)
 }
@@ -90,16 +90,16 @@ export function formatRateToRateStep (rateConv: number, bui: UnitInfo, qui: Unit
 }
 
 export function formatCoinAtomToLotSizeBaseCurrency (coinAtom: number, bui: UnitInfo, lotSizeAtom: number): string {
-  const [coin] = convertToConventional(coinAtom, bui)
-  const [lotSize] = convertToConventional(lotSizeAtom, bui)
+  const [coin] = atomToConventional(coinAtom, bui)
+  const [lotSize] = atomToConventional(lotSizeAtom, bui)
   const lotSizeDigits = -(Math.floor(Math.log10(lotSize)))
   if (lotSizeDigits <= 0) return intFormatter.format(coin)
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits).format(coin)
 }
 
 export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: UnitInfo, qui: UnitInfo, lotSizeAtom: number, rateStepAtom: number): string {
-  const [coin] = convertToConventional(coinAtom, qui)
-  const [lotSize] = convertToConventional(lotSizeAtom, bui)
+  const [coin] = atomToConventional(coinAtom, qui)
+  const [lotSize] = atomToConventional(lotSizeAtom, bui)
   const lotSizeDigits = -(Math.floor(Math.log10(lotSize)))
   const rateStepDigits = log10RateEncodingFactor - Math.floor(Math.log10(rateStepAtom)) -
     Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
@@ -109,7 +109,7 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
 
 export function formatFiatAtomConversion (vAtom: number, rate: number, unitInfo?: UnitInfo): string {
   if (!rate || rate === 0) return '—'
-  const [v] = convertToConventional(vAtom, unitInfo)
+  const [v] = atomToConventional(vAtom, unitInfo)
   return formatFiat(v * rate)
 }
 
