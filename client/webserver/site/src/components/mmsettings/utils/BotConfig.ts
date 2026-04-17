@@ -134,7 +134,7 @@ const DEFAULT_QUICK_PLACEMENTS: QuickPlacementsConfig = {
 }
 
 const DEFAULT_EXTERNAL_REBALANCE_FEE_RESERVE = 5
-const TRAIT_ACCOUNT_LOCKER = 1 << 14
+const traitAccountLocker = 1 << 14
 
 // Private helpers replacing the vanilla `app()` / `mmutil` functions
 // that aren't needed anywhere else in the lean codebase.
@@ -562,8 +562,8 @@ function getDEXMarketInfo (host: string, baseID: number, quoteID: number): Marke
     quoteAsset,
     lotSize,
     quoteLot,
-    baseIsAccountLocker: baseWallet ? (baseWallet.traits & TRAIT_ACCOUNT_LOCKER) > 0 : false,
-    quoteIsAccountLocker: quoteWallet ? (quoteWallet.traits & TRAIT_ACCOUNT_LOCKER) > 0 : false
+    baseIsAccountLocker: baseWallet ? (baseWallet.traits & traitAccountLocker) > 0 : false,
+    quoteIsAccountLocker: quoteWallet ? (quoteWallet.traits & traitAccountLocker) > 0 : false
   }
 }
 
