@@ -35,12 +35,11 @@ export interface OrderFormProps {
   quoteFiatRate: number
   bookRateAtom: number
   bookRateVersion: number
-  onOrderSubmitted: () => void
 }
 
 export function OrderForm ({
   side, selected, currentMkt, bui, qui, walletMap, baseSymbol, quoteSymbol,
-  baseFiatRate, quoteFiatRate, bookRateAtom, bookRateVersion, onOrderSubmitted
+  baseFiatRate, quoteFiatRate, bookRateAtom, bookRateVersion
 }: OrderFormProps) {
   const { t } = useTranslation()
   const isSell = side === 'sell'
@@ -434,8 +433,7 @@ export function OrderForm ({
     }
     setSliderValue(0)
     maxCacheRef.current = {}
-    onOrderSubmitted()
-  }, [currentMkt, bui, onOrderSubmitted])
+  }, [currentMkt, bui])
 
   return (
     <>

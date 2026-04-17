@@ -16,7 +16,6 @@ export interface TradeFormsProps {
   bookRateAtom: number
   bookRateVersion: number
   cantTradeReason: string | null
-  onOrderSubmitted: () => void
 }
 
 export function TradeForms ({
@@ -27,8 +26,7 @@ export function TradeForms ({
   quoteFiatRate,
   bookRateAtom,
   bookRateVersion,
-  cantTradeReason,
-  onOrderSubmitted
+  cantTradeReason
 }: TradeFormsProps) {
   const { selected, currentMkt, bui, qui } = useMarketPageContext()
 
@@ -58,7 +56,6 @@ export function TradeForms ({
         quoteFiatRate={quoteFiatRate}
         bookRateAtom={bookRateAtom}
         bookRateVersion={bookRateVersion}
-        onOrderSubmitted={onOrderSubmitted}
       />
       <OrderForm
         key={`sell-${selected.host}-${selected.baseID}-${selected.quoteID}`}
@@ -74,7 +71,6 @@ export function TradeForms ({
         quoteFiatRate={quoteFiatRate}
         bookRateAtom={bookRateAtom}
         bookRateVersion={bookRateVersion}
-        onOrderSubmitted={onOrderSubmitted}
       />
       {/* MP-61 cannot-trade overlay. Subsumes the standalone
           `create_account_to_trade` notice that previously lived

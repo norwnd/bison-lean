@@ -18,6 +18,7 @@ import type {
 } from '../../stores/types'
 import {
   OrderTypeLimit, OrderTypeMarket, StatusEpoch, StatusBooked, StatusExecuted,
+  StatusCanceled,
   ImmediateTiF, ConnectionStatus,
   ApprovalStatus
 } from '../../stores/types'
@@ -275,11 +276,40 @@ export default function MarketsPage () {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
       const order = data.payload as MiniOrder
       if (order.rate > 0 && bookRef.current) bookRef.current.add(order)
+      // MP-OO-WS: advance the corresponding user order to Booked when the
+      // book confirms it (Epoch -> Booked). Never regress status.
+      setActiveOrders(prev => {
+        const idx = prev.findIndex(o => o.id === order.id)
+        if (idx < 0) return prev
+        const existing = prev[idx]
+        if (existing.status >= StatusBooked) return prev
+        const next = prev.slice()
+        next[idx] = { ...existing, status: StatusBooked }
+        return next
+      })
     }
 
     const handleUnbookOrder = (data: BookUpdate) => {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
-      if (bookRef.current) bookRef.current.remove(data.payload.id)
+      const id = data.payload.id
+      if (bookRef.current) bookRef.current.remove(id)
+      // MP-OO-WS: when a user order leaves the book, finalize its status
+      // locally. `cancelling` means the cancel landed; otherwise the book
+      // exit means the order was fully matched. Drop it unless there are
+      // still active matches settling.
+      setActiveOrders(prev => {
+        const idx = prev.findIndex(o => o.id === id)
+        if (idx < 0) return prev
+        const existing = prev[idx]
+        const newStatus = existing.cancelling ? StatusCanceled : StatusExecuted
+        const merged: Order = { ...existing, status: newStatus }
+        if (!hasActiveMatches(merged)) {
+          return prev.filter(o => o.id !== id)
+        }
+        const next = prev.slice()
+        next[idx] = merged
+        return next
+      })
     }
 
     const handleUpdateRemaining = (data: BookUpdate) => {
@@ -385,9 +415,11 @@ export default function MarketsPage () {
   }, [loadCandles])
 
   // -------------------------------------------------------------------------
-  // Load active orders
+  // Snapshot active orders from the server. Used for initial market load and
+  // reconnect only -- after that, `activeOrders` is maintained by the WS
+  // handlers (book_order, unbook_order, order note, match note, epoch note).
   // -------------------------------------------------------------------------
-  const loadActiveOrders = useCallback(async () => {
+  const snapshotActiveOrders = useCallback(async () => {
     if (!selected) return
     const filter: OrderFilter = {
       hosts: [selected.host],
@@ -409,8 +441,8 @@ export default function MarketsPage () {
     // Clear previous market's orders so they don't briefly render against
     // the new market's book (e.g. mis-attributed "own-order" dots).
     setActiveOrders([])
-    loadActiveOrders()
-  }, [loadActiveOrders])
+    snapshotActiveOrders()
+  }, [snapshotActiveOrders])
 
   // -------------------------------------------------------------------------
   // Note handlers (order, match, epoch, balance, spots, bond, walletstate)
@@ -419,16 +451,69 @@ export default function MarketsPage () {
     order: (note: OrderNote) => {
       if (!selected) return
       const ord = note.order
+      // `TopicAsyncOrderSubmitted` fires from `/api/tradeasync` before the
+      // order has a DEX-assigned id (see core.go `newOrderNoteWithTempID`).
+      // We skip it -- the follow-up `TopicYoloPlaced` note carries the real
+      // id and is what we merge into `activeOrders`. Without this guard we
+      // would insert a duplicate "Submitting..." row that never reconciles
+      // with the real-id row.
+      if (!ord.id) return
       if (ord.host !== selected.host) return
       if (ord.baseID !== selected.baseID || ord.quoteID !== selected.quoteID) return
-      // MP-66: see original MarketsPage comments for full rationale.
-      loadActiveOrders()
+      // MP-OO-WS: merge the note into local state instead of refetching.
+      // Never regress status -- a stale note arriving after an optimistic
+      // book_order / epoch advance must not drag the row backward.
+      setActiveOrders(prev => {
+        const idx = prev.findIndex(o => o.id === ord.id)
+        if (idx < 0) {
+          const active = ord.status < StatusExecuted || hasActiveMatches(ord)
+          if (!active) return prev
+          return [ord, ...prev].slice(0, MAX_ACTIVE_ORDERS)
+        }
+        const existing = prev[idx]
+        const merged: Order = {
+          ...ord,
+          // Never regress status -- a stale note must not drag a row back
+          // from Booked to Epoch.
+          status: Math.max(existing.status, ord.status),
+          // `cancelling` is sticky-true: once we (or the server) have
+          // flagged a cancel in flight, a subsequent note arriving with
+          // `cancelling: false` (because the server hasn't yet committed
+          // the cancel) must not clear it. The flag is cleared only via
+          // the explicit rollback in `cancelOrder` or when the status
+          // advances past Booked.
+          cancelling: existing.cancelling || ord.cancelling
+        }
+        if (!(merged.status < StatusExecuted || hasActiveMatches(merged))) {
+          return prev.filter(o => o.id !== ord.id)
+        }
+        const next = prev.slice()
+        next[idx] = merged
+        return next
+      })
     },
     match: (note: MatchNote) => {
       if (!selected) return
       if (note.host !== selected.host || note.marketID !== currentMktId) return
-      // MP-65: see original MarketsPage comments for full rationale.
-      loadActiveOrders()
+      // MP-OO-WS: patch the specific match into the specific order's
+      // matches[] instead of refetching. Drop the order if it is no
+      // longer active after the patch.
+      setActiveOrders(prev => {
+        const idx = prev.findIndex(o => o.id === note.orderID)
+        if (idx < 0) return prev
+        const existing = prev[idx]
+        const matches = existing.matches ? existing.matches.slice() : []
+        const mi = matches.findIndex(m => m.matchID === note.match.matchID)
+        if (mi >= 0) matches[mi] = note.match
+        else matches.push(note.match)
+        const merged: Order = { ...existing, matches }
+        if (!(merged.status < StatusExecuted || hasActiveMatches(merged))) {
+          return prev.filter(o => o.id !== note.orderID)
+        }
+        const next = prev.slice()
+        next[idx] = merged
+        return next
+      })
     },
     epoch: (note: EpochNote) => {
       if (!selected) return
@@ -491,10 +576,10 @@ export default function MarketsPage () {
         note.connectionStatus === ConnectionStatus.Connected
       ) {
         fetchUser()
-        loadActiveOrders()
+        snapshotActiveOrders()
       }
     }
-  }), [selected, currentMktId, bumpBook, loadActiveOrders, fetchUser])
+  }), [selected, currentMktId, snapshotActiveOrders, fetchUser])
 
   useNotifications(noteHandlers)
 
@@ -514,12 +599,27 @@ export default function MarketsPage () {
     setBookRateVersion(v => v + 1)
   }, [])
 
-  // Cancel order
+  // Cancel order. Flip `cancelling: true` locally BEFORE the POST so
+  // `handleUnbookOrder` sees the flag even in the micro-race where the
+  // DEX dispatches `unbook_order` before the HTTP response returns.
+  // On POST failure, re-sync from server truth instead of blindly
+  // clearing `cancelling: false`. When the second cancel of the same
+  // order within an epoch is rejected with "only one cancel order can
+  // be submitted per order per epoch", the cancel-order from the first
+  // POST is STILL pending on the server -- the row must stay
+  // Canceling. Server's `Order.Cancelling` is set from the linked
+  // cancel-order (core/types.go), so the snapshot reflects the correct
+  // state for both "already cancelling" (stays true) and real failures
+  // (cleared to false).
   const cancelOrder = useCallback(async (orderID: string) => {
+    setActiveOrders(prev => prev.map(o =>
+      o.id === orderID ? { ...o, cancelling: true } : o
+    ))
     const res = await postJSON('/api/cancel', { orderID })
-    if (!checkResponse(res)) return
-    loadActiveOrders()
-  }, [loadActiveOrders])
+    if (!checkResponse(res)) {
+      snapshotActiveOrders()
+    }
+  }, [snapshotActiveOrders])
 
   // -------------------------------------------------------------------------
   // Candle chart reporters
@@ -835,7 +935,6 @@ export default function MarketsPage () {
                     bookRateAtom={bookRateAtom}
                     bookRateVersion={bookRateVersion}
                     cantTradeReason={cantTradeReason}
-                    onOrderSubmitted={() => loadActiveOrders()}
                   />
                 </section>
 
