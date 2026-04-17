@@ -41,37 +41,37 @@ div[data-handler=markets] {
     }
   }
 
+  // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
+  // OrderForms when `cantTradeReason` is non-null. Rendered as a sibling
+  // of the forms inside the `.d-flex.position-relative` TradeForms
+  // wrapper (see TradeForms.tsx), so this selector must sit at the
+  // markets-page scope — NOT nested under `#orderFormBuy, #orderFormSell`,
+  // since the overlay is not a descendant of either form. The
+  // semi-transparent backdrop lets the form be faintly visible underneath
+  // (Option 3 from the design doc) so the user sees their work; the high
+  // z-index blocks all interaction with the form behind until the
+  // underlying issue is fixed. The right-side panels separately render
+  // the actionable CTAs (register, post bonds, approve token, create
+  // wallet, etc.).
+  .cannot-trade-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: var(--overlay-bg);
+    z-index: 10;
+    cursor: not-allowed;
+  }
+
   #orderFormBuy,
   #orderFormSell {
-    // Make the section a flex column so the inner <form> can fill the
-    // full section height via `flex-grow: 1`. Combined with the
-    // `mt-auto` on the submit button, this keeps the button anchored
-    // to the bottom of the form — so when the preview row is empty
-    // (no rate entered), the button doesn't float mid-form.
-    display: flex;
-    flex-direction: column;
-
-    > form {
-      flex-grow: 1;
-    }
-
-    // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
-    // OrderForms when `cantTradeReason` is non-null. Renders as an
-    // absolute-positioned sibling inside the `.d-flex.position-relative`
-    // TradeForms wrapper. The semi-transparent backdrop
-    // lets the form be faintly visible underneath (Option 3 from the
-    // design doc) so the user sees their work; the high z-index +
-    // pointer-events: auto blocks all interaction with the form behind
-    // until the underlying issue is fixed. The right-side panels
-    // separately render the actionable CTAs (register, post bonds,
-    // approve token, create wallet, etc.).
-    .cannot-trade-overlay {
-      position: absolute;
-      inset: 0;
-      background-color: var(--overlay-bg);
-      z-index: 10;
-      cursor: not-allowed;
-    }
+    // Visual box styling -- these are <form> elements (not <section>),
+    // so the global `section { ... }` rule from main.scss doesn't apply.
+    background-color: var(--section-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    // 1px on all sides. Basis is set to `calc(50% - 2px)` in the
+    // TradeForms rule (below) to offset the 2px horizontal margin per
+    // form so the two forms still fit across 100% of the wrapper.
+    margin: 1px;
 
     .order-form-input{
       height: 44px; // helps to keep input size from growing larger than it could be
@@ -490,8 +490,16 @@ div[data-handler=markets] {
       &:nth-child(2) { // middle section
         order: 2;
         flex-basis: 58%; /* width/height - depending on flex-direction */
+        margin-top: 1px; // overrides the global `section { margin: 0.15rem 0 }`
 
         & > section {
+          // Zero the global `section { margin: 0.15rem 0 }` (main.scss)
+          // for these two. Flex-basis is 68% + 32% = 100% of the middle
+          // section's height, and since `flex-shrink: 0` locks those
+          // basis values, any extra vertical margin would push the forms
+          // past the bottom edge.
+          margin: 0;
+
           // Lock chart and trade-forms to their flex-basis so conditional
           // rows inside the forms (walletMsg, orderError) can never push
           // the chart's height around. `min-height: 0` disables the
@@ -505,23 +513,28 @@ div[data-handler=markets] {
 
           &:last-child { // trade forms
             order: 2;
-            flex: 0 0 32%;
+            // `- 2px` offsets the 2px vertical margin below so
+            // 68% + (32% - 2px + 2px margin) = 100%.
+            flex: 0 0 calc(32% - 2px);
             min-height: 0;
+            margin: 1px;
             overflow: hidden; // safety clip if inner form content exceeds 32%
 
             // Target forms by ID rather than :first-child / :last-child.
             // OrderForm renders its FormOverlay as a sibling <div> when
             // the verify modal is open; with positional selectors, that
             // extra sibling displaces :last-child and swaps the form
-            // order visually.
+            // order visually. `calc(50% - 2px)` offsets each form's 2px
+            // horizontal margin (see `#orderFormBuy, #orderFormSell`) so
+            // two forms + 4px total margin = 100% of TradeForms width.
             & > #orderFormBuy {
               order: 1;
-              flex-basis: 50%; /* width/height - depending on flex-direction */
+              flex-basis: calc(50% - 2px); /* width/height - depending on flex-direction */
             }
 
             & > #orderFormSell {
               order: 2;
-              flex-basis: 50%; /* width/height - depending on flex-direction */
+              flex-basis: calc(50% - 2px); /* width/height - depending on flex-direction */
             }
           }
         }

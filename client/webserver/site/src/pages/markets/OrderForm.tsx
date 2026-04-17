@@ -439,132 +439,130 @@ export function OrderForm ({
 
   return (
     <>
-      <section id={isSell ? 'orderFormSell' : 'orderFormBuy'} className="px-1">
-        <form className="d-flex flex-stretch-column py-1" autoComplete="off">
-          {/* Price input. MP-70: clicking anywhere in the wrapper focuses
-              the input (vanilla L366-368). The visual focus border is
-              handled by the SCSS `:focus-within` rule on
-              `.order-form-input`, so no JS class toggling is needed. */}
-          <div
-            ref={priceBoxRef}
-            className="d-flex align-items-center order-form-input select m-1"
-            onClick={() => rateInputRef.current?.focus()}
-          >
-            <label className="form-label grey fs18 px-2">Price</label>
-            <input
-              ref={rateInputRef}
-              type="text"
-              className="text-end demi fs18 p-0"
-              value={rateInput}
-              onChange={e => handleRateChange(e.target.value)}
-              onBlur={handleRateBlur}
-              onKeyDown={e => {
-                if (e.key === 'ArrowUp') { e.preventDefault(); handleRateStep(1) }
-                if (e.key === 'ArrowDown') { e.preventDefault(); handleRateStep(-1) }
-              }}
-            />
-            <span className="grey demi fs18 px-1">{quiConv?.unit ?? ''}</span>
-            <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
-              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleRateStep(1)}>
-                <div className="arrow-up"></div>
-              </div>
-              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleRateStep(-1)}>
-                <div className="arrow-down"></div>
-              </div>
+      <form id={isSell ? 'orderFormSell' : 'orderFormBuy'} className="d-flex flex-stretch-column py-1" autoComplete="off">
+        {/* Price input. MP-70: clicking anywhere in the wrapper focuses
+            the input (vanilla L366-368). The visual focus border is
+            handled by the SCSS `:focus-within` rule on
+            `.order-form-input`, so no JS class toggling is needed. */}
+        <div
+          ref={priceBoxRef}
+          className="d-flex align-items-center order-form-input select m-1"
+          onClick={() => rateInputRef.current?.focus()}
+        >
+          <label className="form-label grey fs18 px-2">Price</label>
+          <input
+            ref={rateInputRef}
+            type="text"
+            className="text-end demi fs18 p-0"
+            value={rateInput}
+            onChange={e => handleRateChange(e.target.value)}
+            onBlur={handleRateBlur}
+            onKeyDown={e => {
+              if (e.key === 'ArrowUp') { e.preventDefault(); handleRateStep(1) }
+              if (e.key === 'ArrowDown') { e.preventDefault(); handleRateStep(-1) }
+            }}
+          />
+          <span className="grey demi fs18 px-1">{quiConv?.unit ?? ''}</span>
+          <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
+            <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleRateStep(1)}>
+              <div className="arrow-up"></div>
+            </div>
+            <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleRateStep(-1)}>
+              <div className="arrow-down"></div>
             </div>
           </div>
-          {/* Quantity input. MP-70: same focus-on-wrapper-click behavior
-              as the price box (vanilla L392-394). */}
-          <div
-            ref={qtyBoxRef}
-            className="d-flex align-items-center order-form-input select m-1"
-            onClick={() => qtyInputRef.current?.focus()}
-          >
-            <label className="form-label grey fs18 px-2">Quantity</label>
-            <input
-              ref={qtyInputRef}
-              type="text"
-              className="text-end demi fs18 p-0"
-              value={qtyInput}
-              onChange={e => handleQtyChange(e.target.value)}
-              onBlur={handleQtyBlur}
-              onKeyDown={e => {
-                if (e.key === 'ArrowUp') { e.preventDefault(); handleQtyStep(1) }
-                if (e.key === 'ArrowDown') { e.preventDefault(); handleQtyStep(-1) }
-              }}
-            />
-            <span className="grey demi fs18 px-1">{buiConv?.unit ?? ''}</span>
-            <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
-              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleQtyStep(1)}>
-                <div className="arrow-up"></div>
-              </div>
-              <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleQtyStep(-1)}>
-                <div className="arrow-down"></div>
-              </div>
+        </div>
+        {/* Quantity input. MP-70: same focus-on-wrapper-click behavior
+            as the price box (vanilla L392-394). */}
+        <div
+          ref={qtyBoxRef}
+          className="d-flex align-items-center order-form-input select m-1"
+          onClick={() => qtyInputRef.current?.focus()}
+        >
+          <label className="form-label grey fs18 px-2">Quantity</label>
+          <input
+            ref={qtyInputRef}
+            type="text"
+            className="text-end demi fs18 p-0"
+            value={qtyInput}
+            onChange={e => handleQtyChange(e.target.value)}
+            onBlur={handleQtyBlur}
+            onKeyDown={e => {
+              if (e.key === 'ArrowUp') { e.preventDefault(); handleQtyStep(1) }
+              if (e.key === 'ArrowDown') { e.preventDefault(); handleQtyStep(-1) }
+            }}
+          />
+          <span className="grey demi fs18 px-1">{buiConv?.unit ?? ''}</span>
+          <div className="d-flex flex-stretch-column align-items-center justify-content-between arrows-up-down ps-0-5 pe-1 border-left">
+            <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 border-bottom pointer" onClick={() => handleQtyStep(1)}>
+              <div className="arrow-up"></div>
+            </div>
+            <div className="d-flex flex-grow-1 flex-stretch-column justify-content-center px-0-5 pointer" onClick={() => handleQtyStep(-1)}>
+              <div className="arrow-down"></div>
             </div>
           </div>
-          {/* Slider with 5 mark indicators (0/25/50/75/100%). */}
-          <div id={isSell ? 'qtySliderSell' : 'qtySliderBuy'} className="mt-2 mb-1 mx-2">
-            <input
-              type="range" min="0" max="1" step="0.01"
-              value={sliderValue}
-              onChange={e => handleSlider(parseFloat(e.target.value))}
-              style={{ backgroundSize: `${sliderValue * 100}% 100%` }}
-            />
-            <div className="slider-mark slider-mark-0 mark-enabled"></div>
-            <div className={`slider-mark slider-mark-25${sliderValue > 0.25 ? ' mark-enabled' : ''}`}></div>
-            <div className={`slider-mark slider-mark-50${sliderValue > 0.50 ? ' mark-enabled' : ''}`}></div>
-            <div className={`slider-mark slider-mark-75${sliderValue > 0.75 ? ' mark-enabled' : ''}`}></div>
-            <div className={`slider-mark slider-mark-100${sliderValue >= 1.0 ? ' mark-enabled' : ''}`}></div>
-          </div>
-          {/* Preview total — the conversion display ("qty ⇄ previewTotal").
-              All three cells gate on `previewTotal`: when no rate has been
-              entered, the conversion is meaningless so we render an empty
-              row (not the naked qty input echoed back). */}
-          <div className="d-flex m-1">
-            {isSell
-              ? (
-                <>
-                  <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
-                  </div>
-                  <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
-                  <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
-                  </div>
-                </>
-              )
-              : (
-                <>
-                  <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
-                  </div>
-                  <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
-                  <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
-                    {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
-                  </div>
-                </>
-              )}
-          </div>
-          {(() => {
-            const msg = walletMsg || submitMsg
-            const defaultLabel = `${isSell ? t('Sell') : t('Buy')} ${shortSymbol(baseSymbol)}`
-            const btn = (
-              <button
-                type="button"
-                className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-                disabled={!submitEnabled || !!walletMsg}
-                onClick={stepSubmit}
-              >
-                <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
-                  {msg || defaultLabel}
-                </span>
-              </button>
+        </div>
+        {/* Slider with 5 mark indicators (0/25/50/75/100%). */}
+        <div id={isSell ? 'qtySliderSell' : 'qtySliderBuy'} className="mt-2 mb-1 mx-2">
+          <input
+            type="range" min="0" max="1" step="0.01"
+            value={sliderValue}
+            onChange={e => handleSlider(parseFloat(e.target.value))}
+            style={{ backgroundSize: `${sliderValue * 100}% 100%` }}
+          />
+          <div className="slider-mark slider-mark-0 mark-enabled"></div>
+          <div className={`slider-mark slider-mark-25${sliderValue > 0.25 ? ' mark-enabled' : ''}`}></div>
+          <div className={`slider-mark slider-mark-50${sliderValue > 0.50 ? ' mark-enabled' : ''}`}></div>
+          <div className={`slider-mark slider-mark-75${sliderValue > 0.75 ? ' mark-enabled' : ''}`}></div>
+          <div className={`slider-mark slider-mark-100${sliderValue >= 1.0 ? ' mark-enabled' : ''}`}></div>
+        </div>
+        {/* Preview total — the conversion display ("qty ⇄ previewTotal").
+            All three cells gate on `previewTotal`: when no rate has been
+            entered, the conversion is meaningless so we render an empty
+            row (not the naked qty input echoed back). */}
+        <div className="d-flex m-1">
+          {isSell
+            ? (
+              <>
+                <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
+                  {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                </div>
+                <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
+                <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
+                  {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
+                </div>
+              </>
             )
-            return msg ? <Tooltip content={msg}>{btn}</Tooltip> : btn
-          })()}
-        </form>
-      </section>
+            : (
+              <>
+                <div className="d-flex align-items-center justify-content-end me-1 demi fs18" style={{ flexBasis: '47%' }}>
+                  {previewTotal && <>{previewTotal} {quiConv?.unit ?? ''}</>}
+                </div>
+                <span className="d-flex align-items-center justify-content-center mx-1 pt-0-5 fs22 grey" style={{ flexBasis: '6%' }}>{previewTotal ? '\u21C4' : ''}</span>
+                <div className="d-flex align-items-center justify-content-start ms-1 demi fs18" style={{ flexBasis: '47%' }}>
+                  {previewTotal && <>{qtyInput} {buiConv?.unit ?? ''}</>}
+                </div>
+              </>
+            )}
+        </div>
+        {(() => {
+          const msg = walletMsg || submitMsg
+          const defaultLabel = `${isSell ? t('Sell') : t('Buy')} ${shortSymbol(baseSymbol)}`
+          const btn = (
+            <button
+              type="button"
+              className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+              disabled={!submitEnabled || !!walletMsg}
+              onClick={stepSubmit}
+            >
+              <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
+                {msg || defaultLabel}
+              </span>
+            </button>
+          )
+          return msg ? <Tooltip content={msg}>{btn}</Tooltip> : btn
+        })()}
+      </form>
 
       {/* Order verification modal */}
       <FormOverlay show={showVerify} onClose={() => { setShowVerify(false); setOrderError('') }}>

@@ -814,7 +814,7 @@ export default function MarketsPage () {
                 />
 
                 {/* MIDDLE SECTION: Chart + Buy/Sell forms */}
-                <section className="d-flex flex-stretch-column">
+                <section className="d-flex flex-stretch-column px-1">
                   <ChartPanel
                     candleData={candleData}
                     candleDurs={candleDurs}
