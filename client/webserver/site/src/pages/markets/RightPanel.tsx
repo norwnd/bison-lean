@@ -4,7 +4,8 @@ import { FormOverlay } from '../../components/common/FormOverlay'
 import { TokenApprovalForm } from '../../components/common/TokenApprovalForm'
 import { useAuthStore } from '../../stores/useAuthStore'
 import {
-  formatBestWeCan, RateEncodingFactor, shortSymbol
+  formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
+  RateEncodingFactor, shortSymbol
 } from '../../hooks/useFormatters'
 import {
   hasActiveMatches, strongTier, tradingLimits
@@ -226,21 +227,28 @@ export function RightPanel ({
 
     const parcelsize = currentMkt.parcelsize
     const lotsize = currentMkt.lotsize
+    const ratestep = currentMkt.ratestep
     const buiConvFactor = bui.conventional.conversionFactor
     const quiConvFactor = qui.conventional.conversionFactor
 
-    let conversionRate = 0
+    // quoteAtomsPerBaseAtom expresses the market rate as "how many quote
+    // atoms per one base atom" — the unit that lets us compute a parcel's
+    // quote-atom total as `parcelsize * lotsize * quoteAtomsPerBaseAtom`.
+    // Atomic branch: encRate encodes this ratio scaled by RateEncodingFactor.
+    // External branch: externalPriceConv is conv_quote / conv_base, so we
+    // rescale by quiConvFactor / buiConvFactor.
+    let quoteAtomsPerBaseAtom = 0
     const atomicRate = midGap || spotRate
     if (atomicRate > 0) {
-      conversionRate = atomicRate * buiConvFactor / (RateEncodingFactor * quiConvFactor)
+      quoteAtomsPerBaseAtom = atomicRate / RateEncodingFactor
     } else if (externalPriceConv > 0) {
-      conversionRate = externalPriceConv
+      quoteAtomsPerBaseAtom = externalPriceConv * quiConvFactor / buiConvFactor
     }
 
     let parcelSizeQuoteStr: string | null = null
-    if (conversionRate > 0) {
-      const qty = lotsize * conversionRate
-      parcelSizeQuoteStr = formatBestWeCan(parcelsize * qty / quiConvFactor)
+    if (quoteAtomsPerBaseAtom > 0) {
+      const parcelQuoteAtoms = parcelsize * lotsize * quoteAtomsPerBaseAtom
+      parcelSizeQuoteStr = formatCoinAtomToLotSizeQuoteCurrency(parcelQuoteAtoms, bui, qui, lotsize, ratestep)
     }
 
     const tradingLimitStr = (parcelLimit * parcelsize).toFixed(2)
@@ -256,7 +264,7 @@ export function RightPanel ({
       usedParcels,
       parcelLimit,
       parcelSize: parcelsize,
-      parcelSizeBaseStr: formatBestWeCan(parcelsize * lotsize / buiConvFactor),
+      parcelSizeBaseStr: formatCoinAtomToLotSizeBaseCurrency(parcelsize * lotsize, bui, lotsize),
       parcelSizeQuoteStr,
       baseUnit: bui.conventional.unit,
       quoteUnit: qui.conventional.unit,

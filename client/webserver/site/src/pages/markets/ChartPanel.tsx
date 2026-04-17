@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { CandleChart, CandleReporters } from '../../components/charts/CandleChart'
 import { Wave } from '../../components/charts/Wave'
 import {
-  formatCoinValue, formatRateAtomToRateStep
+  formatCoinAtomToLotSizeBaseCurrency, formatRateAtomToRateStep
 } from '../../hooks/useFormatters'
 import type { CandlesPayload, Candle } from '../../stores/types'
 import { useMarketPageContext } from './MarketPageContext'
@@ -100,7 +100,7 @@ export function ChartPanel ({
                 E: {formatRateAtomToRateStep(mouseCandle.endRate, bui, qui, currentMkt.ratestep)},
                 L: {formatRateAtomToRateStep(mouseCandle.lowRate, bui, qui, currentMkt.ratestep)},
                 H: {formatRateAtomToRateStep(mouseCandle.highRate, bui, qui, currentMkt.ratestep)},
-                V: {formatCoinValue(mouseCandle.matchVolume, bui)}
+                V: {formatCoinAtomToLotSizeBaseCurrency(mouseCandle.matchVolume, bui, currentMkt.lotsize)}
               </span>
             </div>
           </div>

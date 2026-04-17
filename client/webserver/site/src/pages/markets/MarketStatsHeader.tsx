@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import {
   formatRateAtomToRateStep, formatRateToRateStep,
-  formatBestWeCan, shortSymbol, logoPath
+  formatBestWeCan, formatCoinAtomToLotSizeBaseCurrency,
+  shortSymbol, logoPath
 } from '../../hooks/useFormatters'
 import { useMarketPageContext } from './MarketPageContext'
 
@@ -99,15 +100,15 @@ export function MarketStatsHeader ({
         </div>
         {/* MP-23: 24h volume unit switches between USD (when a fiat rate
              for the base asset is available) and the base asset's
-             conventional unit. Matches vanilla `setCurrMarketPrice`:
-             vol24 is in base atoms, so divide by the base conversion
-             factor; multiply by baseFiatRate when displaying USD. */}
+             conventional unit. vol24 is in base atoms: USD branch divides
+             by the base conversion factor and multiplies by baseFiatRate;
+             base branch renders via the lot-size-aware formatter. */}
         <div className="d-flex justify-content-start align-items-center px-2 border-right">
           <div className="fs14">
             {spot && buiConv
               ? baseFiatRate > 0
                 ? formatBestWeCan(vol24 / buiConv.conversionFactor * baseFiatRate)
-                : formatBestWeCan(vol24 / buiConv.conversionFactor)
+                : formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)
               : '-'}
           </div>
           <div className="fs14 grey ms-1">
