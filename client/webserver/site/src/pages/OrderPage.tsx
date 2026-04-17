@@ -5,7 +5,7 @@ import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import {
-  formatCoinValue, formatRateToRateStep,
+  formatCoinValueAtom, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
   conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -347,20 +347,20 @@ export default function OrderPage () {
   const qUnit = quoteUnitInfo?.conventional.unit ?? ''
   // Market is used to format rates/qtys with lot-size and rate-step
   // precision. For historical orders whose exchange/market is no longer
-  // configured, the helpers fall back to `formatCoinValue`.
+  // configured, the helpers fall back to `formatCoinValueAtom`.
   const mkt = xc?.markets?.[order.market]
   const fmtBase = (atoms: number): string =>
     baseUnitInfo && mkt
       ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
-      : formatCoinValue(atoms, baseUnitInfo)
+      : formatCoinValueAtom(atoms, baseUnitInfo)
   const fmtQuote = (atoms: number): string =>
     baseUnitInfo && quoteUnitInfo && mkt
       ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
-      : formatCoinValue(atoms, quoteUnitInfo)
+      : formatCoinValueAtom(atoms, quoteUnitInfo)
   const fmtRate = (rateConv: number): string =>
     baseUnitInfo && quoteUnitInfo && mkt
       ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-      : formatCoinValue(rateConv)
+      : formatCoinValueAtom(rateConv)
 
   const canCancel = isCancellable(order)
   // OP-01: full vanilla parity for the Accelerate button. Previously

@@ -15,7 +15,7 @@ import { AppPassResetForm } from '../components/common/AppPassResetForm'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import type { Exchange } from '../stores/types'
 import { PrepaidBondID, DCRAssetID } from '../stores/types'
-import { formatCoinValue } from '../hooks/useFormatters'
+import { formatCoinValueAtom } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 
 type RegStep = 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
@@ -880,7 +880,7 @@ export default function SettingsPage () {
           {/* SP-07: render the success block with vanilla's structure
               (settings.tmpl L177-184): "Game code redeemed" header,
               "Transaction" label with anchor link to the DCR explorer,
-              "Value: X DCR" formatted via `formatCoinValue` against
+              "Value: X DCR" formatted via `formatCoinValueAtom` against
               DCR's unit info. Mirrors vanilla `settings.ts`
               `submitGameCode()` (L504-528) which uses
               `setCoinHref(dcrBipID, ...)` + `Doc.formatCoinAtom(win, ui)`.
@@ -911,7 +911,7 @@ export default function SettingsPage () {
                   <div className="fs14 text-break mb-2">{gameCodeSuccess.coinString}</div>
                     )}
                 <div className="fs14">
-                  {t('Value')}: <span>{formatCoinValue(gameCodeSuccess.win, dcrUI)}</span>{' '}
+                  {t('Value')}: <span>{formatCoinValueAtom(gameCodeSuccess.win, dcrUI)}</span>{' '}
                   <span className="fs12 text-secondary">DCR</span>
                 </div>
               </div>

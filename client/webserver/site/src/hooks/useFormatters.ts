@@ -49,7 +49,7 @@ function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number
 
 // Exported pure functions — no hooks, just formatting utilities.
 
-export function formatCoinValue (vAtomic: number, unitInfo?: UnitInfo): string {
+export function formatCoinValueAtom (vAtomic: number, unitInfo?: UnitInfo): string {
   const [v, prec] = convertToConventional(vAtomic, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
   return decimalFormatter(prec).format(v)

@@ -4,14 +4,14 @@
 // `client/webserver/site/src/js/bridging/components/BridgeForm.tsx`.
 // Replaces `app()` with `useAuthStore`, `intl.prep` with
 // `useTranslation`, vanilla `app().bindTooltips` with native `title`
-// attributes, and `Doc.formatCoinValue` with `formatCoinValue` from
+// attributes, and `Doc.formatCoinValueAtom` with `formatCoinValueAtom` from
 // `hooks/useFormatters`.
 
 import { useEffect, useCallback, useMemo, useRef } from 'react'
 import type React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValueAtom, logoPath } from '../../hooks/useFormatters'
 import { BridgeApprovalPending } from '../../stores/types'
 import {
   approvalStatusFromBridgeApproval,
@@ -138,7 +138,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
     const atomic = parsedAmount.atomic ?? 0
     if (atomic <= 0) return t('Amount must be greater than 0')
     if (atomic > availableAtomic) {
-      const maxStr = sourceAsset ? formatCoinValue(availableAtomic, sourceAsset.unitInfo) : ''
+      const maxStr = sourceAsset ? formatCoinValueAtom(availableAtomic, sourceAsset.unitInfo) : ''
       return t('Insufficient balance (max: {{max}})', { max: maxStr })
     }
     // When bridging a base asset, leave room for the initiation fee.
@@ -147,17 +147,17 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
       const initiationFee = feesAndLimits.fees[baseAssetID] || 0
       if (atomic + initiationFee > availableAtomic) {
         const maxBridgeable = calculateMaxBridgeableAmount(sourceAssetID, availableAtomic, feesAndLimits, assets)
-        const maxStr = formatCoinValue(maxBridgeable, sourceAsset.unitInfo)
+        const maxStr = formatCoinValueAtom(maxBridgeable, sourceAsset.unitInfo)
         return t('Must reserve funds for fees (max bridgeable: {{max}})', { max: maxStr })
       }
     }
     if (feesAndLimits?.hasLimits && sourceAsset) {
       if (atomic < feesAndLimits.minLimit) {
-        const minStr = formatCoinValue(feesAndLimits.minLimit, sourceAsset.unitInfo)
+        const minStr = formatCoinValueAtom(feesAndLimits.minLimit, sourceAsset.unitInfo)
         return t('Amount is below minimum ({{min}})', { min: minStr })
       }
       if (atomic > feesAndLimits.maxLimit) {
-        const maxStr = formatCoinValue(feesAndLimits.maxLimit, sourceAsset.unitInfo)
+        const maxStr = formatCoinValueAtom(feesAndLimits.maxLimit, sourceAsset.unitInfo)
         return t('Amount is above maximum ({{max}})', { max: maxStr })
       }
     }
@@ -322,7 +322,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
       if (!asset) return null
       return (
         <div key={assetID} className="fs14 text-muted">
-          {formatCoinValue(fee, asset.unitInfo)} {asset.unitInfo.conventional.unit}
+          {formatCoinValueAtom(fee, asset.unitInfo)} {asset.unitInfo.conventional.unit}
         </div>
       )
     })
@@ -384,7 +384,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
           >
             <span className="me-1">{t('Bridge Limits')}:</span>
             <span>
-              {formatCoinValue(feesAndLimits.minLimit, sourceAsset.unitInfo)} - {formatCoinValue(feesAndLimits.maxLimit, sourceAsset.unitInfo)}
+              {formatCoinValueAtom(feesAndLimits.minLimit, sourceAsset.unitInfo)} - {formatCoinValueAtom(feesAndLimits.maxLimit, sourceAsset.unitInfo)}
             </span>
             <span className="ico-info fs12 ms-1"></span>
           </div>
@@ -417,12 +417,12 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         <div className="fs15 text-muted mt-1" style={{ minHeight: '18px' }}>
           {sourceAsset?.wallet?.balance && (
             <>
-              {t('AVAILABLE_TITLE')}: {formatCoinValue(availableAtomic, sourceAsset.unitInfo)}
+              {t('AVAILABLE_TITLE')}: {formatCoinValueAtom(availableAtomic, sourceAsset.unitInfo)}
               {/* Show max bridgeable if different from available (base asset case) */}
               {!sourceAsset.token && feesAndLimits && (() => {
                 const maxBridgeable = calculateMaxBridgeableAmount(sourceAssetID, availableAtomic, feesAndLimits, assets)
                 if (maxBridgeable < availableAtomic) {
-                  const maxStr = formatCoinValue(maxBridgeable, sourceAsset.unitInfo)
+                  const maxStr = formatCoinValueAtom(maxBridgeable, sourceAsset.unitInfo)
                   return (
                     <span className="ms-2">
                       ({t('Max bridgeable')}: {maxStr})

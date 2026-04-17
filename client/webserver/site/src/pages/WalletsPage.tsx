@@ -12,7 +12,7 @@ import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
-  formatCoinValue, formatFiatConversion, formatBestWeCan, formatFiatValue,
+  formatCoinValueAtom, formatFiatConversion, formatBestWeCan, formatFiatValue,
   formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency, conventionalRate,
   shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -898,7 +898,7 @@ function WalletDetail ({
           </div>
           <div className="d-flex flex-column justify-content-end">
             <div className="d-flex align-items-end lh1">
-              <span className="fs28 me-1">{formatCoinValue(totalBal, ui)}</span>
+              <span className="fs28 me-1">{formatCoinValueAtom(totalBal, ui)}</span>
               <span className="fs20 grey">{ui.conventional.unit}</span>
             </div>
             {fiatRate > 0 && (
@@ -924,9 +924,9 @@ function WalletDetail ({
             </thead>
             <tbody>
               <tr>
-                <td>{formatCoinValue(bal.available, ui)}</td>
-                <td>{formatCoinValue(bal.locked, ui)}</td>
-                <td>{formatCoinValue(bal.immature, ui)}</td>
+                <td>{formatCoinValueAtom(bal.available, ui)}</td>
+                <td>{formatCoinValueAtom(bal.locked, ui)}</td>
+                <td>{formatCoinValueAtom(bal.immature, ui)}</td>
                 <td className="text-center">
                   {wallet.open
                     ? <span className="ico-unlocked fs14" title={t('Ready')}></span>
@@ -952,20 +952,20 @@ function WalletDetail ({
         {(bal.orderlocked > 0 || bal.bondlocked > 0 || bal.contractlocked > 0) && (
           <div className="d-flex flex-wrap gap-3 px-2 py-1 fs14 grey">
             {bal.orderlocked > 0 && (
-              <span>{t('Orders')}: {formatCoinValue(bal.orderlocked, ui)}</span>
+              <span>{t('Orders')}: {formatCoinValueAtom(bal.orderlocked, ui)}</span>
             )}
             {bal.bondlocked > 0 && (
-              <span>{t('Bonds')}: {formatCoinValue(bal.bondlocked, ui)}</span>
+              <span>{t('Bonds')}: {formatCoinValueAtom(bal.bondlocked, ui)}</span>
             )}
             {bal.contractlocked > 0 && (
-              <span>{t('Contracts')}: {formatCoinValue(bal.contractlocked, ui)}</span>
+              <span>{t('Contracts')}: {formatCoinValueAtom(bal.contractlocked, ui)}</span>
             )}
           </div>
         )}
 
         {bal.reservesDeficit > 0 && (
           <div className="px-2 py-1 fs14 text-warning">
-            {t('Reserves Deficit')}: {formatCoinValue(bal.reservesDeficit, ui)}
+            {t('Reserves Deficit')}: {formatCoinValueAtom(bal.reservesDeficit, ui)}
           </div>
         )}
 
@@ -976,7 +976,7 @@ function WalletDetail ({
               <img src={logoPath(parentAsset.symbol)} alt={parentAsset.symbol} className="micro-icon" />
               <span>
                 {parentAsset.unitInfo.conventional.unit}{' '}
-                {t('fee balance')}: {formatCoinValue(parentAsset.wallet.balance.available, parentAsset.unitInfo)}
+                {t('fee balance')}: {formatCoinValueAtom(parentAsset.wallet.balance.available, parentAsset.unitInfo)}
               </span>
             </div>
           </div>
@@ -987,7 +987,7 @@ function WalletDetail ({
           <div className="px-2 py-1 border-top">
             {Object.entries(bal.other).map(([label, cb]) => (
               <div key={label} className="fs14 grey pt-1">
-                {label}: {formatCoinValue(cb.amt, ui)}
+                {label}: {formatCoinValueAtom(cb.amt, ui)}
                 {cb.locked
                   ? ` (${t('locked')})`
                   : ''}
@@ -1053,7 +1053,7 @@ function WalletDetail ({
                 <span className="fs16 mb-1">$</span>
                 <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.send, fiatRate, ui) : '—'}</span>
               </span>
-              <div className="fs14 grey">{formatCoinValue(wallet.feeState.send, ui)}</div>
+              <div className="fs14 grey">{formatCoinValueAtom(wallet.feeState.send, ui)}</div>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
@@ -1062,7 +1062,7 @@ function WalletDetail ({
                 <span className="fs16 mb-1">$</span>
                 <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.swap, fiatRate, ui) : '—'}</span>
               </span>
-              <div className="fs14 grey">{formatCoinValue(wallet.feeState.swap, ui)}</div>
+              <div className="fs14 grey">{formatCoinValueAtom(wallet.feeState.swap, ui)}</div>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
@@ -1071,7 +1071,7 @@ function WalletDetail ({
                 <span className="fs16 mb-1">$</span>
                 <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.redeem, fiatRate, ui) : '—'}</span>
               </span>
-              <div className="fs14 grey">{formatCoinValue(wallet.feeState.redeem, ui)}</div>
+              <div className="fs14 grey">{formatCoinValueAtom(wallet.feeState.redeem, ui)}</div>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
@@ -1231,7 +1231,7 @@ function PendingTransactions ({ txs, ui, assetID, net }: {
                     <td className={`text-end ${cls}`}>
                       {noAmtTxTypes.includes(tx.type)
                         ? '-'
-                        : `${sign}${formatCoinValue(tx.amount, ui)}`}
+                        : `${sign}${formatCoinValueAtom(tx.amount, ui)}`}
                     </td>
                     <td>{tx.confirms
                       ? `${tx.confirms.current}/${tx.confirms.target}`
@@ -1597,7 +1597,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         </div>
         <div className="mb-2 fs14">
           <span className="text-secondary">{t('Amount')}:</span>{' '}
-          {formatCoinValue(valueAtoms, ui)}
+          {formatCoinValueAtom(valueAtoms, ui)}
           {rate > 0 && (
             <span className="text-secondary"> (${formatFiatConversion(valueAtoms, rate, ui)})</span>
           )}
@@ -1605,7 +1605,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         {txFee > 0 && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Estimated Fee')}:</span>{' '}
-            {formatCoinValue(txFee, feeUI)}
+            {formatCoinValueAtom(txFee, feeUI)}
             {feeRate > 0 && (
               <span className="text-secondary"> (${formatFiatConversion(txFee, feeRate, feeUI)})</span>
             )}
@@ -1616,7 +1616,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         )}
         <div className="mb-2 fs14">
           <span className="text-secondary">{t('Balance after send')}:</span>{' '}
-          {formatCoinValue(
+          {formatCoinValueAtom(
             Math.max(0, wallet.balance.available - valueAtoms - (token ? 0 : txFee)),
             ui
           )}
@@ -1702,7 +1702,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
             setAmtStr(String(avail))
           }}
         >
-          {t('Max')}: {formatCoinValue(wallet.balance.available, ui)}
+          {t('Max')}: {formatCoinValueAtom(wallet.balance.available, ui)}
         </span>
       </div>
 
@@ -1820,13 +1820,13 @@ function TxHistoryView ({ assetID, assets, net }: {
         {!noAmtTxTypes.includes(detailTx.type) && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Amount')}:</span>{' '}
-            {formatCoinValue(detailTx.amount, ui)}
+            {formatCoinValueAtom(detailTx.amount, ui)}
           </div>
         )}
         {detailTx.fees > 0 && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Fees')}:</span>{' '}
-            {formatCoinValue(detailTx.fees, ui)}
+            {formatCoinValueAtom(detailTx.fees, ui)}
           </div>
         )}
         {detailTx.recipient && (
@@ -1912,10 +1912,10 @@ function TxHistoryView ({ assetID, assets, net }: {
                   <td className={cls}>
                     {noAmtTxTypes.includes(tx.type)
                       ? '-'
-                      : `${sign}${formatCoinValue(tx.amount, ui)}`}
+                      : `${sign}${formatCoinValueAtom(tx.amount, ui)}`}
                   </td>
                   <td>{tx.fees > 0
-                    ? formatCoinValue(tx.fees, ui)
+                    ? formatCoinValueAtom(tx.fees, ui)
                     : '-'}</td>
                   <td>{tx.timestamp > 0
                     ? ageSince(tx.timestamp * 1000)
@@ -2046,7 +2046,7 @@ function RecentOrdersView ({ assetID, assets }: {
                         ? 'Revoked'
                         : 'Unknown'
               const qtyStr = baseUI
-                ? formatCoinValue(ord.qty, baseUI)
+                ? formatCoinValueAtom(ord.qty, baseUI)
                 : String(ord.qty)
               return (
                 <tr key={ord.id || ord.stamp}>
@@ -2967,7 +2967,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
   // if a rate is available, otherwise just the atomic amount.
   const feeText = useMemo(() => {
     if (feeEstimate === null || !parentAsset) return ''
-    const atomicStr = `${formatCoinValue(feeEstimate, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
+    const atomicStr = `${formatCoinValueAtom(feeEstimate, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
     if (parentRate > 0) {
       return `${atomicStr} (~$${formatFiatConversion(feeEstimate, parentRate, parentAsset.unitInfo)})`
     }
@@ -3272,7 +3272,7 @@ function StakingView ({ assetID, assets }: {
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Total rewards')}</div>
-              <div className="flex-center demi">{ui ? formatCoinValue(stats.totalRewards, ui) : stats.totalRewards} DCR</div>
+              <div className="flex-center demi">{ui ? formatCoinValueAtom(stats.totalRewards, ui) : stats.totalRewards} DCR</div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Votes cast')}</div>
@@ -3344,13 +3344,13 @@ function StakingView ({ assetID, assets }: {
         <div className="flex-grow-1 flex-center flex-column p-3 border-bottom">
           <span className="fs14 demi lh1 pb-1">{t('Ticket Price')}</span>
           <span className="d-flex align-items-end">
-            <span className="fs18">{ui ? formatCoinValue(stakeStatus.ticketPrice, ui) : stakeStatus.ticketPrice} DCR</span>
+            <span className="fs18">{ui ? formatCoinValueAtom(stakeStatus.ticketPrice, ui) : stakeStatus.ticketPrice} DCR</span>
           </span>
         </div>
         <div className="flex-grow-1 flex-center flex-column p-3">
           <span className="fs14 demi lh1 pb-1">{t('Vote Reward')}</span>
           <span className="d-flex align-items-end">
-            <span className="fs18">{ui ? formatCoinValue(stakeStatus.votingSubsidy, ui) : stakeStatus.votingSubsidy} DCR</span>
+            <span className="fs18">{ui ? formatCoinValueAtom(stakeStatus.votingSubsidy, ui) : stakeStatus.votingSubsidy} DCR</span>
           </span>
         </div>
       </div>
@@ -3531,7 +3531,7 @@ function TicketHistoryModal ({ assetID, stakeStatus, ui, onClose }: {
               return (
                 <tr key={tx.hash}>
                   <td>{ageSince(tx.stamp * 1000)}</td>
-                  <td className="text-end">{formatCoinValue(tx.ticketPrice, ui)}</td>
+                  <td className="text-end">{formatCoinValueAtom(tx.ticketPrice, ui)}</td>
                   <td className="text-end">{t(statusKey)}</td>
                   <td className="text-end">
                     <span className="mono">
@@ -3743,7 +3743,7 @@ function SetVotesModal ({
                 <div className="d-flex align-items-center justify-content-between">
                   {tspend.value > 0 && (
                     <div className="flex-center pe-2">
-                      {ui ? formatCoinValue(tspend.value, ui) : tspend.value} DCR
+                      {ui ? formatCoinValueAtom(tspend.value, ui) : tspend.value} DCR
                     </div>
                   )}
                   {url && (

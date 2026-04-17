@@ -5,7 +5,7 @@ import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { orderPath } from '../router/routes'
 import {
-  formatCoinValue, formatRateToRateStep,
+  formatCoinValueAtom, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
   conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -331,20 +331,20 @@ export default function OrdersPage () {
     const quoteUnitInfo = quoteAsset.unitInfo
     // Market is used to format rates/qtys with lot-size and rate-step
     // precision. For historical orders whose exchange/market is no longer
-    // configured, the helpers fall back to `formatCoinValue`.
+    // configured, the helpers fall back to `formatCoinValueAtom`.
     const mkt = xc?.markets?.[ord.market]
     const fmtBase = (atoms: number): string =>
       mkt
         ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
-        : formatCoinValue(atoms, baseUnitInfo)
+        : formatCoinValueAtom(atoms, baseUnitInfo)
     const fmtQuote = (atoms: number): string =>
       mkt
         ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
-        : formatCoinValue(atoms, quoteUnitInfo)
+        : formatCoinValueAtom(atoms, quoteUnitInfo)
     const fmtRate = (rateConv: number): string =>
       mkt
         ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-        : formatCoinValue(rateConv)
+        : formatCoinValueAtom(rateConv)
 
     let fromSymbol: string
     let toSymbol: string

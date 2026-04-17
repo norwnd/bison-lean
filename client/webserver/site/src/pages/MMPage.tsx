@@ -6,7 +6,7 @@ import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { availableBalances, removeBotConfig, stopBot as apiStopBot } from '../services/mmApi'
 import {
-  formatCoinValue, formatBestWeCan, formatFiatValue, formatProfit,
+  formatCoinValueAtom, formatBestWeCan, formatFiatValue, formatProfit,
   formatRateToRateStep, conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
@@ -542,7 +542,7 @@ function BotCard ({
   const balances = idleBalances[id]
 
   const formatBal = (atoms: number, ui: SupportedAsset['unitInfo']) =>
-    formatCoinValue(atoms, ui)
+    formatCoinValueAtom(atoms, ui)
 
   const sumBotBalance = (b: BotBalance | undefined): number =>
     (b?.available ?? 0) + (b?.locked ?? 0) + (b?.pending ?? 0) + (b?.reserved ?? 0)
@@ -639,13 +639,13 @@ function BotCard ({
                 <div className="text-secondary small fw-bold">{t('Running Balances')}</div>
                 <div className="row">
                   <div className="col-6">
-                    <div className="small">DEX {baseTicker}: {formatCoinValue(sumBotBalance(runStats.dexBalances[baseID]), bui)}</div>
-                    <div className="small">DEX {quoteTicker}: {formatCoinValue(sumBotBalance(runStats.dexBalances[quoteID]), qui)}</div>
+                    <div className="small">DEX {baseTicker}: {formatCoinValueAtom(sumBotBalance(runStats.dexBalances[baseID]), bui)}</div>
+                    <div className="small">DEX {quoteTicker}: {formatCoinValueAtom(sumBotBalance(runStats.dexBalances[quoteID]), qui)}</div>
                   </div>
                   {cexName && (
                     <div className="col-6">
-                      <div className="small">CEX {baseTicker}: {formatCoinValue(sumBotBalance(runStats.cexBalances[cfg.cexBaseID]), bui)}</div>
-                      <div className="small">CEX {quoteTicker}: {formatCoinValue(sumBotBalance(runStats.cexBalances[cfg.cexQuoteID]), qui)}</div>
+                      <div className="small">CEX {baseTicker}: {formatCoinValueAtom(sumBotBalance(runStats.cexBalances[cfg.cexBaseID]), bui)}</div>
+                      <div className="small">CEX {quoteTicker}: {formatCoinValueAtom(sumBotBalance(runStats.cexBalances[cfg.cexQuoteID]), qui)}</div>
                     </div>
                   )}
                 </div>

@@ -9,7 +9,7 @@
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValueAtom, logoPath } from '../../hooks/useFormatters'
 import { useBridgeState, useBridgeDispatch } from './BridgeState'
 import { loadMoreBridgeHistory, type BridgeTransaction } from './bridgeData'
 import { bridgeDisplayName, bridgeLogoPath, formatDateTime, networkInfo } from './bridgeUtils'
@@ -180,7 +180,7 @@ function BridgeHistory ({ networkAssetIDs, onSelectTx }: BridgeHistoryProps) {
                 {(() => {
                   const asset = assets[tx.sourceAssetID]
                   if (!asset) return String(tx.amount)
-                  return formatCoinValue(tx.amount, asset.unitInfo)
+                  return formatCoinValueAtom(tx.amount, asset.unitInfo)
                 })()}
               </td>
               <td className="py-2 text-end text-muted">{formatDateTime(tx.timestamp)}</td>

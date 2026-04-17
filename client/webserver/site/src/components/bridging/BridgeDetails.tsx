@@ -3,13 +3,13 @@
 // Direct port of vanilla
 // `client/webserver/site/src/js/bridging/components/BridgeDetails.tsx`.
 // Replaces `app()` with `useAuthStore`, `intl.prep` with
-// `useTranslation`, `Doc.formatCoinValue` with the local helper from
+// `useTranslation`, `Doc.formatCoinValueAtom` with the local helper from
 // hooks/useFormatters, and the inline copy-button widget with the
 // shared CopyButton component (`components/common/CopyButton.tsx`).
 
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValueAtom, logoPath } from '../../hooks/useFormatters'
 import { CopyButton } from '../common/CopyButton'
 import {
   bridgeDisplayName, bridgeLogoPath, formatDateTime, getFeeAsset,
@@ -104,7 +104,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
             <td className="grey">{t('Amount Sent')}</td>
             <td>
               {sourceAsset
-                ? `${formatCoinValue(tx.amount, sourceAsset.unitInfo)} ${sourceAsset.unitInfo.conventional.unit}`
+                ? `${formatCoinValueAtom(tx.amount, sourceAsset.unitInfo)} ${sourceAsset.unitInfo.conventional.unit}`
                 : String(tx.amount)}
             </td>
           </tr>
@@ -115,7 +115,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
               <td className="grey">{t('Amount Received')}</td>
               <td className="text-success">
                 {destAsset
-                  ? `${formatCoinValue(counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`
+                  ? `${formatCoinValueAtom(counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`
                   : String(counterpart.amountReceived)}
               </td>
             </tr>
@@ -126,7 +126,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
             <tr>
               <td className="grey">{t('Bridge Fee')}</td>
               <td>
-                {`${formatCoinValue(tx.amount - counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`}
+                {`${formatCoinValueAtom(tx.amount - counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`}
               </td>
             </tr>
           )}
@@ -139,7 +139,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
                 <td className="grey">{t('Source Fee')}</td>
                 <td>
                   {feeAsset
-                    ? `${formatCoinValue(tx.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
+                    ? `${formatCoinValueAtom(tx.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
                     : String(tx.fees)}
                 </td>
               </tr>
@@ -154,7 +154,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
                 <td className="grey">{t('Dest Fee')}</td>
                 <td>
                   {feeAsset
-                    ? `${formatCoinValue(counterpart.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
+                    ? `${formatCoinValueAtom(counterpart.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
                     : String(counterpart.fees)}
                 </td>
               </tr>

@@ -4,7 +4,7 @@
 // `mmsettings/components/RebalanceSettingsTab.tsx`.
 //
 // `prep(ID_MM_X)` → `t('MM_X')` (with `{{ asset }}` interpolation for
-// `MM_BRIDGE_CONFIGURATION`); `Doc.logoPath` / `Doc.formatCoinValue`
+// `MM_BRIDGE_CONFIGURATION`); `Doc.logoPath` / `Doc.formatCoinValueAtom`
 // live in `hooks/useFormatters`; `app().assets[id]` resolves via
 // `useAuthStore(s => s.assets)`; `app().unitInfo(id)` becomes
 // `assets[id].unitInfo`; `app().prettyPrintAssetID` is inlined as
@@ -22,7 +22,7 @@ import {
 import Tooltip from './Tooltip'
 import { PanelHeader, NumberInput } from './FormComponents'
 import { useMMSettingsSetError, useMMSettingsSetLoading } from './MMSettings'
-import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValueAtom, logoPath } from '../../hooks/useFormatters'
 import { useAuthStore } from '../../stores/useAuthStore'
 
 function prettyPrintAssetID (assetID: number, assets: Record<number, SupportedAsset>): string {
@@ -131,8 +131,8 @@ const BridgeFeesTable: React.FC<BridgeFeesTableProps> = ({ withdrawalFees, depos
                 {asset && <img className="mini-icon" src={logoPath(asset.symbol)} alt={asset.symbol} />}
                 <span>{asset?.name}</span>
               </td>
-              <td>{wFee != null ? formatCoinValue(wFee, asset?.unitInfo) : '\u2014'}</td>
-              <td>{dFee != null ? formatCoinValue(dFee, asset?.unitInfo) : '\u2014'}</td>
+              <td>{wFee != null ? formatCoinValueAtom(wFee, asset?.unitInfo) : '\u2014'}</td>
+              <td>{dFee != null ? formatCoinValueAtom(dFee, asset?.unitInfo) : '\u2014'}</td>
             </tr>
           )
         })}

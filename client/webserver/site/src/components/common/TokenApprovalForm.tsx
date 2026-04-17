@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatCoinValue, formatFiatConversion, shortSymbol, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValueAtom, formatFiatConversion, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { explorerURL } from '../CoinExplorers'
 import type { BalanceNote } from '../../stores/types'
 
@@ -44,7 +44,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       if (!parentAsset) return
       const avail = n.balance.available
       setBalance(avail)
-      setBalanceStr(formatCoinValue(avail, parentAsset.unitInfo))
+      setBalanceStr(formatCoinValueAtom(avail, parentAsset.unitInfo))
       if (avail >= txFee) {
         setShowAddress(false)
       }
@@ -91,7 +91,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       const fee = res.txFee as number
       setTxFee(fee)
 
-      let feeText = `${formatCoinValue(fee, ui)} ${ui.conventional.unit}`
+      let feeText = `${formatCoinValueAtom(fee, ui)} ${ui.conventional.unit}`
       const rate = fiatRatesMap[pID]
       if (rate) {
         feeText += ` (~$${formatFiatConversion(fee, rate, ui)})`
@@ -101,7 +101,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       if (wallet) {
         const avail = wallet.balance.available
         setBalance(avail)
-        setBalanceStr(formatCoinValue(avail, ui))
+        setBalanceStr(formatCoinValueAtom(avail, ui))
         setParentTicker(ui.conventional.unit)
         setParentName(parentAsset.name)
         if (avail < fee) {
