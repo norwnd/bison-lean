@@ -254,7 +254,7 @@ export default function MarketsPage () {
       if (!baseCfg || !quoteCfg) return
       if (mktBook.base !== baseCfg.id || mktBook.quote !== quoteCfg.id || data.host !== selected.host) return
 
-      const book = new OrderBook(mktBook, baseCfg.symbol, quoteCfg.symbol)
+      const book = new OrderBook(mktBook, baseCfg.symbol, quoteCfg.symbol, bumpBook)
       for (const order of (mktBook.book.epoch || [])) {
         if (order.rate > 0) book.add(order)
       }
@@ -275,27 +275,23 @@ export default function MarketsPage () {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
       const order = data.payload as MiniOrder
       if (order.rate > 0 && bookRef.current) bookRef.current.add(order)
-      bumpBook()
     }
 
     const handleUnbookOrder = (data: BookUpdate) => {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
       if (bookRef.current) bookRef.current.remove(data.payload.id)
-      bumpBook()
     }
 
     const handleUpdateRemaining = (data: BookUpdate) => {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
       const update: RemainderUpdate = data.payload
       if (bookRef.current) bookRef.current.updateRemaining(update.id, update.qty, update.qtyAtomic)
-      bumpBook()
     }
 
     const handleEpochOrder = (data: BookUpdate) => {
       if (data.host !== selected.host || data.marketID !== currentMktId) return
       const order = data.payload as MiniOrder
       if (order.msgRate > 0 && bookRef.current) bookRef.current.add(order)
-      bumpBook()
     }
 
     const handleCandles = (data: BookUpdate) => {
@@ -410,6 +406,9 @@ export default function MarketsPage () {
   }, [selected])
 
   useEffect(() => {
+    // Clear previous market's orders so they don't briefly render against
+    // the new market's book (e.g. mis-attributed "own-order" dots).
+    setActiveOrders([])
     loadActiveOrders()
   }, [loadActiveOrders])
 
@@ -427,7 +426,7 @@ export default function MarketsPage () {
     },
     match: (note: MatchNote) => {
       if (!selected) return
-      if (note.host !== selected.host) return
+      if (note.host !== selected.host || note.marketID !== currentMktId) return
       // MP-65: see original MarketsPage comments for full rationale.
       loadActiveOrders()
     },
@@ -435,7 +434,6 @@ export default function MarketsPage () {
       if (!selected) return
       if (note.host !== selected.host || note.marketID !== currentMktId) return
       if (bookRef.current) bookRef.current.setEpoch(note.epoch)
-      bumpBook()
       // MP-62: optimistically advance user order statuses when the new
       // epoch index passes their epoch.
       setActiveOrders(prev => {
@@ -837,7 +835,7 @@ export default function MarketsPage () {
                     bookRateAtom={bookRateAtom}
                     bookRateVersion={bookRateVersion}
                     cantTradeReason={cantTradeReason}
-                    onOrderSubmitted={() => setTimeout(() => loadActiveOrders(), 1000)}
+                    onOrderSubmitted={() => loadActiveOrders()}
                   />
                 </section>
 

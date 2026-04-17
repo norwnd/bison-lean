@@ -7,14 +7,16 @@ export default class OrderBook {
   quoteSymbol: string
   buys: MiniOrder[]
   sells: MiniOrder[]
+  onChange?: () => void
 
-  constructor (mktBook: MarketOrderBook, baseSymbol: string, quoteSymbol: string) {
+  constructor (mktBook: MarketOrderBook, baseSymbol: string, quoteSymbol: string, onChange?: () => void) {
     this.base = mktBook.base
     this.baseSymbol = baseSymbol
     this.quote = mktBook.quote
     this.quoteSymbol = quoteSymbol
     this.buys = mktBook.book.buys || []
     this.sells = mktBook.book.sells || []
+    this.onChange = onChange
   }
 
   add (ord: MiniOrder) {
@@ -22,13 +24,23 @@ export default class OrderBook {
       console.warn('zero quantity order encountered', ord)
       return
     }
+    // Dedup by id: the server can legitimately re-announce the same order
+    // (epoch→booked transition sends `book_order` while the epoch copy is
+    // still present; reconnect replays overlap in-flight updates). Without
+    // this, `binOrdersByRateAndEpoch` splits the two copies into separate
+    // bins and the "own-order" dot renders twice. Inlined (not via
+    // `this.remove`) to avoid firing `onChange` twice for a single add.
+    if (!this.removeFromSide(this.sells, ord.id)) {
+      this.removeFromSide(this.buys, ord.id)
+    }
     const side = ord.sell ? this.sells : this.buys
     side.splice(findIdx(side, ord.rate, !ord.sell), 0, ord)
+    this.onChange?.()
   }
 
   remove (id: string) {
-    if (this.removeFromSide(this.sells, id)) return
-    this.removeFromSide(this.buys, id)
+    const changed = this.removeFromSide(this.sells, id) || this.removeFromSide(this.buys, id)
+    if (changed) this.onChange?.()
   }
 
   removeFromSide (side: MiniOrder[], id: string) {
@@ -50,8 +62,9 @@ export default class OrderBook {
   }
 
   updateRemaining (token: string, qty: number, qtyAtomic: number) {
-    if (this.updateRemainingSide(this.sells, token, qty, qtyAtomic)) return
-    this.updateRemainingSide(this.buys, token, qty, qtyAtomic)
+    const changed = this.updateRemainingSide(this.sells, token, qty, qtyAtomic) ||
+      this.updateRemainingSide(this.buys, token, qty, qtyAtomic)
+    if (changed) this.onChange?.()
   }
 
   updateRemainingSide (side: MiniOrder[], token: string, qty: number, qtyAtomic: number) {
@@ -66,8 +79,10 @@ export default class OrderBook {
 
   setEpoch (epochIdx: number) {
     const approve = (ord: MiniOrder) => ord.epoch === undefined || ord.epoch === 0 || ord.epoch === epochIdx
+    const before = this.sells.length + this.buys.length
     this.sells = this.sells.filter(approve)
     this.buys = this.buys.filter(approve)
+    if (this.sells.length + this.buys.length !== before) this.onChange?.()
   }
 
   empty () {

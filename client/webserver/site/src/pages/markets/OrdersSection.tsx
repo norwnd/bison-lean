@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { postJSON, checkResponse } from '../../services/api'
-import type { Order, OrderFilter, RecentMatch } from '../../stores/types'
+import type { Order, OrderFilter, RecentMatch, OrderNote, MatchNote } from '../../stores/types'
 import { StatusExecuted, StatusCanceled, StatusRevoked } from '../../stores/types'
+import { useNotifications } from '../../hooks/useNotifications'
 import { useMarketPageContext } from './MarketPageContext'
 import { UserOrderRow } from './UserOrderRow'
 import { RecentMatchesTable } from './RecentMatchesTable'
@@ -66,6 +67,26 @@ export function OrdersSection ({
   useEffect(() => {
     loadCompletedOrders(completedPeriod)
   }, [completedPeriod, loadCompletedOrders])
+
+  // Refresh completed orders when an order/match note indicates state on
+  // this market has changed. Without this, a user watching the "1 day"
+  // (or longer) period would see a stale list until toggling the period
+  // pill or reloading the page.
+  const noteHandlers = useMemo(() => ({
+    order: (note: OrderNote) => {
+      if (completedPeriod === 'hide') return
+      const ord = note.order
+      if (ord.host !== selected.host) return
+      if (ord.baseID !== selected.baseID || ord.quoteID !== selected.quoteID) return
+      loadCompletedOrders(completedPeriod)
+    },
+    match: (note: MatchNote) => {
+      if (completedPeriod === 'hide') return
+      if (note.host !== selected.host || note.marketID !== currentMkt.name) return
+      loadCompletedOrders(completedPeriod)
+    }
+  }), [selected, currentMkt, completedPeriod, loadCompletedOrders])
+  useNotifications(noteHandlers)
 
   return (
     <>

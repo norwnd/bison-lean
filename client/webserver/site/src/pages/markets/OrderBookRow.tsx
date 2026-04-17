@@ -48,7 +48,7 @@ export function OrderBookRow ({ row, sell, bui, qui, ratestep, lotsize, darkMode
         <span className="fs14 ps-1" style={{ color: deltaColor }}>
           {row.deltaText}
         </span>
-        {row.hasOwnOrder && <div className="own-book-order fs8 ms-1" />}
+        {row.hasOwnOrder && <div className="own-book-order ms-1" />}
         {row.isEpoch && (
           sell
             ? <span className="ico-check-sell fs10 ps-1" />
