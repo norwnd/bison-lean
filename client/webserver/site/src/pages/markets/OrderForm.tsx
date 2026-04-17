@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { orderDisclaimerAckedLK, fetchLocal, storeLocal } from '../../services/state'
 import { FormOverlay } from '../../components/common/FormOverlay'
+import Tooltip from '../../components/mmsettings/Tooltip'
 import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  adjRateAtomBuy, adjRateAtomSell, RateEncodingFactor, shortSymbol
+  adjRateAtomBuy, adjRateAtomSell, shortSymbol
 } from '../../hooks/useFormatters'
 import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo, MaxOrderEstimate, WalletState } from '../../stores/types'
@@ -337,9 +338,16 @@ export function OrderForm ({
       setSubmitMsg('')
       return
     }
+    if (rateAtom < currentMkt.minimumRate) {
+      setSubmitEnabled(false)
+      setSubmitMsg(t('RATE_BELOW_MIN_MSG', {
+        minRate: formatRateAtomToRateStep(currentMkt.minimumRate, bui, qui, currentMkt.ratestep, isSell)
+      }))
+      return
+    }
     let cancelled = false
     const validate = async () => {
-      setSubmitMsg('Calculating...')
+      setSubmitMsg(t('CALCULATING'))
       setSubmitEnabled(false)
       maxReqIdRef.current++
       const reqId = maxReqIdRef.current
@@ -348,13 +356,13 @@ export function OrderForm ({
       if (isSell) {
         if (!maxEst || qtyAtom > maxEst.swap.value) {
           setSubmitEnabled(false)
-          setSubmitMsg('Insufficient balance')
+          setSubmitMsg(t('INSUFFICIENT_BALANCE'))
           return
         }
       } else {
         if (!maxEst || qtyAtom > maxEst.swap.lots * currentMkt.lotsize) {
           setSubmitEnabled(false)
-          setSubmitMsg('Insufficient balance')
+          setSubmitMsg(t('INSUFFICIENT_BALANCE'))
           return
         }
       }
@@ -363,7 +371,7 @@ export function OrderForm ({
     }
     validate()
     return () => { cancelled = true }
-  }, [selected, currentMkt, bui, qui, isSell, rateInput, qtyInput, requestMax])
+  }, [selected, currentMkt, bui, qui, isSell, rateInput, qtyInput, requestMax, t])
 
   // Preview total
   const previewTotal = useMemo(() => {
@@ -384,62 +392,29 @@ export function OrderForm ({
     const quoteW = walletMap[selected.quoteID]
     const bs = shortSymbol(baseSymbol)
     const qs = shortSymbol(quoteSymbol)
-    if (!baseW && !quoteW) return `Create ${bs} and ${qs} wallet to trade`
-    if (!baseW) return `Create a ${bs} wallet to trade`
-    if (!quoteW) return `Create a ${qs} wallet to trade`
-    if (baseW.disabled || !baseW.running) return `Enable / Activate a ${bs} wallet to trade`
-    if (quoteW.disabled || !quoteW.running) return `Enable / Activate a ${qs} wallet to trade`
+    if (!baseW && !quoteW) return t('NO_WALLET_MSG', { asset1: bs, asset2: qs })
+    if (!baseW) return t('CREATE_ASSET_WALLET_MSG', { asset: bs })
+    if (!quoteW) return t('CREATE_ASSET_WALLET_MSG', { asset: qs })
+    if (baseW.disabled || !baseW.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: bs })
+    if (quoteW.disabled || !quoteW.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: qs })
     return ''
-  }, [selected, walletMap, baseSymbol, quoteSymbol])
+  }, [selected, walletMap, baseSymbol, quoteSymbol, t])
 
-  // Submit order: step 1 - show confirmation.
-  // Validation messages/flashes match vanilla validateOrderBuy/validateOrderSell.
+  // Submit order: step 1 - show confirmation. All validation (zero rate/qty,
+  // min-rate, insufficient balance, wallet readiness) is handled by the
+  // validate effect + walletMsg, which gate `submitEnabled` + disabled on the
+  // button. By the time this runs, the button was clickable, so no further
+  // checks are needed here.
   const stepSubmit = useCallback(async () => {
     if (!selected || !currentMkt || !bui || !qui) return
     setOrderError('')
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
-    if (!rateAtom) {
-      setOrderError('zero rate not allowed')
-      flashInvalid(priceBoxRef.current)
-      return
-    }
-    if (rateAtom < currentMkt.minimumRate) {
-      const rateConv = RateEncodingFactor / bui.conventional.conversionFactor * qui.conventional.conversionFactor
-      const r = rateAtom / rateConv
-      const minRate = currentMkt.minimumRate / rateConv
-      setOrderError(`rate is lower than the market's minimum rate. ${r} < ${minRate}`)
-      flashInvalid(priceBoxRef.current)
-      return
-    }
-    if (!qtyAtom) {
-      setOrderError('zero quantity not allowed')
-      flashInvalid(qtyBoxRef.current)
-      return
-    }
-    // Insufficient-balance gate: the validate effect keeps maxCacheRef in sync
-    // and sets submitEnabled false with submitMsg='Insufficient balance'. If
-    // the user clicks anyway (e.g. due to a stale cache), re-check against the
-    // latest max estimate and flash the quantity box.
-    const maxEst = maxCacheRef.current[isSell ? 0 : rateAtom]
-    if (maxEst) {
-      const maxAtoms = isSell ? maxEst.swap.value : maxEst.swap.lots * currentMkt.lotsize
-      if (qtyAtom > maxAtoms) {
-        setOrderError('not enough funds')
-        flashInvalid(qtyBoxRef.current)
-        return
-      }
-    }
-    const baseWallet = walletMap[selected.baseID]
-    const quoteWallet = walletMap[selected.quoteID]
-    if (!baseWallet || !quoteWallet) { setOrderError('Missing wallet'); return }
     verifiedOrderRef.current = {
       host: selected.host, isLimit: true, sell: isSell,
       base: selected.baseID, quote: selected.quoteID,
-      qty: qtyAtom, rate: rateAtom, tifnow: false, options: {}
+      qty: qtyAtomRef.current, rate: rateAtomRef.current, tifnow: false, options: {}
     }
     setShowVerify(true)
-  }, [selected, currentMkt, bui, qui, walletMap, isSell, flashInvalid])
+  }, [selected, currentMkt, bui, qui, isSell])
 
   // Submit order: step 2 - send to server
   const submitVerifiedOrder = useCallback(async () => {
@@ -571,21 +546,28 @@ export function OrderForm ({
                 </>
               )}
           </div>
-          {(walletMsg || submitMsg) && <div className="m-1 fs14 text-center grey">{walletMsg || submitMsg}</div>}
-          <button
-            type="button"
-            className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-            disabled={!submitEnabled || !!walletMsg}
-            onClick={stepSubmit}
-          >
-            {isSell ? t('Sell') : t('Buy')} {shortSymbol(baseSymbol)}
-          </button>
-          {orderError && <div className="m-1 fs17 text-center text-danger text-break">{orderError}</div>}
+          {(() => {
+            const msg = walletMsg || submitMsg
+            const defaultLabel = `${isSell ? t('Sell') : t('Buy')} ${shortSymbol(baseSymbol)}`
+            const btn = (
+              <button
+                type="button"
+                className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
+                disabled={!submitEnabled || !!walletMsg}
+                onClick={stepSubmit}
+              >
+                <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
+                  {msg || defaultLabel}
+                </span>
+              </button>
+            )
+            return msg ? <Tooltip content={msg}>{btn}</Tooltip> : btn
+          })()}
         </form>
       </section>
 
       {/* Order verification modal */}
-      <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
+      <FormOverlay show={showVerify} onClose={() => { setShowVerify(false); setOrderError('') }}>
         <VerifyOrderForm
           isSell={isSell}
           order={verifiedOrderRef.current}
@@ -602,7 +584,7 @@ export function OrderForm ({
           disclaimerAcked={disclaimerAcked}
           onAckDisclaimer={ackDisclaimer}
           onUnackDisclaimer={unackDisclaimer}
-          onClose={() => setShowVerify(false)}
+          onClose={() => { setShowVerify(false); setOrderError('') }}
           onSubmit={submitVerifiedOrder}
           t={t}
         />

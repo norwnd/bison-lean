@@ -19,7 +19,7 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
   const triggerRef = React.useRef<HTMLElement>(null)
 
-  const handleMouseEnter = () => {
+  const handleShow = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
       const tooltipWidth = 300
@@ -38,14 +38,16 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
     }
   }
 
-  const handleMouseLeave = () => {
+  const handleHide = () => {
     setIsVisible(false)
   }
 
   const childWithHandlers = React.cloneElement(children as React.ReactElement<any>, {
     ref: triggerRef,
-    onMouseEnter: handleMouseEnter,
-    onMouseLeave: handleMouseLeave,
+    onMouseEnter: handleShow,
+    onMouseLeave: handleHide,
+    onFocus: handleShow,
+    onBlur: handleHide,
     style: { cursor: 'help', ...(children.props?.style || {}) }
   })
 
