@@ -342,7 +342,7 @@ export default function OrdersPage () {
         ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
         : formatCoinAtom(atoms, quoteUnitInfo)
     const fmtRate = (rateConv: number): string =>
-      mkt
+      baseUnitInfo && quoteUnitInfo && mkt
         ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
         : '-'
 
@@ -385,11 +385,7 @@ export default function OrdersPage () {
       if (!ord.matches?.length) {
         rateStr = t('MARKET_ORDER')
       } else {
-        const avg = averageRate(ord)
-        const convRate = conventionalRate(ord.baseID, ord.quoteID, avg, allAssets)
-        rateStr = ord.matches.length > 1
-          ? `~ ${fmtRate(convRate)}`
-          : fmtRate(convRate)
+        rateStr = fmtRate(conventionalRate(ord.baseID, ord.quoteID, averageRate(ord), allAssets))
       }
     } else {
       rateStr = fmtRate(conventionalRate(ord.baseID, ord.quoteID, ord.rate, allAssets))
