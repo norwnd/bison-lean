@@ -119,9 +119,9 @@ export function formatFiatConversion (vAtomic: number, rate: number, unitInfo?: 
 // implementations modulo the result-field name (`cls` vs.
 // `colorClass`). Call sites now unpack as `{ text, cls }`.
 export function formatProfit (profit: number): { text: string; cls: string } {
-  const s = profit.toFixed(2)
-  if (s === '-0.00' || s === '0.00') return { text: '$0.00', cls: '' }
-  if (profit < 0) return { text: `-$${s.substring(1)}`, cls: 'sellcolor' }
+  const s = formatFiatValue(Math.abs(profit))
+  if (s === '0.00') return { text: '$0.00', cls: '' }
+  if (profit < 0) return { text: `-$${s}`, cls: 'sellcolor' }
   return { text: `$${s}`, cls: 'buycolor' }
 }
 
