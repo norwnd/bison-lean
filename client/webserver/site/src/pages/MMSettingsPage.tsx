@@ -9,6 +9,7 @@ import { startBot as apiStartBot, stopBot as apiStopBot } from '../services/mmAp
 import { fetchLocal, storeLocal, lastMMSpecsLK } from '../services/state'
 import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
 import { botTypeBasicMM, botTypeArbMM, botTypeBasicArb } from '../components/mmsettings/botTypes'
+import type { AvailableMarket } from '../components/mmsettings/MMSettings'
 import { ROUTES } from '../router/routes'
 import type {
   BalanceNote,
@@ -46,17 +47,6 @@ const botTypeLabels: Record<string, string> = {
   [botTypeBasicMM]: 'Basic MM',
   [botTypeArbMM]: 'Arb MM',
   [botTypeBasicArb]: 'Simple Arb',
-}
-
-interface AvailableMarket {
-  host: string
-  baseID: number
-  quoteID: number
-  baseSymbol: string
-  quoteSymbol: string
-  // MMS-04: 24h volume in base-asset atoms (used for sort + future
-  // display). May be 0 when the market has no spot data yet.
-  vol24: number
 }
 
 /*
