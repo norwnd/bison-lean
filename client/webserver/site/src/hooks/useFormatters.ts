@@ -103,14 +103,14 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
 }
 
+export function formatFiatValue (value: number): string {
+  return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
+}
+
 export function formatFiatConversion (vAtomic: number, rate: number, unitInfo?: UnitInfo): string {
   if (!rate || rate === 0) return '—'
   const [v] = convertToConventional(vAtomic, unitInfo)
-  return fullPrecisionFormatter(2).format(v * rate)
-}
-
-export function formatFiatValue (value: number): string {
-  return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
+  return formatFiatValue(v * rate)
 }
 
 // T18#5: formatProfit returns a USD profit string (always 2 decimals)
