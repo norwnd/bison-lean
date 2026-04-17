@@ -9,6 +9,7 @@ import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit, shor
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
 import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
+import { botTypeBasicMM, botTypeArbMM, botTypeBasicArb } from '../components/mmsettings/botTypes'
 import { ROUTES } from '../router/routes'
 import type {
   MMBotStatus,
@@ -22,10 +23,6 @@ import type {
   BotBalance,
   MarketWithHost,
 } from '../stores/types'
-
-const botTypeBasicMM = 'basicMM'
-const botTypeArbMM = 'arbMM'
-const botTypeBasicArb = 'basicArb'
 
 function hostedMarketID (host: string, baseID: number, quoteID: number) {
   return `${host}-${baseID}-${quoteID}`

@@ -8,6 +8,7 @@ import { shortSymbol, logoPath } from '../hooks/useFormatters'
 import { startBot as apiStartBot, stopBot as apiStopBot } from '../services/mmApi'
 import { fetchLocal, storeLocal, lastMMSpecsLK } from '../services/state'
 import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
+import { botTypeBasicMM, botTypeArbMM, botTypeBasicArb } from '../components/mmsettings/botTypes'
 import { ROUTES } from '../router/routes'
 import type {
   BalanceNote,
@@ -40,10 +41,6 @@ function cexSupportsMarketDirect (cexStatus: MMCEXStatus, baseID: number, quoteI
   }
   return false
 }
-
-const botTypeBasicMM = 'basicMM'
-const botTypeArbMM = 'arbMM'
-const botTypeBasicArb = 'basicArb'
 
 const botTypeLabels: Record<string, string> = {
   [botTypeBasicMM]: 'Basic MM',
