@@ -18,7 +18,7 @@
 // line-for-line.
 
 import { useAuthStore } from '../../../stores/useAuthStore'
-import type { RunStats } from '../../../stores/types'
+import type { LotFees, RunStats } from '../../../stores/types'
 import type { BotConfigState } from './BotConfig'
 
 interface PerLotBreakdown {
@@ -34,10 +34,7 @@ interface PerLot {
   cex: Record<number, PerLotBreakdown>
 }
 
-interface Fees {
-  swap: number
-  redeem: number
-  refund: number
+interface Fees extends LotFees {
   funding: number
 }
 
@@ -136,6 +133,8 @@ function feeReserveAssetID (assetID: number): number {
 }
 
 // perLotRequirements calculates the funding requirements for a single buy and sell lot.
+// Precondition: requiredDexAssets(state) must include baseFeeAssetID and quoteFeeAssetID,
+// otherwise the per-fee-asset assignments below throw on missing perLot.dex entries.
 function perLotRequirements (state: BotConfigState): { perSellLot: PerLot, perBuyLot: PerLot } {
   const perSellLot: PerLot = { cex: {}, dex: {} }
   const perBuyLot: PerLot = { cex: {}, dex: {} }
@@ -325,6 +324,36 @@ function requiredFunds (state: BotConfigState): AllocationResult {
   return toAllocate
 }
 
+// applyRebalance shuffles surplus between the DEX and CEX sides of a single market pair
+// when auto-rebalance is enabled. Used by both toAllocate and toAllocateRunning with the
+// same semantics.
+function applyRebalance (
+  result: AllocationResult,
+  canRebalance: boolean,
+  dexAssetID: number,
+  cexAssetID: number,
+  dexSurplus: number,
+  cexSurplus: number
+): void {
+  if (!canRebalance) return
+
+  if (dexSurplus < 0 && cexSurplus > 0) {
+    const dexDeficit = -dexSurplus
+    const additionalCEX = Math.min(dexDeficit, cexSurplus)
+    result.cex[cexAssetID].calculation.rebalanceAdjustment = additionalCEX
+    result.cex[cexAssetID].amount += additionalCEX
+    if (cexSurplus >= dexDeficit) result.dex[dexAssetID].status = 'sufficient-with-rebalance'
+  }
+
+  if (cexSurplus < 0 && dexSurplus > 0) {
+    const cexDeficit = -cexSurplus
+    const additionalDEX = Math.min(cexDeficit, dexSurplus)
+    result.dex[dexAssetID].calculation.rebalanceAdjustment = additionalDEX
+    result.dex[dexAssetID].amount += additionalDEX
+    if (dexSurplus >= cexDeficit) result.cex[cexAssetID].status = 'sufficient-with-rebalance'
+  }
+}
+
 export function allocationResultAmounts (result: AllocationResult): { dex: Record<number, number>, cex: Record<number, number> } {
   const amounts: { dex: Record<number, number>, cex: Record<number, number> } = { dex: {}, cex: {} }
   for (const [assetID, allocationDetail] of Object.entries(result.dex)) {
@@ -382,27 +411,9 @@ export function toAllocate (state: BotConfigState): AllocationResult {
     }
   }
 
-  const rebalance = (dexAssetID: number, cexAssetID: number, dexSurplus: number, cexSurplus: number) => {
-    if (canRebalance && dexSurplus < 0 && cexSurplus > 0) {
-      const dexDeficit = -dexSurplus
-      const additionalCEX = Math.min(dexDeficit, cexSurplus)
-      result.cex[cexAssetID].calculation.rebalanceAdjustment = additionalCEX
-      result.cex[cexAssetID].amount += additionalCEX
-      if (cexSurplus >= dexDeficit) result.dex[dexAssetID].status = 'sufficient-with-rebalance'
-    }
-
-    if (canRebalance && cexSurplus < 0 && dexSurplus > 0) {
-      const cexDeficit = -cexSurplus
-      const additionalDEX = Math.min(cexDeficit, dexSurplus)
-      result.dex[dexAssetID].calculation.rebalanceAdjustment = additionalDEX
-      result.dex[dexAssetID].amount += additionalDEX
-      if (dexSurplus >= cexDeficit) result.cex[cexAssetID].status = 'sufficient-with-rebalance'
-    }
-  }
-
   if (state.botConfig.cexName) {
-    rebalance(state.dexMarket.baseID, cexBaseID, dexBaseSurplus, cexBaseSurplus)
-    rebalance(state.dexMarket.quoteID, cexQuoteID, dexQuoteSurplus, cexQuoteSurplus)
+    applyRebalance(result, canRebalance, state.dexMarket.baseID, cexBaseID, dexBaseSurplus, cexBaseSurplus)
+    applyRebalance(result, canRebalance, state.dexMarket.quoteID, cexQuoteID, dexQuoteSurplus, cexQuoteSurplus)
   }
 
   return result
@@ -417,26 +428,11 @@ export function requiredDexAssets (botConfigState: BotConfigState): number[] {
     if (!assetIDs.includes(assetID)) assetIDs.push(assetID)
   }
 
-  const assets = useAuthStore.getState().assets
-  const baseAsset = assets[baseID]
-  const baseAssetFeeID = baseAsset.token ? baseAsset.token.parentID : baseID
-  addAssetID(baseAssetFeeID)
+  addAssetID(feeReserveAssetID(baseID))
+  addAssetID(feeReserveAssetID(quoteID))
 
-  const quoteAsset = assets[quoteID]
-  const quoteAssetFeeID = quoteAsset.token ? quoteAsset.token.parentID : quoteID
-  addAssetID(quoteAssetFeeID)
-
-  if (baseID !== cexBaseID && cexRebalance) {
-    const cexBaseAsset = assets[cexBaseID]
-    const cexBaseAssetFeeID = cexBaseAsset.token ? cexBaseAsset.token.parentID : cexBaseID
-    addAssetID(cexBaseAssetFeeID)
-  }
-
-  if (quoteID !== cexQuoteID && cexRebalance) {
-    const cexQuoteAsset = assets[cexQuoteID]
-    const cexQuoteAssetFeeID = cexQuoteAsset.token ? cexQuoteAsset.token.parentID : cexQuoteID
-    addAssetID(cexQuoteAssetFeeID)
-  }
+  if (baseID !== cexBaseID && cexRebalance) addAssetID(feeReserveAssetID(cexBaseID))
+  if (quoteID !== cexQuoteID && cexRebalance) addAssetID(feeReserveAssetID(cexQuoteID))
 
   return assetIDs
 }
@@ -511,27 +507,9 @@ export function toAllocateRunning (botConfigState: BotConfigState, runStats: Run
 
   const canRebalance = !!botConfigState.botConfig.autoRebalance && !botConfigState.botConfig.autoRebalance.internalOnly
 
-  const rebalance = (dexAssetID: number, cexAssetID: number, dexSurplus: number, cexSurplus: number) => {
-    if (canRebalance && dexSurplus < 0 && cexSurplus > 0) {
-      const dexDeficit = -dexSurplus
-      const additionalCEX = Math.min(dexDeficit, cexSurplus)
-      result.cex[cexAssetID].calculation.rebalanceAdjustment = additionalCEX
-      result.cex[cexAssetID].amount += additionalCEX
-      if (cexSurplus >= dexDeficit) result.dex[dexAssetID].status = 'sufficient-with-rebalance'
-    }
-
-    if (canRebalance && cexSurplus < 0 && dexSurplus > 0) {
-      const cexDeficit = -cexSurplus
-      const additionalDEX = Math.min(cexDeficit, dexSurplus)
-      result.dex[dexAssetID].calculation.rebalanceAdjustment = additionalDEX
-      result.dex[dexAssetID].amount += additionalDEX
-      if (dexSurplus >= cexDeficit) result.cex[cexAssetID].status = 'sufficient-with-rebalance'
-    }
-  }
-
   if (botConfigState.botConfig.cexName) {
-    rebalance(botConfigState.dexMarket.baseID, botConfigState.botConfig.cexBaseID, dexBaseSurplus, cexBaseSurplus)
-    rebalance(botConfigState.dexMarket.quoteID, botConfigState.botConfig.cexQuoteID, dexQuoteSurplus, cexQuoteSurplus)
+    applyRebalance(result, canRebalance, botConfigState.dexMarket.baseID, botConfigState.botConfig.cexBaseID, dexBaseSurplus, cexBaseSurplus)
+    applyRebalance(result, canRebalance, botConfigState.dexMarket.quoteID, botConfigState.botConfig.cexQuoteID, dexQuoteSurplus, cexQuoteSurplus)
   }
 
   return result

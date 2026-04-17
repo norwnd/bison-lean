@@ -134,27 +134,31 @@ function emptyMarketReport (): MarketReport {
   }
 }
 
-const EMPTY_STATE: BotConfigState = {
-  botConfig: emptyBotConfig(),
-  inventoryDiffs: { dex: {}, cex: {} },
-  dexMarket: emptyMarketInfo(),
-  availableDEXBalances: {},
-  availableCEXBalances: null,
-  baseBridgeFeesAndLimits: null,
-  quoteBridgeFeesAndLimits: null,
-  quickPlacements: null,
-  runStats: null,
-  marketReport: emptyMarketReport(),
-  baseMultiFundingOpts: null,
-  quoteMultiFundingOpts: null,
-  cexStatus: null,
-  fiatRatesMap: {},
-  buyFundingFees: 0,
-  sellFundingFees: 0,
-  baseExternalFee: 0,
-  quoteExternalFee: 0
+function emptyBotConfigState (): BotConfigState {
+  return {
+    botConfig: emptyBotConfig(),
+    inventoryDiffs: { dex: {}, cex: {} },
+    dexMarket: emptyMarketInfo(),
+    availableDEXBalances: {},
+    availableCEXBalances: null,
+    baseBridgeFeesAndLimits: null,
+    quoteBridgeFeesAndLimits: null,
+    quickPlacements: null,
+    runStats: null,
+    marketReport: emptyMarketReport(),
+    baseMultiFundingOpts: null,
+    quoteMultiFundingOpts: null,
+    cexStatus: null,
+    fiatRatesMap: {},
+    buyFundingFees: 0,
+    sellFundingFees: 0,
+    baseExternalFee: 0,
+    quoteExternalFee: 0
+  }
 }
 
+// Returns a fresh snapshot each call so stray consumer mutations can't leak between callers.
+// Replaced by the real reducer + context in batch 4.
 export const useBotConfigState = (): BotConfigState => {
-  return EMPTY_STATE
+  return emptyBotConfigState()
 }
