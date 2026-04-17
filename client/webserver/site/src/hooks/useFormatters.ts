@@ -49,13 +49,13 @@ function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number
 
 // Exported pure functions — no hooks, just formatting utilities.
 
-export function formatCoinValueAtom (vAtom: number, unitInfo?: UnitInfo): string {
+export function formatCoinAtom (vAtom: number, unitInfo?: UnitInfo): string {
   const [v, prec] = convertToConventional(vAtom, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
   return decimalFormatter(prec).format(v)
 }
 
-export function formatFiatValue (value: number): string {
+export function formatFiat (value: number): string {
   return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
 }
 
@@ -65,18 +65,18 @@ export function formatBestWeCan (n: number, maxDecimals?: number): string {
   return fullPrecisionFormatter(maxDecimals).format(n)
 }
 
-export function adjRateAtomsBuy (rateAtom: number, rateStepAtom: number): number {
+export function adjRateAtomBuy (rateAtom: number, rateStepAtom: number): number {
   return rateAtom - (rateAtom % rateStepAtom)
 }
 
-export function adjRateAtomsSell (rateAtom: number, rateStepAtom: number): number {
+export function adjRateAtomSell (rateAtom: number, rateStepAtom: number): number {
   const adjusted = rateAtom - (rateAtom % rateStepAtom)
   if (rateAtom === adjusted) return rateAtom
   return adjusted + rateStepAtom
 }
 
 export function formatRateAtomToRateStep (rateAtom: number, bui: UnitInfo, qui: UnitInfo, rateStepAtom: number, sell?: boolean): string {
-  const rateAtomAdj = sell ? adjRateAtomsSell(rateAtom, rateStepAtom) : adjRateAtomsBuy(rateAtom, rateStepAtom)
+  const rateAtomAdj = sell ? adjRateAtomSell(rateAtom, rateStepAtom) : adjRateAtomBuy(rateAtom, rateStepAtom)
   const r = bui.conventional.conversionFactor / qui.conventional.conversionFactor
   const rateConv = rateAtomAdj * (r / RateEncodingFactor)
   return formatRateToRateStep(rateConv, bui, qui, rateStepAtom)
@@ -107,10 +107,10 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
 }
 
-export function formatFiatConversion (vAtom: number, rate: number, unitInfo?: UnitInfo): string {
+export function formatFiatAtomConversion (vAtom: number, rate: number, unitInfo?: UnitInfo): string {
   if (!rate || rate === 0) return '—'
   const [v] = convertToConventional(vAtom, unitInfo)
-  return formatFiatValue(v * rate)
+  return formatFiat(v * rate)
 }
 
 // T18#5: formatProfit returns a USD profit string (always 2 decimals)
@@ -119,7 +119,7 @@ export function formatFiatConversion (vAtom: number, rate: number, unitInfo?: Un
 // implementations modulo the result-field name (`cls` vs.
 // `colorClass`). Call sites now unpack as `{ text, cls }`.
 export function formatProfit (profit: number): { text: string; cls: string } {
-  const s = formatFiatValue(Math.abs(profit))
+  const s = formatFiat(Math.abs(profit))
   if (s === '0.00') return { text: '$0.00', cls: '' }
   if (profit < 0) return { text: `-$${s}`, cls: 'sellcolor' }
   return { text: `$${s}`, cls: 'buycolor' }

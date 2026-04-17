@@ -5,7 +5,7 @@ import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import {
-  formatCoinValueAtom, formatRateToRateStep,
+  formatCoinAtom, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
   conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -352,15 +352,15 @@ export default function OrderPage () {
   const fmtBase = (atoms: number): string =>
     baseUnitInfo && mkt
       ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
-      : formatCoinValueAtom(atoms, baseUnitInfo)
+      : formatCoinAtom(atoms, baseUnitInfo)
   const fmtQuote = (atoms: number): string =>
     baseUnitInfo && quoteUnitInfo && mkt
       ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
-      : formatCoinValueAtom(atoms, quoteUnitInfo)
+      : formatCoinAtom(atoms, quoteUnitInfo)
   const fmtRate = (rateConv: number): string =>
     baseUnitInfo && quoteUnitInfo && mkt
       ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-      : formatCoinValueAtom(rateConv)
+      : formatCoinAtom(rateConv)
 
   const canCancel = isCancellable(order)
   // OP-01: full vanilla parity for the Accelerate button. Previously

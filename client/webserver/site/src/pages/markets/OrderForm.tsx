@@ -7,7 +7,7 @@ import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  adjRateAtomsBuy, adjRateAtomsSell, RateEncodingFactor, shortSymbol
+  adjRateAtomBuy, adjRateAtomSell, RateEncodingFactor, shortSymbol
 } from '../../hooks/useFormatters'
 import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo, MaxOrderEstimate, WalletState } from '../../stores/types'
@@ -140,8 +140,8 @@ export function OrderForm ({
   useEffect(() => {
     if (bookRateVersion === 0 || !bookRateAtom || !bui || !qui || !currentMkt) return
     const adjusted = isSell
-      ? adjRateAtomsSell(bookRateAtom, currentMkt.ratestep)
-      : adjRateAtomsBuy(bookRateAtom, currentMkt.ratestep)
+      ? adjRateAtomSell(bookRateAtom, currentMkt.ratestep)
+      : adjRateAtomBuy(bookRateAtom, currentMkt.ratestep)
     rateAtomRef.current = adjusted
     setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, currentMkt.ratestep, isSell))
     if (!isSell) maxCacheRef.current = {}
@@ -212,8 +212,8 @@ export function OrderForm ({
       return
     }
     const adjusted = isSell
-      ? adjRateAtomsSell(rateAtom, currentMkt.ratestep)
-      : adjRateAtomsBuy(rateAtom, currentMkt.ratestep)
+      ? adjRateAtomSell(rateAtom, currentMkt.ratestep)
+      : adjRateAtomBuy(rateAtom, currentMkt.ratestep)
     rateAtomRef.current = adjusted
     if (!isSell) maxCacheRef.current = {}
   }, [bui, qui, currentMkt, isSell])
@@ -250,8 +250,8 @@ export function OrderForm ({
     current += step * direction
     if (current < step) current = step
     const adjusted = isSell
-      ? adjRateAtomsSell(current, step)
-      : adjRateAtomsBuy(current, step)
+      ? adjRateAtomSell(current, step)
+      : adjRateAtomBuy(current, step)
     rateAtomRef.current = adjusted
     setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, step, isSell))
     if (!isSell) maxCacheRef.current = {}

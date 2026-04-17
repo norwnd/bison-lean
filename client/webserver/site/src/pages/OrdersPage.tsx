@@ -5,7 +5,7 @@ import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { orderPath } from '../router/routes'
 import {
-  formatCoinValueAtom, formatRateToRateStep,
+  formatCoinAtom, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
   conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -336,15 +336,15 @@ export default function OrdersPage () {
     const fmtBase = (atoms: number): string =>
       mkt
         ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
-        : formatCoinValueAtom(atoms, baseUnitInfo)
+        : formatCoinAtom(atoms, baseUnitInfo)
     const fmtQuote = (atoms: number): string =>
       mkt
         ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
-        : formatCoinValueAtom(atoms, quoteUnitInfo)
+        : formatCoinAtom(atoms, quoteUnitInfo)
     const fmtRate = (rateConv: number): string =>
       mkt
         ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-        : formatCoinValueAtom(rateConv)
+        : formatCoinAtom(rateConv)
 
     let fromSymbol: string
     let toSymbol: string

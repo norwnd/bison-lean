@@ -20,7 +20,7 @@ import Tooltip from './Tooltip'
 import { requiredDexAssets, type AllocationDetail } from './utils/AllocationUtil'
 import { PanelHeader, NumberInput } from './FormComponents'
 import { CEXDisplayInfos } from './cexDisplayInfo'
-import { logoPath, formatCoinValueAtom } from '../../hooks/useFormatters'
+import { logoPath, formatCoinAtom } from '../../hooks/useFormatters'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useUIStore } from '../../stores/useUIStore'
 
@@ -96,7 +96,7 @@ const CalculationBreakdownRow: React.FC<CalculationBreakdownRowProps> = ({
     if (isPercentage) {
       return `${(value * 100).toFixed(2)}%`
     }
-    return value ? formatCoinValueAtom(value, asset.unitInfo) : '0'
+    return value ? formatCoinAtom(value, asset.unitInfo) : '0'
   }
 
   const textSizeClass = level === 1 ? 'fs14' : 'fs11'
@@ -148,7 +148,7 @@ const AllocationBreakdown: React.FC<AllocationBreakdownProps> = ({
 
   const calc = allocationDetail.calculation
   const asset = assets[assetID]
-  const fmt = (value: number) => formatCoinValueAtom(value, asset.unitInfo)
+  const fmt = (value: number) => formatCoinAtom(value, asset.unitInfo)
 
   const sumFees = (fees: { swap: number; redeem: number; refund: number; funding: number }) =>
     fees.swap + fees.redeem + fees.refund + fees.funding
@@ -400,7 +400,7 @@ const BalanceItem: React.FC<BalanceItemProps> = ({
   const assets = useAuthStore(s => s.assets)
   const asset = assets[assetID]
 
-  const formattedAmount = amount ? formatCoinValueAtom(amount, asset.unitInfo) : '0'
+  const formattedAmount = amount ? formatCoinAtom(amount, asset.unitInfo) : '0'
 
   const getStatusClass = (status?: string) => {
     switch (status) {

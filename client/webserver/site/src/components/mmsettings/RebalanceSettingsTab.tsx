@@ -22,7 +22,7 @@ import {
 import Tooltip from './Tooltip'
 import { PanelHeader, NumberInput } from './FormComponents'
 import { useMMSettingsSetError, useMMSettingsSetLoading } from './MMSettings'
-import { formatCoinValueAtom, logoPath } from '../../hooks/useFormatters'
+import { formatCoinAtom, logoPath } from '../../hooks/useFormatters'
 import { useAuthStore } from '../../stores/useAuthStore'
 
 function prettyPrintAssetID (assetID: number, assets: Record<number, SupportedAsset>): string {
@@ -131,8 +131,8 @@ const BridgeFeesTable: React.FC<BridgeFeesTableProps> = ({ withdrawalFees, depos
                 {asset && <img className="mini-icon" src={logoPath(asset.symbol)} alt={asset.symbol} />}
                 <span>{asset?.name}</span>
               </td>
-              <td>{wFee != null ? formatCoinValueAtom(wFee, asset?.unitInfo) : '\u2014'}</td>
-              <td>{dFee != null ? formatCoinValueAtom(dFee, asset?.unitInfo) : '\u2014'}</td>
+              <td>{wFee != null ? formatCoinAtom(wFee, asset?.unitInfo) : '\u2014'}</td>
+              <td>{dFee != null ? formatCoinAtom(dFee, asset?.unitInfo) : '\u2014'}</td>
             </tr>
           )
         })}

@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
 import {
-  formatCoinValueAtom, formatBestWeCan, formatFiatValue,
+  formatCoinAtom, formatBestWeCan, formatFiat,
   formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
   conventionalRate, logoPath
@@ -399,14 +399,14 @@ export default function MMLogsPage () {
                       </td>
                       <td>{diff.fmt}</td>
                       <td>{diff.fmtUSD}</td>
-                      <td>${formatFiatValue(fiatRates[assetID] ?? 0)}</td>
+                      <td>${formatFiat(fiatRates[assetID] ?? 0)}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
             <div className="fw-bold">
-              {t('Total P/L')}: ${formatFiatValue(profitLoss.profit)}
+              {t('Total P/L')}: ${formatFiat(profitLoss.profit)}
             </div>
           </div>
         </div>
@@ -494,7 +494,7 @@ export default function MMLogsPage () {
                 const sum = sumBalanceEffects(a.id, event.balanceEffects)
                 const factor = a.unitInfo.conventional.conversionFactor
                 usd += sum / factor * (fiatRates[a.id] ?? 0)
-                return { assetID: a.id, text: formatCoinValueAtom(sum, a.unitInfo) }
+                return { assetID: a.id, text: formatCoinAtom(sum, a.unitInfo) }
               })
               const eid = eventID(event)
               return (
@@ -619,7 +619,7 @@ function BridgeFees ({ assetID, bridgeTx, assets, t }: BridgeFeesProps) {
             {/* Only the first row labels the section, matching vanilla
                 `Doc.setVis(i === 0, tmpl.label)`. */}
             <td className="text-secondary">{i === 0 ? t('Bridge Fees') : ''}</td>
-            <td>{formatCoinValueAtom(fees[id], ui)} {unit}</td>
+            <td>{formatCoinAtom(fees[id], ui)} {unit}</td>
           </tr>
         )
       })}
@@ -677,7 +677,7 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t
     : formatBestWeCan(rate)
   const qtyStr = bui && lotsize
     ? formatCoinAtomToLotSizeBaseCurrency(e.qty, bui, lotsize)
-    : (bui ? formatCoinValueAtom(e.qty, bui) : String(e.qty))
+    : (bui ? formatCoinAtom(e.qty, bui) : String(e.qty))
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -726,8 +726,8 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t
                 return (
                   <tr key={i}>
                     <td><IDCell id={tx.id} href={href} maxLen={16} /></td>
-                    <td>{ui ? formatCoinValueAtom(tx.amount, ui) : tx.amount} {unit}</td>
-                    <td>{ui ? formatCoinValueAtom(tx.fees, ui) : tx.fees} {unit}</td>
+                    <td>{ui ? formatCoinAtom(tx.amount, ui) : tx.amount} {unit}</td>
+                    <td>{ui ? formatCoinAtom(tx.fees, ui) : tx.fees} {unit}</td>
                   </tr>
                 )
               })}
@@ -791,16 +791,16 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, lo
   const qtyStr = isMarketBuy
     ? (bui && qui && lotsize && ratestep
         ? formatCoinAtomToLotSizeQuoteCurrency(e.qty, bui, qui, lotsize, ratestep)
-        : (qui ? formatCoinValueAtom(e.qty, qui) : String(e.qty)))
+        : (qui ? formatCoinAtom(e.qty, qui) : String(e.qty)))
     : (bui && lotsize
         ? formatCoinAtomToLotSizeBaseCurrency(e.qty, bui, lotsize)
-        : (bui ? formatCoinValueAtom(e.qty, bui) : String(e.qty)))
+        : (bui ? formatCoinAtom(e.qty, bui) : String(e.qty)))
   const baseFilledStr = bui && lotsize
     ? formatCoinAtomToLotSizeBaseCurrency(e.baseFilled, bui, lotsize)
-    : (bui ? formatCoinValueAtom(e.baseFilled, bui) : String(e.baseFilled))
+    : (bui ? formatCoinAtom(e.baseFilled, bui) : String(e.baseFilled))
   const quoteFilledStr = bui && qui && lotsize && ratestep
     ? formatCoinAtomToLotSizeQuoteCurrency(e.quoteFilled, bui, qui, lotsize, ratestep)
-    : (qui ? formatCoinValueAtom(e.quoteFilled, qui) : String(e.quoteFilled))
+    : (qui ? formatCoinAtom(e.quoteFilled, qui) : String(e.quoteFilled))
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -899,7 +899,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
               </tr>
               <tr>
                 <td className="text-secondary">{t('Fees')}</td>
-                <td>{feeUI ? formatCoinValueAtom(e.transaction.fees, feeUI) : e.transaction.fees} {feeUnit}</td>
+                <td>{feeUI ? formatCoinAtom(e.transaction.fees, feeUI) : e.transaction.fees} {feeUnit}</td>
               </tr>
             </>
           )}
@@ -924,7 +924,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
           {amount > 0 && (
             <tr>
               <td className="text-secondary">{t('Amount')}</td>
-              <td>{ui ? formatCoinValueAtom(amount, ui) : amount} {unit}</td>
+              <td>{ui ? formatCoinAtom(amount, ui) : amount} {unit}</td>
             </tr>
           )}
           <tr>
@@ -934,7 +934,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
           {!pending && (
             <tr>
               <td className="text-secondary">{t('CEX Credit')}</td>
-              <td>{ui ? formatCoinValueAtom(e.cexCredit, ui) : e.cexCredit} {unit}</td>
+              <td>{ui ? formatCoinAtom(e.cexCredit, ui) : e.cexCredit} {unit}</td>
             </tr>
           )}
         </tbody>
@@ -989,11 +989,11 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
               </tr>
               <tr>
                 <td className="text-secondary">{t('Fees')}</td>
-                <td>{feeUI ? formatCoinValueAtom(e.transaction.fees, feeUI) : e.transaction.fees} {feeUnit}</td>
+                <td>{feeUI ? formatCoinAtom(e.transaction.fees, feeUI) : e.transaction.fees} {feeUnit}</td>
               </tr>
               <tr>
                 <td className="text-secondary">{t('Received')}</td>
-                <td>{ui ? formatCoinValueAtom(e.transaction.amount, ui) : e.transaction.amount} {unit}</td>
+                <td>{ui ? formatCoinAtom(e.transaction.amount, ui) : e.transaction.amount} {unit}</td>
               </tr>
             </>
           )}
@@ -1014,7 +1014,7 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
           )}
           <tr>
             <td className="text-secondary">{t('CEX Debit')}</td>
-            <td>{ui ? formatCoinValueAtom(e.cexDebit, ui) : e.cexDebit} {unit}</td>
+            <td>{ui ? formatCoinAtom(e.cexDebit, ui) : e.cexDebit} {unit}</td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Status')}</td>
