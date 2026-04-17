@@ -5,10 +5,10 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
 import {
-  formatCoinValue, formatFourSigFigs, formatFiatValue,
+  formatCoinValue, formatBestWeCan, formatFiatValue,
   formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
-  logoPath
+  conventionalRate, logoPath
 } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CopyButton } from '../components/common/CopyButton'
@@ -505,7 +505,7 @@ export default function MMLogsPage () {
                   {deltas.map(d => (
                     <td key={d.assetID}>{d.text}</td>
                   ))}
-                  <td>{formatFourSigFigs(usd)}</td>
+                  <td>{formatBestWeCan(usd)}</td>
                   <td>
                     <button
                       className="btn btn-sm btn-outline-secondary"
@@ -670,14 +670,11 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t
   const baseTicker = bui?.conventional?.unit ?? '?'
   const quoteTicker = qui?.conventional?.unit ?? '?'
 
-  const RateEncodingFactor = 1e8
-  const baseFactor = bui?.conventional?.conversionFactor ?? 1
-  const quoteFactor = qui?.conventional?.conversionFactor ?? 1
-  const rate = e.rate * (baseFactor / quoteFactor) / RateEncodingFactor
+  const rate = conventionalRate(baseID, quoteID, e.rate, assets)
 
   const rateStr = bui && qui && ratestep
     ? formatRateToRateStep(rate, bui, qui, ratestep)
-    : formatFourSigFigs(rate)
+    : formatBestWeCan(rate)
   const qtyStr = bui && lotsize
     ? formatCoinAtomToLotSizeBaseCurrency(e.qty, bui, lotsize)
     : (bui ? formatCoinValue(e.qty, bui) : String(e.qty))
@@ -783,17 +780,14 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, lo
   const baseTicker = bui?.conventional?.unit ?? '?'
   const quoteTicker = qui?.conventional?.unit ?? '?'
 
-  const RateEncodingFactor = 1e8
-  const baseFactor = bui?.conventional?.conversionFactor ?? 1
-  const quoteFactor = qui?.conventional?.conversionFactor ?? 1
-  const rate = e.rate * (baseFactor / quoteFactor) / RateEncodingFactor
+  const rate = conventionalRate(effectiveBaseID, effectiveQuoteID, e.rate, assets)
 
   const isMarketBuy = Boolean(e.market) && !e.sell
   const qtyTicker = isMarketBuy ? quoteTicker : baseTicker
 
   const rateStr = bui && qui && ratestep
     ? formatRateToRateStep(rate, bui, qui, ratestep)
-    : formatFourSigFigs(rate)
+    : formatBestWeCan(rate)
   const qtyStr = isMarketBuy
     ? (bui && qui && lotsize && ratestep
         ? formatCoinAtomToLotSizeQuoteCurrency(e.qty, bui, qui, lotsize, ratestep)

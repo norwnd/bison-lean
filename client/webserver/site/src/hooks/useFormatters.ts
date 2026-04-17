@@ -47,28 +47,12 @@ function convertToConventional (v: number, unitInfo?: UnitInfo): [number, number
   return [v, prec]
 }
 
-function formatSigFigsWithFormatters (
-  intFmt: Intl.NumberFormat, sigFigFmt: Intl.NumberFormat,
-  n: number, maxDecimals?: number, locales?: string | string[]
-): string {
-  if (n >= 1000) return intFmt.format(n)
-  const s = sigFigFmt.format(n)
-  if (typeof maxDecimals !== 'number') return s
-  const fractional = sigFigFmt.formatToParts(n).filter((p: Intl.NumberFormatPart) => p.type === 'fraction')[0]?.value ?? ''
-  if (fractional.length <= maxDecimals) return s
-  return fullPrecisionFormatter(maxDecimals, locales).format(n)
-}
-
 // Exported pure functions — no hooks, just formatting utilities.
 
 export function formatCoinValue (vAtomic: number, unitInfo?: UnitInfo): string {
   const [v, prec] = convertToConventional(vAtomic, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
   return decimalFormatter(prec).format(v)
-}
-
-export function formatFourSigFigs (n: number, maxDecimals?: number): string {
-  return formatSigFigsWithFormatters(intFormatter, fourSigFigs, n, maxDecimals)
 }
 
 export function formatBestWeCan (n: number, maxDecimals?: number): string {

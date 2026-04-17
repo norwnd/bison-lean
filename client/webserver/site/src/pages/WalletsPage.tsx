@@ -12,8 +12,8 @@ import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
-  formatCoinValue, formatFiatConversion, formatFourSigFigs, formatFiatValue,
-  formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency,
+  formatCoinValue, formatFiatConversion, formatBestWeCan, formatFiatValue,
+  formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency, conventionalRate,
   shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
@@ -512,7 +512,7 @@ export default function WalletsPage () {
         <div className="flex-stretch-column pt-2 px-2 hoverbg pointer" onClick={() => setSelectedAssetID(null)}>
           <span className="grey fs16 lh1 mb-1">{t('Holdings')}</span>
           <span className="d-flex align-items-end lh1">
-            <span className="fs20">${formatFourSigFigs(totalFiatBalance(assets, fiatRatesMap))}</span>
+            <span className="fs20">${formatBestWeCan(totalFiatBalance(assets, fiatRatesMap))}</span>
           </span>
           <div className="border-bottom mt-2"></div>
         </div>
@@ -534,7 +534,7 @@ export default function WalletsPage () {
                   </div>
                   <div className="d-flex flex-column align-items-end">
                     {g.hasWallet
-                      ? <span className="fs22 lh1">${formatFourSigFigs(g.totalFiat, 2)}</span>
+                      ? <span className="fs22 lh1">${formatBestWeCan(g.totalFiat, 2)}</span>
                       : <span className="grey me-1">—</span>}
                   </div>
                 </div>
@@ -1282,12 +1282,9 @@ function MarketsSection ({ assetName, marketRows, assets }: {
                 const quoteAsset = assets[row.quoteID]
                 const bui = baseAsset?.unitInfo
                 const qui = quoteAsset?.unitInfo
-                const quoteConv = qui?.conventional?.conversionFactor ?? 1e8
-                const baseConv = bui?.conventional?.conversionFactor ?? 1e8
-                const spotRate = row.spot
-                  ? row.spot.rate / 1e8
+                const spotPriceConv = row.spot
+                  ? conventionalRate(row.baseID, row.quoteID, row.spot.rate, assets)
                   : 0
-                const spotPriceConv = spotRate * (baseConv / quoteConv)
                 const vol24Atoms = row.spot?.vol24 ?? 0
                 // WP-21: row click navigates to the markets page
                 // pre-filtered to this market. Mirrors vanilla
@@ -1692,7 +1689,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         />
         {rate > 0 && amtStr && (
           <div className="fs12 text-secondary mt-1">
-            ~${formatFourSigFigs(parseFloat(amtStr || '0') * rate, 2)}
+            ~${formatBestWeCan(parseFloat(amtStr || '0') * rate, 2)}
           </div>
         )}
       </div>

@@ -6,8 +6,8 @@ import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { availableBalances, removeBotConfig, stopBot as apiStopBot } from '../services/mmApi'
 import {
-  formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit,
-  formatRateToRateStep, shortSymbol, logoPath
+  formatCoinValue, formatBestWeCan, formatFiatValue, formatProfit,
+  formatRateToRateStep, conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
@@ -306,7 +306,7 @@ export default function MMPage () {
                 </td>
                 <td>
                   {configured
-                    ? `$${formatFourSigFigs(cexUSDBalance(cexName))}`
+                    ? `$${formatBestWeCan(cexUSDBalance(cexName))}`
                     : '---'
                   }
                 </td>
@@ -522,14 +522,9 @@ function BotCard ({
   const mkt = exchanges[host]?.markets[mktID]
   const spot = mkt?.spot
   const baseFiatRate = fiatRatesMap[baseID] ?? 0
-  const baseFactor = bui.conventional.conversionFactor
-  const quoteFactor = qui.conventional.conversionFactor
-  const RateEncodingFactor = 1e8
-  const dexPrice = spot
-    ? spot.rate / (RateEncodingFactor / baseFactor * quoteFactor)
-    : 0
+  const dexPrice = spot ? conventionalRate(baseID, quoteID, spot.rate, assets) : 0
   const dexVol = spot
-    ? spot.vol24 / baseFactor * baseFiatRate
+    ? spot.vol24 / bui.conventional.conversionFactor * baseFiatRate
     : 0
 
   // CEX data.
@@ -591,13 +586,13 @@ function BotCard ({
             <div className="col-6">
               <div className="text-secondary small">{t('DEX Price')}</div>
               <div>{spot && mkt ? formatRateToRateStep(dexPrice, bui, qui, mkt.ratestep) : '---'}</div>
-              <div className="text-secondary small">{t('24h Vol')}: ${spot ? formatFourSigFigs(dexVol) : '---'}</div>
+              <div className="text-secondary small">{t('24h Vol')}: ${spot ? formatBestWeCan(dexVol) : '---'}</div>
             </div>
             {bt !== botTypeBasicMM && cexName && (
               <div className="col-6">
                 <div className="text-secondary small">{t('CEX Price')}</div>
                 <div>{cexPrice && mkt ? formatRateToRateStep(cexPrice, bui, qui, mkt.ratestep) : '---'}</div>
-                <div className="text-secondary small">{t('24h Vol')}: ${cexVol ? formatFourSigFigs(cexVol) : '---'}</div>
+                <div className="text-secondary small">{t('24h Vol')}: ${cexVol ? formatBestWeCan(cexVol) : '---'}</div>
               </div>
             )}
           </div>
