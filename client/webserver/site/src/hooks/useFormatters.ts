@@ -67,11 +67,6 @@ export function formatCoinValue (vAtomic: number, unitInfo?: UnitInfo): string {
   return decimalFormatter(prec).format(v)
 }
 
-export function formatFullPrecision (vAtomic: number, unitInfo?: UnitInfo): string {
-  const [v, prec] = convertToConventional(vAtomic, unitInfo)
-  return fullPrecisionFormatter(prec).format(v)
-}
-
 export function formatFourSigFigs (n: number, maxDecimals?: number): string {
   return formatSigFigsWithFormatters(intFormatter, fourSigFigs, n, maxDecimals)
 }
@@ -122,10 +117,6 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
     Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
   if (lotSizeDigits + rateStepDigits <= 0) return intFormatter.format(coin)
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
-}
-
-export function formatInt (i: number): string {
-  return intFormatter.format(i)
 }
 
 export function formatFiatConversion (vAtomic: number, rate: number, unitInfo?: UnitInfo): string {

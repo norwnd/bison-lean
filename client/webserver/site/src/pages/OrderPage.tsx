@@ -4,7 +4,11 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
-import { formatCoinValue, conventionalRate, shortSymbol, logoPath } from '../hooks/useFormatters'
+import {
+  formatCoinValue, formatRateToRateStep,
+  formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
+  conventionalRate, shortSymbol, logoPath
+} from '../hooks/useFormatters'
 import {
   filled, settled, isMarketBuy, averageRate, baseToQuote,
   isCancellable, canAccelerateOrder
@@ -341,6 +345,22 @@ export default function OrderPage () {
   const quoteUnitInfo: UnitInfo | undefined = allAssets[order.quoteID]?.unitInfo
   const bUnit = baseUnitInfo?.conventional.unit ?? ''
   const qUnit = quoteUnitInfo?.conventional.unit ?? ''
+  // Market is used to format rates/qtys with lot-size and rate-step
+  // precision. For historical orders whose exchange/market is no longer
+  // configured, the helpers fall back to `formatCoinValue`.
+  const mkt = xc?.markets?.[order.market]
+  const fmtBase = (atoms: number): string =>
+    baseUnitInfo && mkt
+      ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
+      : formatCoinValue(atoms, baseUnitInfo)
+  const fmtQuote = (atoms: number): string =>
+    baseUnitInfo && quoteUnitInfo && mkt
+      ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
+      : formatCoinValue(atoms, quoteUnitInfo)
+  const fmtRate = (rateConv: number): string =>
+    baseUnitInfo && quoteUnitInfo && mkt
+      ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
+      : formatCoinValue(rateConv)
 
   const canCancel = isCancellable(order)
   // OP-01: full vanilla parity for the Accelerate button. Previously
@@ -369,11 +389,11 @@ export default function OrderPage () {
       const avg = averageRate(order)
       const convRate = conventionalRate(order.baseID, order.quoteID, avg, allAssets)
       rateStr = order.matches.length > 1
-        ? `~ ${formatCoinValue(convRate)}`
-        : formatCoinValue(convRate)
+        ? `~ ${fmtRate(convRate)}`
+        : fmtRate(convRate)
     }
   } else {
-    rateStr = formatCoinValue(conventionalRate(order.baseID, order.quoteID, order.rate, allAssets))
+    rateStr = fmtRate(conventionalRate(order.baseID, order.quoteID, order.rate, allAssets))
   }
 
   const sortedMatches = [...(order.matches ?? [])].sort((a, b) => a.stamp - b.stamp)
@@ -493,8 +513,8 @@ export default function OrderPage () {
     if (m.isCancel) {
       // Cancel match: simplified display.
       const cancelQty = order.sell
-        ? formatCoinValue(m.qty, baseUnitInfo)
-        : formatCoinValue(baseToQuote(m.rate, m.qty), quoteUnitInfo)
+        ? fmtBase(m.qty)
+        : fmtQuote(baseToQuote(m.rate, m.qty))
       const cancelIcon = order.sell
         ? logoPath(order.baseSymbol)
         : logoPath(order.quoteSymbol)
@@ -535,14 +555,14 @@ export default function OrderPage () {
     let toAmt: string
     let toIcon: string
     if (order.sell) {
-      fromAmt = formatCoinValue(m.qty, baseUnitInfo)
+      fromAmt = fmtBase(m.qty)
       fromIcon = logoPath(order.baseSymbol)
-      toAmt = formatCoinValue(quoteAmount, quoteUnitInfo)
+      toAmt = fmtQuote(quoteAmount)
       toIcon = logoPath(order.quoteSymbol)
     } else {
-      fromAmt = formatCoinValue(quoteAmount, quoteUnitInfo)
+      fromAmt = fmtQuote(quoteAmount)
       fromIcon = logoPath(order.quoteSymbol)
-      toAmt = formatCoinValue(m.qty, baseUnitInfo)
+      toAmt = fmtBase(m.qty)
       toIcon = logoPath(order.baseSymbol)
     }
 
@@ -591,7 +611,7 @@ export default function OrderPage () {
           </div>
           <div>
             <div className="fs13 text-secondary">{t('Rate')}</div>
-            <div className="fs14">{formatCoinValue(convRate)} {bUnit.toLowerCase()}/{qUnit.toLowerCase()}</div>
+            <div className="fs14">{fmtRate(convRate)} {bUnit.toLowerCase()}/{qUnit.toLowerCase()}</div>
           </div>
           <div>
             <div className="fs13 text-secondary">{t('Portion')}</div>
@@ -710,7 +730,7 @@ export default function OrderPage () {
         <div>
           <div className="fs13 text-secondary">{t('Quantity')}</div>
           <div className="fs15">
-            {formatCoinValue(order.qty, baseUnitInfo)} {bUnit}
+            {fmtBase(order.qty)} {bUnit}
           </div>
         </div>
         <div>

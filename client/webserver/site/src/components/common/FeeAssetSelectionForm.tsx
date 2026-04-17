@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatFullPrecision, formatBestWeCan, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValue, formatBestWeCan, logoPath } from '../../hooks/useFormatters'
 import {
   bondReserveMultiplier,
   perTierBaseParcelLimit,
@@ -151,8 +151,8 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
     if (!bondAsset) return null
 
     const bondLock = bondAsset.amount * tier * bondReserveMultiplier
-    const bondSizeConventional = formatFullPrecision(bondAsset.amount, ui)
-    const bondLockConventional = formatFullPrecision(bondLock, ui)
+    const bondSizeConventional = formatCoinValue(bondAsset.amount, ui)
+    const bondLockConventional = formatCoinValue(bondLock, ui)
     const fiatRate = fiatRatesMap[selectedAssetID]
     const fiatLock = fiatRate ? formatBestWeCan(bondLock / conversionFactor * fiatRate) : null
 
@@ -396,7 +396,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
               <div key={assetID} className="d-flex align-items-center gap-2 fs14 mb-1">
                 <img className="micro-icon" src={logoPath(symbol)} alt="" />
                 <span>{name}</span>
-                <span>{formatFullPrecision(bonded, ui)} {unit}</span>
+                <span>{formatCoinValue(bonded, ui)} {unit}</span>
                 {fiatRate && (
                   <span>(~${formatBestWeCan(bonded / conversionFactor * fiatRate)})</span>
                 )}

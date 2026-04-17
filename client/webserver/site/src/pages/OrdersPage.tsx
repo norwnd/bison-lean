@@ -4,7 +4,11 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { orderPath } from '../router/routes'
-import { formatCoinValue, conventionalRate, shortSymbol, logoPath } from '../hooks/useFormatters'
+import {
+  formatCoinValue, formatRateToRateStep,
+  formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
+  conventionalRate, shortSymbol, logoPath
+} from '../hooks/useFormatters'
 import {
   filled, settled, averageRate
 } from '../components/AccountUtils'
@@ -325,6 +329,22 @@ export default function OrdersPage () {
 
     const baseUnitInfo = baseAsset.unitInfo
     const quoteUnitInfo = quoteAsset.unitInfo
+    // Market is used to format rates/qtys with lot-size and rate-step
+    // precision. For historical orders whose exchange/market is no longer
+    // configured, the helpers fall back to `formatCoinValue`.
+    const mkt = xc?.markets?.[ord.market]
+    const fmtBase = (atoms: number): string =>
+      mkt
+        ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
+        : formatCoinValue(atoms, baseUnitInfo)
+    const fmtQuote = (atoms: number): string =>
+      mkt
+        ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
+        : formatCoinValue(atoms, quoteUnitInfo)
+    const fmtRate = (rateConv: number): string =>
+      mkt
+        ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
+        : formatCoinValue(rateConv)
 
     let fromSymbol: string
     let toSymbol: string
@@ -338,9 +358,9 @@ export default function OrdersPage () {
       toSymbol = ord.quoteSymbol
       fromUnit = baseUnitInfo.conventional.unit
       toUnit = quoteUnitInfo.conventional.unit
-      fromQty = formatCoinValue(ord.qty, baseUnitInfo)
+      fromQty = fmtBase(ord.qty)
       if (ord.type === OrderTypeLimit) {
-        toQty = formatCoinValue(ord.qty / RateEncodingFactor * ord.rate, quoteUnitInfo)
+        toQty = fmtQuote(ord.qty / RateEncodingFactor * ord.rate)
       }
     } else {
       fromSymbol = ord.quoteSymbol
@@ -348,10 +368,10 @@ export default function OrdersPage () {
       fromUnit = quoteUnitInfo.conventional.unit
       toUnit = baseUnitInfo.conventional.unit
       if (ord.type === OrderTypeMarket) {
-        fromQty = formatCoinValue(ord.qty, baseUnitInfo)
+        fromQty = fmtBase(ord.qty)
       } else {
-        fromQty = formatCoinValue(ord.qty / RateEncodingFactor * ord.rate, quoteUnitInfo)
-        toQty = formatCoinValue(ord.qty, baseUnitInfo)
+        fromQty = fmtQuote(ord.qty / RateEncodingFactor * ord.rate)
+        toQty = fmtBase(ord.qty)
       }
     }
 
@@ -368,11 +388,11 @@ export default function OrdersPage () {
         const avg = averageRate(ord)
         const convRate = conventionalRate(ord.baseID, ord.quoteID, avg, allAssets)
         rateStr = ord.matches.length > 1
-          ? `~ ${formatCoinValue(convRate)}`
-          : formatCoinValue(convRate)
+          ? `~ ${fmtRate(convRate)}`
+          : fmtRate(convRate)
       }
     } else {
-      rateStr = formatCoinValue(conventionalRate(ord.baseID, ord.quoteID, ord.rate, allAssets))
+      rateStr = fmtRate(conventionalRate(ord.baseID, ord.quoteID, ord.rate, allAssets))
     }
 
     const filledPct = ord.qty > 0

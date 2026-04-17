@@ -12,8 +12,9 @@ import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
-  formatCoinValue, formatFullPrecision, formatFiatConversion,
-  formatFourSigFigs, shortSymbol, logoPath
+  formatCoinValue, formatFiatConversion, formatFourSigFigs, formatFiatValue,
+  formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency,
+  shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 import { filled } from '../components/AccountUtils'
@@ -269,6 +270,8 @@ interface MarketRow {
   quoteID: number
   baseSymbol: string
   quoteSymbol: string
+  lotsize: number
+  ratestep: number
   spot: Spot | undefined
 }
 
@@ -288,6 +291,8 @@ function collectMarketsForAsset (
         quoteID: mkt.quoteid,
         baseSymbol: mkt.basesymbol,
         quoteSymbol: mkt.quotesymbol,
+        lotsize: mkt.lotsize,
+        ratestep: mkt.ratestep,
         spot: mkt.spot
       })
     }
@@ -1031,7 +1036,7 @@ function WalletDetail ({
           <div className="mx-2 border-bottom"></div>
           <div className="flex-grow-1 flex-center py-2">
             <span className="fs16 mb-1 demi">$</span>
-            <span className="fs22 me-1 demi lh1">{formatFourSigFigs(rate)}</span>
+            <span className="fs22 me-1 demi lh1">{formatFiatValue(rate)}</span>
           </div>
         </section>
       )}
@@ -1275,15 +1280,15 @@ function MarketsSection ({ assetName, marketRows, assets }: {
               {marketRows.map((row, idx) => {
                 const baseAsset = assets[row.baseID]
                 const quoteAsset = assets[row.quoteID]
-                const quoteConv = quoteAsset?.unitInfo?.conventional?.conversionFactor ?? 1e8
-                const baseConv = baseAsset?.unitInfo?.conventional?.conversionFactor ?? 1e8
+                const bui = baseAsset?.unitInfo
+                const qui = quoteAsset?.unitInfo
+                const quoteConv = qui?.conventional?.conversionFactor ?? 1e8
+                const baseConv = bui?.conventional?.conversionFactor ?? 1e8
                 const spotRate = row.spot
                   ? row.spot.rate / 1e8
                   : 0
                 const spotPriceConv = spotRate * (baseConv / quoteConv)
-                const vol24 = row.spot
-                  ? row.spot.vol24 / baseConv
-                  : 0
+                const vol24Atoms = row.spot?.vol24 ?? 0
                 // WP-21: row click navigates to the markets page
                 // pre-filtered to this market. Mirrors vanilla
                 // `wallets.ts` which made the row a clickable link to
@@ -1315,20 +1320,20 @@ function MarketsSection ({ assetName, marketRows, assets }: {
                       <div className="short-host text-nowrap overflow-hidden">{row.host}</div>
                     </td>
                     <td>
-                      {spotPriceConv > 0
+                      {spotPriceConv > 0 && bui && qui
                         ? <>
-                            <span>{formatFourSigFigs(spotPriceConv)}</span>
+                            <span>{formatRateToRateStep(spotPriceConv, bui, qui, row.ratestep)}</span>
                             <span className="fs13 grey">
-                              <sup>{quoteAsset?.unitInfo?.conventional?.unit}</sup>/<sub>{baseAsset?.unitInfo?.conventional?.unit}</sub>
+                              <sup>{qui.conventional.unit}</sup>/<sub>{bui.conventional.unit}</sub>
                             </span>
                           </>
                         : '-'}
                     </td>
                     <td className="text-end">
-                      {vol24 > 0
+                      {vol24Atoms > 0 && bui
                         ? <>
-                            <span>{formatFourSigFigs(vol24)}</span>
-                            <span className="fs15 grey ms-1">{baseAsset?.unitInfo?.conventional?.unit}</span>
+                            <span>{formatCoinAtomToLotSizeBaseCurrency(vol24Atoms, bui, row.lotsize)}</span>
+                            <span className="fs15 grey ms-1">{bui.conventional.unit}</span>
                           </>
                         : '-'}
                     </td>
@@ -1595,7 +1600,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         </div>
         <div className="mb-2 fs14">
           <span className="text-secondary">{t('Amount')}:</span>{' '}
-          {formatFullPrecision(valueAtoms, ui)}
+          {formatCoinValue(valueAtoms, ui)}
           {rate > 0 && (
             <span className="text-secondary"> (${formatFiatConversion(valueAtoms, rate, ui)})</span>
           )}
@@ -1603,7 +1608,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         {txFee > 0 && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Estimated Fee')}:</span>{' '}
-            {formatFullPrecision(txFee, feeUI)}
+            {formatCoinValue(txFee, feeUI)}
             {feeRate > 0 && (
               <span className="text-secondary"> (${formatFiatConversion(txFee, feeRate, feeUI)})</span>
             )}
@@ -1614,7 +1619,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         )}
         <div className="mb-2 fs14">
           <span className="text-secondary">{t('Balance after send')}:</span>{' '}
-          {formatFullPrecision(
+          {formatCoinValue(
             Math.max(0, wallet.balance.available - valueAtoms - (token ? 0 : txFee)),
             ui
           )}
@@ -1818,13 +1823,13 @@ function TxHistoryView ({ assetID, assets, net }: {
         {!noAmtTxTypes.includes(detailTx.type) && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Amount')}:</span>{' '}
-            {formatFullPrecision(detailTx.amount, ui)}
+            {formatCoinValue(detailTx.amount, ui)}
           </div>
         )}
         {detailTx.fees > 0 && (
           <div className="mb-2 fs14">
             <span className="text-secondary">{t('Fees')}:</span>{' '}
-            {formatFullPrecision(detailTx.fees, ui)}
+            {formatCoinValue(detailTx.fees, ui)}
           </div>
         )}
         {detailTx.recipient && (
@@ -3064,7 +3069,6 @@ function StakingView ({ assetID, assets }: {
   const asset = assets[assetID]
   const ui = asset?.unitInfo
   const wallet = asset?.wallet
-  const conv = ui?.conventional?.conversionFactor ?? 1e8
 
   const [stakeStatus, setStakeStatus] = useState<TicketStakingStatus | null>(null)
   // WP-12: proposalsMeta is included in the /api/stakestatus response
@@ -3271,7 +3275,7 @@ function StakingView ({ assetID, assets }: {
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Total rewards')}</div>
-              <div className="flex-center demi">{formatFourSigFigs(stats.totalRewards / conv)} DCR</div>
+              <div className="flex-center demi">{ui ? formatCoinValue(stats.totalRewards, ui) : stats.totalRewards} DCR</div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
               <div className="flex-center grey">{t('Votes cast')}</div>
@@ -3343,13 +3347,13 @@ function StakingView ({ assetID, assets }: {
         <div className="flex-grow-1 flex-center flex-column p-3 border-bottom">
           <span className="fs14 demi lh1 pb-1">{t('Ticket Price')}</span>
           <span className="d-flex align-items-end">
-            <span className="fs18">{formatFourSigFigs(stakeStatus.ticketPrice / conv)} DCR</span>
+            <span className="fs18">{ui ? formatCoinValue(stakeStatus.ticketPrice, ui) : stakeStatus.ticketPrice} DCR</span>
           </span>
         </div>
         <div className="flex-grow-1 flex-center flex-column p-3">
           <span className="fs14 demi lh1 pb-1">{t('Vote Reward')}</span>
           <span className="d-flex align-items-end">
-            <span className="fs18">{formatFourSigFigs(stakeStatus.votingSubsidy / conv)} DCR</span>
+            <span className="fs18">{ui ? formatCoinValue(stakeStatus.votingSubsidy, ui) : stakeStatus.votingSubsidy} DCR</span>
           </span>
         </div>
       </div>
@@ -3530,7 +3534,7 @@ function TicketHistoryModal ({ assetID, stakeStatus, ui, onClose }: {
               return (
                 <tr key={tx.hash}>
                   <td>{ageSince(tx.stamp * 1000)}</td>
-                  <td className="text-end">{formatFullPrecision(tx.ticketPrice, ui)}</td>
+                  <td className="text-end">{formatCoinValue(tx.ticketPrice, ui)}</td>
                   <td className="text-end">{t(statusKey)}</td>
                   <td className="text-end">
                     <span className="mono">
@@ -3615,7 +3619,6 @@ function SetVotesModal ({
   const user = useAuthStore(s => s.user)
   const net = user?.net ?? 0
   const [error, setError] = useState('')
-  const conv = ui.conventional.conversionFactor
 
   const upperCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -3743,7 +3746,7 @@ function SetVotesModal ({
                 <div className="d-flex align-items-center justify-content-between">
                   {tspend.value > 0 && (
                     <div className="flex-center pe-2">
-                      {formatFourSigFigs(tspend.value / conv)} DCR
+                      {ui ? formatCoinValue(tspend.value, ui) : tspend.value} DCR
                     </div>
                   )}
                   {url && (

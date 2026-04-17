@@ -5,7 +5,10 @@ import { useAuthStore } from '../stores/useAuthStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { availableBalances, removeBotConfig, stopBot as apiStopBot } from '../services/mmApi'
-import { formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit, shortSymbol, logoPath } from '../hooks/useFormatters'
+import {
+  formatCoinValue, formatFourSigFigs, formatFiatValue, formatProfit,
+  formatRateToRateStep, shortSymbol, logoPath
+} from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CEXConfigurationForm } from '../components/common/CEXConfigurationForm'
 import { CEXDisplayInfos } from '../components/mmsettings/cexDisplayInfo'
@@ -479,7 +482,7 @@ export default function MMPage () {
 interface BotCardProps {
   bot: MMBotStatus
   assets: Record<number, SupportedAsset>
-  exchanges: Record<string, { markets: Record<string, { spot?: { rate: number; vol24: number } }> }>
+  exchanges: Record<string, { markets: Record<string, { ratestep: number; spot?: { rate: number; vol24: number } }> }>
   fiatRatesMap: Record<number, number>
   mmStatus: { cexes: Record<string, { markets?: Record<string, { day?: { lastPrice: number; vol: number } }> }> } | null
   idleBalances: Record<string, AvailableBalances>
@@ -516,7 +519,8 @@ function BotCard ({
 
   // DEX spot data.
   const mktID = `${baseAsset.symbol}_${quoteAsset.symbol}`
-  const spot = exchanges[host]?.markets[mktID]?.spot
+  const mkt = exchanges[host]?.markets[mktID]
+  const spot = mkt?.spot
   const baseFiatRate = fiatRatesMap[baseID] ?? 0
   const baseFactor = bui.conventional.conversionFactor
   const quoteFactor = qui.conventional.conversionFactor
@@ -586,13 +590,13 @@ function BotCard ({
           <div className="row mb-2">
             <div className="col-6">
               <div className="text-secondary small">{t('DEX Price')}</div>
-              <div>{spot ? formatFourSigFigs(dexPrice) : '---'}</div>
+              <div>{spot && mkt ? formatRateToRateStep(dexPrice, bui, qui, mkt.ratestep) : '---'}</div>
               <div className="text-secondary small">{t('24h Vol')}: ${spot ? formatFourSigFigs(dexVol) : '---'}</div>
             </div>
             {bt !== botTypeBasicMM && cexName && (
               <div className="col-6">
                 <div className="text-secondary small">{t('CEX Price')}</div>
-                <div>{cexPrice ? formatFourSigFigs(cexPrice) : '---'}</div>
+                <div>{cexPrice && mkt ? formatRateToRateStep(cexPrice, bui, qui, mkt.ratestep) : '---'}</div>
                 <div className="text-secondary small">{t('24h Vol')}: ${cexVol ? formatFourSigFigs(cexVol) : '---'}</div>
               </div>
             )}

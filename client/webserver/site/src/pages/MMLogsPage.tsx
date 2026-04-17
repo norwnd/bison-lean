@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { postJSON, checkResponse } from '../services/api'
-import { formatCoinValue, formatFourSigFigs, formatFiatValue, logoPath } from '../hooks/useFormatters'
+import {
+  formatCoinValue, formatFourSigFigs, formatFiatValue,
+  formatRateToRateStep,
+  formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
+  logoPath
+} from '../hooks/useFormatters'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { CopyButton } from '../components/common/CopyButton'
 import { AssetSymbol } from '../components/common/AssetSymbol'
@@ -138,6 +143,7 @@ export default function MMLogsPage () {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const assets = useAuthStore(s => s.assets)
+  const exchanges = useAuthStore(s => s.exchanges)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const mmStatus = useAuthStore(s => s.mmStatus)
   const user = useAuthStore(s => s.user)
@@ -325,6 +331,13 @@ export default function MMLogsPage () {
   const quoteAsset = assets[quoteID]
   const baseSym = baseAsset?.symbol?.toLowerCase() ?? ''
   const quoteSym = quoteAsset?.symbol?.toLowerCase() ?? ''
+  // Market lookup (for lot-size / rate-step aware formatting in the
+  // DEX / CEX order detail views). Falls back to formatCoinValue when
+  // the market is no longer configured on the exchange.
+  const mktID = baseAsset && quoteAsset ? `${baseAsset.symbol}_${quoteAsset.symbol}` : ''
+  const mkt = mktID ? exchanges[host]?.markets?.[mktID] : undefined
+  const lotsize = mkt?.lotsize
+  const ratestep = mkt?.ratestep
 
   return (
     <div className="page-view p-3 d-flex flex-column" style={{ height: '100%' }}>
@@ -526,6 +539,8 @@ export default function MMLogsPage () {
             assets={assets}
             baseID={baseID}
             quoteID={quoteID}
+            lotsize={lotsize}
+            ratestep={ratestep}
             fiatRates={fiatRates}
             net={net}
             t={t}
@@ -619,14 +634,16 @@ interface EventDetailProps {
   assets: Record<number, SupportedAsset>
   baseID: number
   quoteID: number
+  lotsize: number | undefined
+  ratestep: number | undefined
   fiatRates: Record<number, number>
   net: number
   t: (k: string) => string
 }
 
-function EventDetailView ({ event, assets, baseID, quoteID, net, t }: EventDetailProps) {
-  if (event.dexOrderEvent) return <DEXOrderDetail e={event.dexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} net={net} t={t} />
-  if (event.cexOrderEvent) return <CEXOrderDetail e={event.cexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} t={t} />
+function EventDetailView ({ event, assets, baseID, quoteID, lotsize, ratestep, net, t }: EventDetailProps) {
+  if (event.dexOrderEvent) return <DEXOrderDetail e={event.dexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} lotsize={lotsize} ratestep={ratestep} net={net} t={t} />
+  if (event.cexOrderEvent) return <CEXOrderDetail e={event.cexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} lotsize={lotsize} ratestep={ratestep} t={t} />
   if (event.depositEvent) return <DepositDetail e={event.depositEvent} pending={event.pending} assets={assets} net={net} t={t} />
   if (event.withdrawalEvent) return <WithdrawalDetail e={event.withdrawalEvent} pending={event.pending} assets={assets} net={net} t={t} />
   return <div className="p-3">{t('Unknown event type')}</div>
@@ -639,11 +656,13 @@ interface DEXOrderDetailProps {
   assets: Record<number, SupportedAsset>
   baseID: number
   quoteID: number
+  lotsize: number | undefined
+  ratestep: number | undefined
   net: number
   t: (k: string) => string
 }
 
-function DEXOrderDetail ({ e, assets, baseID, quoteID, net, t }: DEXOrderDetailProps) {
+function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t }: DEXOrderDetailProps) {
   const baseAsset = assets[baseID]
   const quoteAsset = assets[quoteID]
   const bui = baseAsset?.unitInfo
@@ -655,6 +674,13 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, net, t }: DEXOrderDetailP
   const baseFactor = bui?.conventional?.conversionFactor ?? 1
   const quoteFactor = qui?.conventional?.conversionFactor ?? 1
   const rate = e.rate * (baseFactor / quoteFactor) / RateEncodingFactor
+
+  const rateStr = bui && qui && ratestep
+    ? formatRateToRateStep(rate, bui, qui, ratestep)
+    : formatFourSigFigs(rate)
+  const qtyStr = bui && lotsize
+    ? formatCoinAtomToLotSizeBaseCurrency(e.qty, bui, lotsize)
+    : (bui ? formatCoinValue(e.qty, bui) : String(e.qty))
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -668,11 +694,11 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, net, t }: DEXOrderDetailP
           </tr>
           <tr>
             <td className="text-secondary">{t('Rate')}</td>
-            <td>{formatFourSigFigs(rate)} {baseTicker}/{quoteTicker}</td>
+            <td>{rateStr} {baseTicker}/{quoteTicker}</td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Quantity')}</td>
-            <td>{bui ? formatCoinValue(e.qty, bui) : e.qty} {baseTicker}</td>
+            <td>{qtyStr} {baseTicker}</td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Side')}</td>
@@ -742,10 +768,12 @@ interface CEXOrderDetailProps {
   assets: Record<number, SupportedAsset>
   baseID: number
   quoteID: number
+  lotsize: number | undefined
+  ratestep: number | undefined
   t: (k: string) => string
 }
 
-function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t }: CEXOrderDetailProps) {
+function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, lotsize, ratestep, t }: CEXOrderDetailProps) {
   const effectiveBaseID = e.baseID ?? mktBaseID
   const effectiveQuoteID = e.quoteID ?? mktQuoteID
   const baseAsset = assets[effectiveBaseID]
@@ -762,7 +790,23 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t 
 
   const isMarketBuy = Boolean(e.market) && !e.sell
   const qtyTicker = isMarketBuy ? quoteTicker : baseTicker
-  const qtyUI = isMarketBuy ? qui : bui
+
+  const rateStr = bui && qui && ratestep
+    ? formatRateToRateStep(rate, bui, qui, ratestep)
+    : formatFourSigFigs(rate)
+  const qtyStr = isMarketBuy
+    ? (bui && qui && lotsize && ratestep
+        ? formatCoinAtomToLotSizeQuoteCurrency(e.qty, bui, qui, lotsize, ratestep)
+        : (qui ? formatCoinValue(e.qty, qui) : String(e.qty)))
+    : (bui && lotsize
+        ? formatCoinAtomToLotSizeBaseCurrency(e.qty, bui, lotsize)
+        : (bui ? formatCoinValue(e.qty, bui) : String(e.qty)))
+  const baseFilledStr = bui && lotsize
+    ? formatCoinAtomToLotSizeBaseCurrency(e.baseFilled, bui, lotsize)
+    : (bui ? formatCoinValue(e.baseFilled, bui) : String(e.baseFilled))
+  const quoteFilledStr = bui && qui && lotsize && ratestep
+    ? formatCoinAtomToLotSizeQuoteCurrency(e.quoteFilled, bui, qui, lotsize, ratestep)
+    : (qui ? formatCoinValue(e.quoteFilled, qui) : String(e.quoteFilled))
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
@@ -785,17 +829,12 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t 
           {!e.market && (
             <tr>
               <td className="text-secondary">{t('Rate')}</td>
-              <td>{formatFourSigFigs(rate)} {baseTicker}/{quoteTicker}</td>
+              <td>{rateStr} {baseTicker}/{quoteTicker}</td>
             </tr>
           )}
           <tr>
             <td className="text-secondary">{t('Quantity')}</td>
-            <td>
-              {qtyUI
-                ? formatCoinValue(e.qty, qtyUI)
-                : e.qty
-              } {qtyTicker}
-            </td>
+            <td>{qtyStr} {qtyTicker}</td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Side')}</td>
@@ -807,11 +846,11 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, t 
           </tr>
           <tr>
             <td className="text-secondary">{t('Base Filled')}</td>
-            <td>{bui ? formatCoinValue(e.baseFilled, bui) : e.baseFilled} {baseTicker}</td>
+            <td>{baseFilledStr} {baseTicker}</td>
           </tr>
           <tr>
             <td className="text-secondary">{t('Quote Filled')}</td>
-            <td>{qui ? formatCoinValue(e.quoteFilled, qui) : e.quoteFilled} {quoteTicker}</td>
+            <td>{quoteFilledStr} {quoteTicker}</td>
           </tr>
         </tbody>
       </table>

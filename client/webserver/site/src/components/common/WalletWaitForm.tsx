@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatFullPrecision, logoPath } from '../../hooks/useFormatters'
+import { formatCoinValue, logoPath } from '../../hooks/useFormatters'
 import type {
   Exchange, WalletStateNote, WalletSyncNote, BalanceNote
 } from '../../stores/types'
@@ -235,7 +235,7 @@ export function WalletWaitForm ({
           <span className="ico-cross text-secondary" />
         )}
         <span className="fs15">
-          {t('Balance')}: {formatFullPrecision(balance, ui)} {ui.conventional.unit}
+          {t('Balance')}: {formatCoinValue(balance, ui)} {ui.conventional.unit}
         </span>
       </div>
 
@@ -245,20 +245,20 @@ export function WalletWaitForm ({
           {bondFeeBuffer > 0
 ? (
             <div className="fs14 mb-1">
-              <div>{t('Bond lock')}: {formatFullPrecision(bondLock, ui)} {ui.conventional.unit}</div>
-              <div>{t('Fee buffer')}: {formatFullPrecision(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
+              <div>{t('Bond lock')}: {formatCoinValue(bondLock, ui)} {ui.conventional.unit}</div>
+              <div>{t('Fee buffer')}: {formatCoinValue(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
               <div className="fw-bold">
-                {t('Amount needed')}: {formatFullPrecision(needMore, ui)} {ui.conventional.unit}
+                {t('Amount needed')}: {formatCoinValue(needMore, ui)} {ui.conventional.unit}
               </div>
 
               {isToken && parentAsset && (
                 <div className="mt-1">
                   <div>
-                    {t('Parent fees')}: {formatFullPrecision(bondFeeBuffer, parentAsset.unitInfo)}{' '}
+                    {t('Parent fees')}: {formatCoinValue(bondFeeBuffer, parentAsset.unitInfo)}{' '}
                     {parentAsset.unitInfo.conventional.unit}
                   </div>
                   <div>
-                    {t('Parent balance')}: {formatFullPrecision(parentBalance, parentAsset.unitInfo)}{' '}
+                    {t('Parent balance')}: {formatCoinValue(parentBalance, parentAsset.unitInfo)}{' '}
                     {parentAsset.unitInfo.conventional.unit}
                   </div>
                 </div>
@@ -266,7 +266,7 @@ export function WalletWaitForm ({
 
               {!isToken && (
                 <div className="fs14 mt-1 text-secondary">
-                  {t('Total')}: {formatFullPrecision(totalNeeded, ui)} {ui.conventional.unit}
+                  {t('Total')}: {formatCoinValue(totalNeeded, ui)} {ui.conventional.unit}
                 </div>
               )}
             </div>
