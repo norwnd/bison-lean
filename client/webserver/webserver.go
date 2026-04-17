@@ -12,7 +12,6 @@ import (
 	"crypto/tls"
 	"embed"
 	"encoding/hex"
-	"runtime/debug"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -305,7 +305,7 @@ type WebServer struct {
 	addr     string
 	csp      string
 	srv      *http.Server
-	tor bool
+	tor      bool
 	onion    string
 
 	authMtx         sync.RWMutex
@@ -689,7 +689,6 @@ func (w *WebServer) fetchLatestVersion(ctx context.Context) {
 		w.newAppVersionAvailable = true
 	}
 }
-
 
 // Addr gives the address on which WebServer is listening. Use only after
 // Connect.

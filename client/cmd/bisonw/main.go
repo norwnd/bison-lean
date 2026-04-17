@@ -173,4 +173,3 @@ func runCore(cfg *app.Config) error {
 
 	return nil
 }
-

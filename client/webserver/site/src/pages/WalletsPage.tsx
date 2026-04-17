@@ -877,7 +877,7 @@ function WalletDetail ({
   const { t } = useTranslation()
   const bal = wallet.balance
   const ui = asset.unitInfo
-  const rate = fiatRatesMap[asset.id] ?? 0
+  const fiatRate = fiatRatesMap[asset.id] ?? 0
   const parentAsset = asset.token
     ? assets[asset.token.parentID]
     : null
@@ -901,9 +901,9 @@ function WalletDetail ({
               <span className="fs28 me-1">{formatCoinValue(totalBal, ui)}</span>
               <span className="fs20 grey">{ui.conventional.unit}</span>
             </div>
-            {rate > 0 && (
+            {fiatRate > 0 && (
               <div className="mt-1 lh1 grey fs15 d-flex justify-content-end align-items-center">
-                ~${formatFiatConversion(totalBal, rate, ui)}
+                ~${formatFiatConversion(totalBal, fiatRate, ui)}
               </div>
             )}
           </div>
@@ -1030,13 +1030,13 @@ function WalletDetail ({
       </section>
 
       {/* ---- Exchange Rate ---- */}
-      {rate > 0 && (
+      {fiatRate > 0 && (
         <section className="flex-stretch-column">
           <div className="flex-center py-2 fs15 demi">{t('Exchange Rate')}</div>
           <div className="mx-2 border-bottom"></div>
           <div className="flex-grow-1 flex-center py-2">
             <span className="fs16 mb-1 demi">$</span>
-            <span className="fs22 me-1 demi lh1">{formatFiatValue(rate)}</span>
+            <span className="fs22 me-1 demi lh1">{formatFiatValue(fiatRate)}</span>
           </div>
         </section>
       )}
@@ -1051,7 +1051,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Send')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.send, rate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.send, fiatRate, ui) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinValue(wallet.feeState.send, ui)}</div>
             </div>
@@ -1060,7 +1060,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Sell')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.swap, rate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.swap, fiatRate, ui) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinValue(wallet.feeState.swap, ui)}</div>
             </div>
@@ -1069,7 +1069,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Buy')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{rate > 0 ? formatFiatConversion(wallet.feeState.redeem, rate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiatConversion(wallet.feeState.redeem, fiatRate, ui) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinValue(wallet.feeState.redeem, ui)}</div>
             </div>

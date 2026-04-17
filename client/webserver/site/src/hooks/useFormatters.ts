@@ -55,6 +55,10 @@ export function formatCoinValue (vAtomic: number, unitInfo?: UnitInfo): string {
   return decimalFormatter(prec).format(v)
 }
 
+export function formatFiatValue (value: number): string {
+  return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
+}
+
 export function formatBestWeCan (n: number, maxDecimals?: number): string {
   if (n >= 1000) return intFormatter.format(n)
   if (!maxDecimals) return fourSigFigs.format(n)
@@ -101,10 +105,6 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
     Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
   if (lotSizeDigits + rateStepDigits <= 0) return intFormatter.format(coin)
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
-}
-
-export function formatFiatValue (value: number): string {
-  return fullPrecisionFormatterWithPreservingZeroes(2).format(value)
 }
 
 export function formatFiatConversion (vAtomic: number, rate: number, unitInfo?: UnitInfo): string {
