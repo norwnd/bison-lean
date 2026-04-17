@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useNotifications } from '../../hooks/useNotifications'
-import { formatCoinAtom, formatFiatAtomConversion, shortSymbol, logoPath } from '../../hooks/useFormatters'
+import { formatCoinAtom, formatFiat, atomToConventional, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { explorerURL } from '../CoinExplorers'
 import type { BalanceNote } from '../../stores/types'
 
@@ -94,7 +94,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
       let feeText = `${formatCoinAtom(fee, ui)} ${ui.conventional.unit}`
       const rate = fiatRatesMap[pID]
       if (rate) {
-        feeText += ` (~$${formatFiatAtomConversion(fee, rate, ui)})`
+        feeText += ` (~$${formatFiat(atomToConventional(fee, ui)[0] * rate)})`
       }
       setFeeEstimate(feeText)
 

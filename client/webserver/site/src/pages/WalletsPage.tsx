@@ -12,7 +12,7 @@ import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
-  formatCoinAtom, formatFiatAtomConversion, formatBestWeCan, formatFiat,
+  formatCoinAtom, formatBestWeCan, formatFiat, atomToConventional,
   formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency, conventionalRate,
   shortSymbol, logoPath
 } from '../hooks/useFormatters'
@@ -903,7 +903,7 @@ function WalletDetail ({
             </div>
             {fiatRate > 0 && (
               <div className="mt-1 lh1 grey fs15 d-flex justify-content-end align-items-center">
-                ~${formatFiatAtomConversion(totalBal, fiatRate, ui)}
+                ~${formatFiat(atomToConventional(totalBal, ui)[0] * fiatRate)}
               </div>
             )}
           </div>
@@ -1051,7 +1051,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Send')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiatAtomConversion(wallet.feeState.send, fiatRate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.send, ui)[0] * fiatRate) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.send, ui)}</div>
             </div>
@@ -1060,7 +1060,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Sell')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiatAtomConversion(wallet.feeState.swap, fiatRate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.swap, ui)[0] * fiatRate) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.swap, ui)}</div>
             </div>
@@ -1069,7 +1069,7 @@ function WalletDetail ({
               <span className="fs16 demi">{t('Buy')}</span>
               <span className="flex-center lh1">
                 <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiatAtomConversion(wallet.feeState.redeem, fiatRate, ui) : '—'}</span>
+                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.redeem, ui)[0] * fiatRate) : '—'}</span>
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.redeem, ui)}</div>
             </div>
@@ -1599,7 +1599,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
           <span className="text-secondary">{t('Amount')}:</span>{' '}
           {formatCoinAtom(valueAtoms, ui)}
           {rate > 0 && (
-            <span className="text-secondary"> (${formatFiatAtomConversion(valueAtoms, rate, ui)})</span>
+            <span className="text-secondary"> (${formatFiat(atomToConventional(valueAtoms, ui)[0] * rate)})</span>
           )}
         </div>
         {txFee > 0 && (
@@ -1607,7 +1607,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
             <span className="text-secondary">{t('Estimated Fee')}:</span>{' '}
             {formatCoinAtom(txFee, feeUI)}
             {feeRate > 0 && (
-              <span className="text-secondary"> (${formatFiatAtomConversion(txFee, feeRate, feeUI)})</span>
+              <span className="text-secondary"> (${formatFiat(atomToConventional(txFee, feeUI)[0] * feeRate)})</span>
             )}
           </div>
         )}
@@ -2969,7 +2969,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
     if (feeEstimate === null || !parentAsset) return ''
     const atomicStr = `${formatCoinAtom(feeEstimate, parentAsset.unitInfo)} ${parentAsset.unitInfo.conventional.unit}`
     if (parentRate > 0) {
-      return `${atomicStr} (~$${formatFiatAtomConversion(feeEstimate, parentRate, parentAsset.unitInfo)})`
+      return `${atomicStr} (~$${formatFiat(atomToConventional(feeEstimate, parentAsset.unitInfo)[0] * parentRate)})`
     }
     return atomicStr
   }, [feeEstimate, parentAsset, parentRate])

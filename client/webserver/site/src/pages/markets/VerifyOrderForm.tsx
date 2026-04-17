@@ -2,7 +2,7 @@ import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
   formatCoinAtomToLotSizeQuoteCurrency,
-  formatFiatAtomConversion, shortSymbol
+  formatFiat, atomToConventional, shortSymbol
 } from '../../hooks/useFormatters'
 import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo } from '../../stores/types'
@@ -108,10 +108,10 @@ export function VerifyOrderForm ({
   const showSpendFiat = youSpendFiatRate > 0 && youSpendUnitInfo !== null
   const showGetFiat = youGetFiatRate > 0 && youGetUnitInfo !== null
   const spendFiatText = showSpendFiat
-    ? formatFiatAtomConversion(youSpendAtom, youSpendFiatRate, youSpendUnitInfo ?? undefined)
+    ? formatFiat(atomToConventional(youSpendAtom, youSpendUnitInfo ?? undefined)[0] * youSpendFiatRate)
     : ''
   const getFiatText = showGetFiat
-    ? formatFiatAtomConversion(youGetAtom, youGetFiatRate, youGetUnitInfo ?? undefined)
+    ? formatFiat(atomToConventional(youGetAtom, youGetUnitInfo ?? undefined)[0] * youGetFiatRate)
     : ''
 
   return (

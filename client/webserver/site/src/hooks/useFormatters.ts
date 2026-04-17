@@ -37,7 +37,7 @@ function fullPrecisionFormatterWithPreservingZeroes (prec: number, locales?: str
   return formatter(fullPrecisionFormatters, prec, prec, locales)
 }
 
-function atomToConventional (v: number, unitInfo?: UnitInfo): [number, number] {
+export function atomToConventional (v: number, unitInfo?: UnitInfo): [number, number] {
   let prec = 8
   if (unitInfo) {
     const f = unitInfo.conventional.conversionFactor
@@ -105,12 +105,6 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
     Math.floor(Math.log10(bui.conventional.conversionFactor) - Math.log10(qui.conventional.conversionFactor))
   if (lotSizeDigits + rateStepDigits <= 0) return intFormatter.format(coin)
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
-}
-
-export function formatFiatAtomConversion (vAtom: number, rate: number, unitInfo?: UnitInfo): string {
-  if (!rate || rate === 0) return '—'
-  const [v] = atomToConventional(vAtom, unitInfo)
-  return formatFiat(v * rate)
 }
 
 // T18#5: formatProfit returns a USD profit string (always 2 decimals)
