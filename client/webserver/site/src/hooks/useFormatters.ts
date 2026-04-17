@@ -37,17 +37,16 @@ function fullPrecisionFormatterWithPreservingZeroes (prec: number, locales?: str
   return formatter(fullPrecisionFormatters, prec, prec, locales)
 }
 
-export function atomToConventional (v: number, unitInfo?: UnitInfo): number {
-  if (!unitInfo) return v
+export function atomToConventional (v: number, unitInfo: UnitInfo): number {
   return v / unitInfo.conventional.conversionFactor
 }
 
 // Exported pure functions — no hooks, just formatting utilities.
 
-export function formatCoinAtom (vAtom: number, unitInfo?: UnitInfo): string {
+export function formatCoinAtom (vAtom: number, unitInfo: UnitInfo): string {
   const v = atomToConventional(vAtom, unitInfo)
   if (Number.isInteger(v)) return intFormatter.format(v)
-  const prec = unitInfo ? Math.round(Math.log10(unitInfo.conventional.conversionFactor)) : 8
+  const prec = Math.round(Math.log10(unitInfo.conventional.conversionFactor))
   return decimalFormatter(prec).format(v)
 }
 

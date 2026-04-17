@@ -349,18 +349,20 @@ export default function OrderPage () {
   // precision. For historical orders whose exchange/market is no longer
   // configured, the helpers fall back to `formatCoinValueAtom`.
   const mkt = xc?.markets?.[order.market]
-  const fmtBase = (atoms: number): string =>
-    baseUnitInfo && mkt
-      ? formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
-      : formatCoinAtom(atoms, baseUnitInfo)
-  const fmtQuote = (atoms: number): string =>
-    baseUnitInfo && quoteUnitInfo && mkt
-      ? formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
-      : formatCoinAtom(atoms, quoteUnitInfo)
+  const fmtBase = (atoms: number): string => {
+    if (!baseUnitInfo) return '-'
+    if (mkt) return formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
+    return formatCoinAtom(atoms, baseUnitInfo)
+  }
+  const fmtQuote = (atoms: number): string => {
+    if (!quoteUnitInfo) return '-'
+    if (baseUnitInfo && mkt) return formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
+    return formatCoinAtom(atoms, quoteUnitInfo)
+  }
   const fmtRate = (rateConv: number): string =>
     baseUnitInfo && quoteUnitInfo && mkt
       ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-      : formatCoinAtom(rateConv)
+      : '-'
 
   const canCancel = isCancellable(order)
   // OP-01: full vanilla parity for the Accelerate button. Previously

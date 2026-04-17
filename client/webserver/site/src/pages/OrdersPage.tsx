@@ -344,7 +344,7 @@ export default function OrdersPage () {
     const fmtRate = (rateConv: number): string =>
       mkt
         ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
-        : formatCoinAtom(rateConv)
+        : '-'
 
     let fromSymbol: string
     let toSymbol: string

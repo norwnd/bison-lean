@@ -107,11 +107,11 @@ export function VerifyOrderForm ({
   // Hide each fiat row independently when its rate is unavailable.
   const showSpendFiat = youSpendFiatRate > 0 && youSpendUnitInfo !== null
   const showGetFiat = youGetFiatRate > 0 && youGetUnitInfo !== null
-  const spendFiatText = showSpendFiat
-    ? formatFiat(atomToConventional(youSpendAtom, youSpendUnitInfo ?? undefined) *youSpendFiatRate)
+  const spendFiatText = showSpendFiat && youSpendUnitInfo
+    ? formatFiat(atomToConventional(youSpendAtom, youSpendUnitInfo) * youSpendFiatRate)
     : ''
-  const getFiatText = showGetFiat
-    ? formatFiat(atomToConventional(youGetAtom, youGetUnitInfo ?? undefined) *youGetFiatRate)
+  const getFiatText = showGetFiat && youGetUnitInfo
+    ? formatFiat(atomToConventional(youGetAtom, youGetUnitInfo) * youGetFiatRate)
     : ''
 
   return (

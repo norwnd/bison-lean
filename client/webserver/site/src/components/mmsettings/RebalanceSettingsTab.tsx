@@ -131,8 +131,8 @@ const BridgeFeesTable: React.FC<BridgeFeesTableProps> = ({ withdrawalFees, depos
                 {asset && <img className="mini-icon" src={logoPath(asset.symbol)} alt={asset.symbol} />}
                 <span>{asset?.name}</span>
               </td>
-              <td>{wFee != null ? formatCoinAtom(wFee, asset?.unitInfo) : '\u2014'}</td>
-              <td>{dFee != null ? formatCoinAtom(dFee, asset?.unitInfo) : '\u2014'}</td>
+              <td>{wFee != null && asset ? formatCoinAtom(wFee, asset.unitInfo) : '\u2014'}</td>
+              <td>{dFee != null && asset ? formatCoinAtom(dFee, asset.unitInfo) : '\u2014'}</td>
             </tr>
           )
         })}
