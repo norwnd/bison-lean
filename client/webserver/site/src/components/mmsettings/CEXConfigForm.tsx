@@ -50,7 +50,7 @@ const CEXConfigForm: React.FC<CEXConfigFormProps> = ({
       // Update the CEX statuses even if we fail, because if the CEX has a
       // connection error, we still want the pre-populated incorrect credentials
       // to be updated.
-      onCEXUpdated?.()
+      onCEXUpdated()
 
       if (!res.ok) {
         setError(`Failed to update CEX configuration: ${res.msg}`)
