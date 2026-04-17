@@ -117,7 +117,7 @@ const LotsOrUsdSelector: React.FC = () => {
         </div>
       </div>
       <div className="fs13 grey text-end">
-        ~{isLotsMode ? formatUSD(lotsToUSD()) : String(quickPlacements.lotsPerLevel)} {isLotsMode ? 'USD per side' : 'Lots per level'}
+        ~{isLotsMode ? formatUSD(lotsToUSD()) : String(quickPlacements.lotsPerLevel)} {isLotsMode ? t('MM_USD_PER_SIDE') : t('MM_LOTS_PER_LEVEL')}
       </div>
     </div>
   )

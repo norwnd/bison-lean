@@ -400,10 +400,7 @@ const BalanceItem: React.FC<BalanceItemProps> = ({
   const assets = useAuthStore(s => s.assets)
   const asset = assets[assetID]
 
-  const formatValue = (value: number, assetID: number) => {
-    const a = assets[assetID]
-    return value ? formatCoinValue(value, a.unitInfo) : '0'
-  }
+  const formattedAmount = amount ? formatCoinValue(amount, asset.unitInfo) : '0'
 
   const getStatusClass = (status?: string) => {
     switch (status) {
@@ -426,7 +423,7 @@ const BalanceItem: React.FC<BalanceItemProps> = ({
         </div>
         <div className="d-flex align-items-center">
           <span className={`fs16 me-2 ${getStatusClass(status)}`}>
-            {formatValue(amount, assetID)}
+            {formattedAmount}
           </span>
           <span
             className='ico-arrowright fs14'
