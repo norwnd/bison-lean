@@ -1687,6 +1687,14 @@ type Core struct {
 
 	loginMtx      sync.Mutex
 	loggedIn      bool
+	// loginWG tracks the outer Login background goroutine (post-B5
+	// async flow) so tests can synchronize with its completion —
+	// `tCore.loginWG.Wait()` after `tCore.Login(pw)` blocks until
+	// `initializeDEXConnections` + `resolveActiveTrades` have landed
+	// (but not the deferred Phase-2 `authDEXTail` goroutines, which
+	// are tracked by `c.wg` instead). Production code observes stage
+	// completion via notifications instead.
+	loginWG       sync.WaitGroup
 	bondXPriv     *hdkeychain.ExtendedKey // derived from creds.EncSeed on login
 	multisigXPriv *hdkeychain.ExtendedKey // derived from creds.EncSeed on login
 
@@ -4979,8 +4987,10 @@ func (c *Core) Login(pw []byte) error {
 			origHandedOff = true
 		}
 		c.wg.Add(1)
+		c.loginWG.Add(1) // for test synchronization; see Core.loginWG docstring
 		go func() {
 			defer c.wg.Done()
+			defer c.loginWG.Done()
 			defer crypter.Close()
 
 			// B10-TRADES-LOADED: mint this login's tradesLoaded

@@ -2517,6 +2517,10 @@ func TestLogin(t *testing.T) {
 
 	rig.queueConnect(nil, nil, nil)
 	err := tCore.Login(tPW)
+	// Login spawns a background goroutine (LI-ASYNC) that runs
+	// initializeDEXConnections + resolveActiveTrades. Wait for it to
+	// finish before asserting on post-auth state.
+	tCore.loginWG.Wait()
 	if err != nil || !rig.acct.authed() {
 		t.Fatalf("initial Login error: %v", err)
 	}
@@ -2526,15 +2530,20 @@ func TestLogin(t *testing.T) {
 	creds := tCore.credentials
 	tCore.credentials = nil
 	err = tCore.Login(tPW)
+	tCore.loginWG.Wait()
 	if err == nil || rig.acct.authed() {
 		t.Fatalf("no error for missing app key")
 	}
 	tCore.credentials = creds
 
 	// Account not Paid. No error, and account should be unlocked.
+	// (Second Login when already `loggedIn=true` is a no-op; the
+	// background goroutine is NOT re-spawned, so authed stays false
+	// from the preceding unauth. loginWG.Wait() is still cheap.)
 	rig.acct.rep = account.Reputation{BondedTier: 0}
 	rig.queueConnect(nil, nil, nil)
 	err = tCore.Login(tPW)
+	tCore.loginWG.Wait()
 	if err != nil || rig.acct.authed() {
 		t.Fatalf("error for unpaid account: %v", err)
 	}
@@ -2554,6 +2563,7 @@ func TestLogin(t *testing.T) {
 		return nil
 	})
 	err = tCore.Login(tPW)
+	tCore.loginWG.Wait()
 	// Should be no error, but also not authed. Error is sent and logged
 	// as a notification.
 	if err != nil || rig.acct.authed() {
@@ -2643,6 +2653,11 @@ func TestLogin(t *testing.T) {
 	// 	-> update match in auditContract (second because of lock) ** the ASYNC one we have to wait for **
 	rig.db.updateMatchChan = make(chan order.MatchStatus, 4)
 	err = tCore.Login(tPW) // authDEX -> async contract audit for the extra match
+	// Wait for the outer Login goroutine (Phase 1 auth + resolveActiveTrades)
+	// before checking authed; the deferred Phase 2 `authDEXTail` goroutines
+	// that produce the 4 match DB updates below are tracked by c.wg instead
+	// and the channel reads serve as their sync point.
+	tCore.loginWG.Wait()
 	if err != nil || !rig.acct.authed() {
 		t.Fatalf("final Login error: %v", err)
 	}
@@ -6195,6 +6210,9 @@ func TestResolveActiveTrades(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: login error: %v", description, err)
 		}
+		// Login's background goroutine populates dc.trades via
+		// resolveActiveTrades; wait for it before inspecting the map.
+		tCore.loginWG.Wait()
 
 		trade, found := rig.dc.trades[lo.ID()]
 		if expAddedToTradesMap != found {
