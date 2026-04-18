@@ -750,6 +750,11 @@ type Exchange struct {
 	BondExpiry       uint64                 `json:"bondExpiry"`
 	BondAssets       map[string]*BondAsset  `json:"bondAssets"`
 	ConnectionStatus comms.ConnectionStatus `json:"connectionStatus"`
+	// Authed reports whether the account has completed the DEX `connect`
+	// handshake. Distinguishes "WS reachable" from "authed and ready to
+	// trade" — the latter is what the UI needs to gate order submission
+	// and clear the post-login "connecting to DEX…" indicator.
+	Authed           bool                   `json:"authed"`
 	CandleDurs       []string               `json:"candleDurs"`
 	ViewOnly         bool                   `json:"viewOnly"`
 	Auth             ExchangeAuth           `json:"auth"`

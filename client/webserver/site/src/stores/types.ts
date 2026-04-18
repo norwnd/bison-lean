@@ -44,6 +44,11 @@ export interface Exchange {
   markets: Record<string, Market>
   assets: Record<number, Asset>
   connectionStatus: ConnectionStatus
+  // authed reports whether the account has completed the DEX `connect`
+  // handshake. Distinguishes "WS reachable" from "authed and ready to
+  // trade"; used to gate order submission and clear the post-login
+  // "connecting to DEX…" indicator (LI-ASYNC).
+  authed: boolean
   viewOnly: boolean
   bondAssets: Record<string, BondAsset>
   candleDurs: string[]
