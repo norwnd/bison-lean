@@ -4934,6 +4934,17 @@ func (c *Core) Login(pw []byte) error {
 		go func() {
 			defer c.wg.Done()
 			defer crypter.Close()
+			// Wait for every wallet's initial connect attempt to land
+			// before running resolveActiveTrades. resumeTrade takes
+			// tracker.mtx.Lock() and then calls connectAndUnlockResumeTrades
+			// on base/quote wallets; when the wallet isn't yet connected
+			// that drops into connectAndUpdateWalletResumeTrades →
+			// updateWalletBalance → lockedAmounts, which RLocks EVERY
+			// tracker.mtx — including the one we already hold the write
+			// lock on. That self-deadlocks the login goroutine and
+			// prevents authDEX from running. Blocking here ensures the
+			// `wallet.connected()` fast path in connectAndUnlockResumeTrades
+			// skips that whole chain.
 			for _, ch := range walletReady {
 				<-ch
 			}
@@ -4941,7 +4952,7 @@ func (c *Core) Login(pw []byte) error {
 			c.resolveActiveTrades(crypter)
 			c.connectMesh()
 			c.notify(newLoginNote("Connecting to DEX servers..."))
-			c.initializeDEXConnections(crypter)
+			c.initializeDEXConnections(crypter, walletReady)
 		}()
 	}
 
@@ -5529,14 +5540,24 @@ func (c *Core) MaxSell(host string, base, quote uint32) (*MaxOrderEstimate, erro
 }
 
 // initializeDEXConnections connects to the DEX servers in the conns map and
-// authenticates the connection.
-func (c *Core) initializeDEXConnections(crypter encrypt.Crypter) {
+// authenticates the connection. When walletReady is non-nil, each DEX
+// auth goroutine blocks on its bond wallet's readiness channel before
+// proceeding so per-DEX auth can fire as soon as the specific bond
+// wallet is up, rather than stalling on the whole wallet pool.
+func (c *Core) initializeDEXConnections(crypter encrypt.Crypter, walletReady map[uint32]chan struct{}) {
 	var wg sync.WaitGroup
 	conns := c.dexConnections()
 	for _, dc := range conns {
 		wg.Add(1)
 		go func(dc *dexConnection) {
 			defer wg.Done()
+			if walletReady != nil {
+				if bondAssetID, targetTier, _ := dc.bondOpts(); targetTier > 0 {
+					if ch, ok := walletReady[bondAssetID]; ok {
+						<-ch
+					}
+				}
+			}
 			c.initializeDEXConnection(dc, crypter)
 		}(dc)
 	}

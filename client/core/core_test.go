@@ -2698,7 +2698,7 @@ func TestAccountNotFoundError(t *testing.T) {
 
 	feed := tCore.NotificationFeed()
 
-	tCore.initializeDEXConnections(rig.crypter)
+	tCore.initializeDEXConnections(rig.crypter, nil)
 
 	// Make sure that the connections did not get authenticated
 	for _, dc := range tCore.dexConnections() {
@@ -2728,7 +2728,7 @@ func TestInitializeDEXConnectionsSuccess(t *testing.T) {
 	rig.queueConnect(nil, nil, nil)
 
 	// Make sure that the connections got authenticated
-	tCore.initializeDEXConnections(rig.crypter)
+	tCore.initializeDEXConnections(rig.crypter, nil)
 	for _, dc := range tCore.dexConnections() {
 		if !dc.acct.authed() {
 			t.Fatalf("dex connection was not authenticated")
