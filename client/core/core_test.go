@@ -2923,6 +2923,14 @@ func TestSend(t *testing.T) {
 		t.Fatalf("no error for wallet connect error")
 	}
 	tWallet.connectErr = nil
+	// The previous sub-test drove ConnectionMaster.ConnectOnce to an
+	// error, which set connectInitiated=true on this connector.
+	// ConnectionMaster enforces a single-use invariant (runner.go:132),
+	// so any subsequent xcWallet.Connect() would panic. Mint a fresh
+	// connector for the next sub-test and restore hookedUp so Send's
+	// retry path sees a connected wallet.
+	wallet.connector = dex.NewConnectionMaster(tWallet)
+	wallet.hookedUp = true
 
 	// Send error
 	tWallet.sendErr = tErr
