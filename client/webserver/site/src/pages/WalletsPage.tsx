@@ -191,20 +191,25 @@ function txSignAndClass (txType: number): [string, string] {
   return ['', '']
 }
 
+// Returns null when no asset has a usable fiat rate (so the caller can
+// render a placeholder like "—" instead of misleading "$0"). Zero is
+// still a legitimate total when rates are known.
 function totalFiatBalance (
   assets: Record<number, SupportedAsset>,
   fiatRatesMap: Record<number, number>
-): number {
+): number | null {
   let total = 0
+  let anyRate = false
   for (const asset of Object.values(assets)) {
     if (!asset.wallet) continue
     const bal = asset.wallet.balance
     const rate = fiatRatesMap[asset.id]
     if (!rate) continue
+    anyRate = true
     const conv = asset.unitInfo.conventional.conversionFactor
     total += ((bal.available + bal.locked + bal.immature) / conv) * rate
   }
-  return total
+  return anyRate ? total : null
 }
 
 /** Group assets by normalized ticker for the sidebar. */
@@ -215,6 +220,13 @@ interface TickerGroup {
   assetIDs: number[]
   primaryAssetID: number
   hasWallet: boolean
+  // totalNative is the sum of per-asset wallet balances converted from
+  // atoms to whole units (e.g. BTC, ETH). Shown in the sidebar so the
+  // displayed value doesn't depend on fiat rate availability.
+  totalNative: number
+  // totalFiat is kept for sort ordering — we want wallet rows with the
+  // largest USD value near the top; falling back to totalNative would
+  // mix unrelated units (e.g. ETH vs USDC).
   totalFiat: number
 }
 
@@ -236,6 +248,7 @@ function buildTickerGroups (
         assetIDs: [],
         primaryAssetID: asset.id,
         hasWallet: false,
+        totalNative: 0,
         totalFiat: 0
       }
     }
@@ -249,7 +262,9 @@ function buildTickerGroups (
       const bal = asset.wallet.balance
       const rate = fiatRatesMap[asset.id] ?? 0
       const conv = asset.unitInfo.conventional.conversionFactor
-      g.totalFiat += ((bal.available + bal.locked + bal.immature) / conv) * rate
+      const native = (bal.available + bal.locked + bal.immature) / conv
+      g.totalNative += native
+      g.totalFiat += native * rate
     }
   }
   return Object.values(groups).sort((a, b) => {
@@ -460,6 +475,13 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
+  // Null signals "fiat rates haven't loaded yet" — render "—" instead
+  // of a misleading "$0" in the Holdings total. See totalFiatBalance.
+  const holdingsFiat = useMemo(
+    () => totalFiatBalance(assets, fiatRatesMap),
+    [assets, fiatRatesMap]
+  )
+
   // Auto-select the first wallet-bearing asset on mount.
   useEffect(() => {
     if (selectedAssetID !== null) return
@@ -512,7 +534,9 @@ export default function WalletsPage () {
         <div className="flex-stretch-column pt-2 px-2 hoverbg pointer" onClick={() => setSelectedAssetID(null)}>
           <span className="grey fs16 lh1 mb-1">{t('Holdings')}</span>
           <span className="d-flex align-items-end lh1">
-            <span className="fs20">${formatBestWeCan(totalFiatBalance(assets, fiatRatesMap))}</span>
+            <span className="fs20">
+              {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
+            </span>
           </span>
           <div className="border-bottom mt-2"></div>
         </div>
@@ -534,7 +558,7 @@ export default function WalletsPage () {
                   </div>
                   <div className="d-flex flex-column align-items-end">
                     {g.hasWallet
-                      ? <span className="fs22 lh1">${formatBestWeCan(g.totalFiat, 2)}</span>
+                      ? <span className="fs22 lh1">{formatBestWeCan(g.totalNative, 8)}</span>
                       : <span className="grey me-1">—</span>}
                   </div>
                 </div>
@@ -1036,8 +1060,10 @@ function WalletDetail ({
           <div className="flex-center py-2 fs15 demi">{t('Exchange Rate')}</div>
           <div className="mx-2 border-bottom"></div>
           <div className="flex-grow-1 flex-center py-2">
-            <span className="fs16 mb-1 demi">$</span>
-            <span className="fs22 me-1 demi lh1">{formatFiat(fiatRate)}</span>
+            {/* Single span keeps the $ and digits on the same baseline
+                / font size — splitting them caused a visible
+                misalignment in flex centering. */}
+            <span className="fs22 demi lh1">${formatFiat(fiatRate)}</span>
           </div>
         </section>
       )}
@@ -1050,27 +1076,24 @@ function WalletDetail ({
           <div className="d-flex">
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Send')}</span>
-              <span className="flex-center lh1">
-                <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.send, ui) * fiatRate) : '—'}</span>
+              <span className="fs20 lh1">
+                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.send, ui) * fiatRate)}` : '—'}
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.send, ui)}</div>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Sell')}</span>
-              <span className="flex-center lh1">
-                <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.swap, ui) * fiatRate) : '—'}</span>
+              <span className="fs20 lh1">
+                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.swap, ui) * fiatRate)}` : '—'}
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.swap, ui)}</div>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Buy')}</span>
-              <span className="flex-center lh1">
-                <span className="fs16 mb-1">$</span>
-                <span className="fs20">{fiatRate > 0 ? formatFiat(atomToConventional(wallet.feeState.redeem, ui) * fiatRate) : '—'}</span>
+              <span className="fs20 lh1">
+                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.redeem, ui) * fiatRate)}` : '—'}
               </span>
               <div className="fs14 grey">{formatCoinAtom(wallet.feeState.redeem, ui)}</div>
             </div>
