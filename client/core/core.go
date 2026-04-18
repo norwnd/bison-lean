@@ -180,9 +180,20 @@ type dexConnection struct {
 	tradeMtx sync.RWMutex
 	// trades tracks outstanding orders issued by this client.
 	trades map[order.OrderID]*trackedTrade
-	// inFlightOrders tracks orders issued by this client that have not been
+	// inFlightOrders tracks outstanding orders issued by this client that have not been
 	// processed by a dex server.
 	inFlightOrders map[uint64]*InFlightOrder
+
+	// tradesLoaded (B10-TRADES-LOADED) closes after resolveActiveTrades
+	// finishes populating dc.trades for the most recent Login. Consumers
+	// that need dc.trades populated (e.g. authDEX's Phase-2 tail, which
+	// runs parseMatches/compareServerMatches/reconcileTrades) block on
+	// tradesLoadedCh(). Reset per-login by resetTradesLoaded() so
+	// re-login after logout gates correctly. Nil before first login.
+	// The mutex guards the pointer swap on re-login — consumers capture
+	// the channel once and read it without holding the lock.
+	tradesLoadedMtx sync.Mutex
+	tradesLoaded    chan struct{}
 
 	// A map linking cancel order IDs to trade order IDs.
 	cancelsMtx sync.RWMutex
@@ -240,6 +251,35 @@ type dexConnection struct {
 	// cleanup in releaseMatchCoinID.
 	matchCoinIDs      map[order.MatchID][]string
 	matchSecretHashes map[order.MatchID][]string
+}
+
+// tradesLoadedCh (B10-TRADES-LOADED) returns a channel that is closed
+// after dc.trades has been populated by the current login's
+// resolveActiveTrades. Callers capture the returned channel once at
+// goroutine spawn time and read it without holding tradesLoadedMtx.
+// Returns a pre-closed channel when tradesLoaded is nil (not in a
+// login window), so non-login callers never block.
+func (dc *dexConnection) tradesLoadedCh() <-chan struct{} {
+	dc.tradesLoadedMtx.Lock()
+	defer dc.tradesLoadedMtx.Unlock()
+	if dc.tradesLoaded == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return dc.tradesLoaded
+}
+
+// resetTradesLoaded mints a fresh tradesLoaded channel for a new login
+// and returns it so the caller (resolveActiveTrades) can close it when
+// trade load completes. Must be called before any goroutine from the
+// new login captures tradesLoadedCh(), otherwise goroutines may
+// capture the pre-closed placeholder and skip the wait.
+func (dc *dexConnection) resetTradesLoaded() chan struct{} {
+	dc.tradesLoadedMtx.Lock()
+	defer dc.tradesLoadedMtx.Unlock()
+	dc.tradesLoaded = make(chan struct{})
+	return dc.tradesLoaded
 }
 
 // releaseMatchCoinID removes a match's entries from the cross-match dedup
@@ -4916,11 +4956,19 @@ func (c *Core) Login(pw []byte) error {
 		// + DEX auth) to a background goroutine so Login returns while
 		// things are still coming online. The UI picks up readiness via
 		// WalletStateNote / TopicOrderLoaded / ConnEventNote as each
-		// stage lands. Order within the goroutine must stay serial:
-		// authDEX's compareServerMatches / reconcileTrades read
-		// dc.trades, which resolveActiveTrades populates via
-		// loadDBTrades — running them concurrently would produce false
-		// "unknown orders" / orphaned match anomalies.
+		// stage lands.
+		//
+		// B10-AUTHDEX-SPLIT: resolveActiveTrades and
+		// initializeDEXConnections now run as siblings instead of
+		// serially. authDEX is split head/tail: Phase 1 (connect +
+		// bonds + isAuthed=true) runs inside initializeDEXConnections
+		// as soon as each DEX's bond wallet is ready; Phase 2
+		// (parseMatches / compareServerMatches / reconcileTrades)
+		// blocks per-DEX on dc.tradesLoaded, which this goroutine
+		// closes once resolveActiveTrades finishes. Net effect: UI
+		// flips to "authed + ready to quote" on the shorter of the
+		// two branches (usually Phase 1 lands ~100ms after bond
+		// wallet up, vs trade-load which can take seconds).
 		//
 		// Crypter ownership transfers to the goroutine. When no
 		// upgrade happened (crypter == origCrypter) we disable the
@@ -4934,25 +4982,72 @@ func (c *Core) Login(pw []byte) error {
 		go func() {
 			defer c.wg.Done()
 			defer crypter.Close()
-			// Wait for every wallet's initial connect attempt to land
-			// before running resolveActiveTrades. resumeTrade takes
-			// tracker.mtx.Lock() and then calls connectAndUnlockResumeTrades
-			// on base/quote wallets; when the wallet isn't yet connected
-			// that drops into connectAndUpdateWalletResumeTrades →
-			// updateWalletBalance → lockedAmounts, which RLocks EVERY
-			// tracker.mtx — including the one we already hold the write
-			// lock on. That self-deadlocks the login goroutine and
-			// prevents authDEX from running. Blocking here ensures the
-			// `wallet.connected()` fast path in connectAndUnlockResumeTrades
-			// skips that whole chain.
-			for _, ch := range walletReady {
-				<-ch
+
+			// B10-TRADES-LOADED: mint this login's tradesLoaded
+			// channels UP-FRONT (before spawning either sibling
+			// branch) so Phase 1 goroutines spawned inside
+			// initializeDEXConnections always capture *this*
+			// login's channel, not the pre-closed placeholder
+			// returned for nil. Defer guarantees close on any
+			// exit path (panic, early return) so deferred Phase 2
+			// tails never leak.
+			conns := c.dexConnections()
+			tradesChans := make([]chan struct{}, 0, len(conns))
+			for _, dc := range conns {
+				tradesChans = append(tradesChans, dc.resetTradesLoaded())
 			}
-			c.notify(newLoginNote("Resuming active trades..."))
-			c.resolveActiveTrades(crypter)
+			closeTradesLoaded := func() {
+				for _, ch := range tradesChans {
+					select {
+					case <-ch:
+						// already closed
+					default:
+						close(ch)
+					}
+				}
+			}
+			defer closeTradesLoaded()
+
+			// connectMesh is independent of both wallet readiness
+			// and DEX auth; run it up-front so mesh connectivity
+			// starts coming online in parallel with the sibling
+			// branches below.
 			c.connectMesh()
+
+			// Branch 1: resolveActiveTrades. Still gated on the
+			// walletReady barrier because resumeTrade's
+			// tracker.mtx.Lock → lockedAmounts RLock chain
+			// self-deadlocks when it has to drop into the
+			// wallet-connect-and-unlock slow path mid-lock. See
+			// Batch 6 comment for the full lock-graph analysis.
+			var tradesWG sync.WaitGroup
+			tradesWG.Add(1)
+			go func() {
+				defer tradesWG.Done()
+				for _, ch := range walletReady {
+					<-ch
+				}
+				c.notify(newLoginNote("Resuming active trades..."))
+				c.resolveActiveTrades(crypter)
+				// Unblock all deferred Phase 2 tails as soon
+				// as trade load is done -- don't wait for
+				// outer goroutine exit, that would pointlessly
+				// stall reconciliation.
+				closeTradesLoaded()
+			}()
+
+			// Branch 2: initializeDEXConnections. Each per-DEX
+			// goroutine still waits on its bond wallet's channel
+			// individually (Batch 6), so a DEX with its bond
+			// wallet up authenticates without waiting for other
+			// DEXes' bond wallets or for the trade branch.
 			c.notify(newLoginNote("Connecting to DEX servers..."))
 			c.initializeDEXConnections(crypter, walletReady)
+
+			// Wait for the trade branch before releasing crypter
+			// -- resumeTrade unlocks wallets via crypter and we
+			// don't want Close() to race with that.
+			tradesWG.Wait()
 		}()
 	}
 
@@ -5622,18 +5717,62 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 		return
 	}
 
-	// Authenticate dex connection
-	err = c.authDEX(dc)
+	// B10-AUTHDEX-SPLIT: Phase 1 (connect + bonds + isAuthed=true) runs
+	// synchronously so the UI flips to "authed + ready to quote" as
+	// soon as the connect round-trip + bond reconciliation lands.
+	// Phase 2 (parseMatches / compareServerMatches / reconcileTrades)
+	// reads dc.trades and is deferred until resolveActiveTrades
+	// populates that map -- decoupling those two lets the login
+	// background goroutine run auth and trade-resume as siblings
+	// instead of serially.
+	ctx, err := c.authDEXHead(dc)
 	if err != nil {
 		subject, details := c.formatDetails(TopicDexAuthError, dc.acct.host, err)
 		c.notify(newDEXAuthNote(TopicDexAuthError, subject, dc.acct.host, false, details, db.ErrorLevel))
+		return
 	}
+	// Capture tradesLoaded channel once before spawning -- the
+	// resetTradesLoaded call at the next login would otherwise race
+	// with the goroutine's read. Each spawned tail owns its login's
+	// channel and will unblock when that login's resolveActiveTrades
+	// closes it.
+	tradesLoaded := dc.tradesLoadedCh()
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		select {
+		case <-tradesLoaded:
+		case <-c.ctx.Done():
+			return
+		}
+		// Guard against logout-during-warmup: if the account got
+		// locked while we were blocked, skip reconciliation. Phase 1
+		// already succeeded; the UI has moved on.
+		if !dc.acct.authed() {
+			return
+		}
+		if err := c.authDEXTail(dc, ctx); err != nil {
+			c.log.Errorf("post-auth match/order reconciliation for %s failed: %v", dc.acct.host, err)
+			// Don't emit DexAuthError here -- Phase 1 already
+			// succeeded, UI already sees authed=true. Per-trade
+			// order notes from within the tail cover user-visible
+			// cases.
+		}
+	}()
 }
 
 // resolveActiveTrades loads order and match data from the database. Only active
 // orders and orders with active matches are loaded. Also, only active matches
 // are loaded, even if there are inactive matches for the same order, but it may
 // be desirable to load all matches, so this behavior may change.
+//
+// B10-TRADES-LOADED: dc.tradesLoaded channel lifecycle (reset+close)
+// is managed by the caller (the Login background goroutine) rather
+// than inside this function, because the reset must happen *before*
+// initializeDEXConnections spawns per-DEX Phase 1 goroutines that
+// capture dc.tradesLoadedCh(). If reset happened here, Phase 1
+// goroutines that started before this function ran would capture
+// the pre-closed placeholder and skip their wait.
 func (c *Core) resolveActiveTrades(crypter encrypt.Crypter) {
 	for _, dc := range c.dexConnections() {
 		err := c.loadDBTrades(dc)
@@ -5643,7 +5782,10 @@ func (c *Core) resolveActiveTrades(crypter encrypt.Crypter) {
 	}
 
 	// resumeTrades will be a no-op if there are no trades in any
-	// dexConnection's trades map that is not ready to tick.
+	// dexConnection's trades map that is not ready to tick. It must
+	// run before the caller closes tradesLoaded: the authDEX tail's
+	// compareServerMatches reads tracker state (matches, wallets)
+	// that resumeTrade populates.
 	c.resumeTrades(crypter)
 }
 
@@ -7763,11 +7905,41 @@ func (dc *dexConnection) maxScore() uint32 {
 	return 60 // Assume the default for < v2 servers.
 }
 
-// authDEX authenticates the connection for a DEX.
+// postAuthCtx (B10-AUTHDEX-SPLIT) carries the connect-response state
+// authDEX's Phase 1 (head) needs to hand to Phase 2 (tail). Phase 2
+// reconciles server-reported matches and order statuses against
+// dc.trades, so it must run after resolveActiveTrades populates that
+// map -- the login path defers Phase 2 until dc.tradesLoaded closes.
+// Non-login callers (reconnect, discoverAccount, bondConfirmed) run
+// head + tail inline via authDEX and never see this type.
+type postAuthCtx struct {
+	result *msgjson.ConnectResult
+}
+
+// authDEX authenticates the connection for a DEX and reconciles
+// server-reported matches and order statuses against dc.trades. Thin
+// wrapper around authDEXHead + authDEXTail; used by reconnect,
+// discoverAccount, and bondConfirmed where the tail must run
+// synchronously. The Login path calls the head + tail separately so
+// the tail can be deferred until dc.trades is populated.
 func (c *Core) authDEX(dc *dexConnection) error {
+	ctx, err := c.authDEXHead(dc)
+	if err != nil {
+		return err
+	}
+	return c.authDEXTail(dc, ctx)
+}
+
+// authDEXHead runs the connection-authenticating portion of authDEX:
+// 'connect' request + response, signature check, bond reconciliation,
+// and flipping dc.acct.isAuthed = true. Does NOT touch dc.trades, so
+// it can run before resolveActiveTrades during login. On success
+// returns a postAuthCtx the caller hands to authDEXTail to finish
+// match/order reconciliation.
+func (c *Core) authDEXHead(dc *dexConnection) (*postAuthCtx, error) {
 	bondAssets, bondExpiry := dc.bondAssets()
 	if bondAssets == nil { // reconnect loop may be running
-		return fmt.Errorf("dex connection not usable prior to config request")
+		return nil, fmt.Errorf("dex connection not usable prior to config request")
 	}
 
 	// Copy the local bond slices since bondConfirmed will modify them.
@@ -7789,14 +7961,14 @@ func (c *Core) authDEX(dc *dexConnection) error {
 	sigMsg := payload.Serialize()
 	sig, err := dc.acct.sign(sigMsg)
 	if err != nil {
-		return fmt.Errorf("signing error: %w", err)
+		return nil, fmt.Errorf("signing error: %w", err)
 	}
 	payload.SetSig(sig)
 
 	// Send the 'connect' request.
 	req, err := msgjson.NewRequest(dc.NextID(), msgjson.ConnectRoute, payload)
 	if err != nil {
-		return fmt.Errorf("error encoding 'connect' request: %w", err)
+		return nil, fmt.Errorf("error encoding 'connect' request: %w", err)
 	}
 	errChan := make(chan error, 1)
 	result := new(msgjson.ConnectResult)
@@ -7807,7 +7979,7 @@ func (c *Core) authDEX(dc *dexConnection) error {
 	})
 	// Check the request error.
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Check the response error.
@@ -7826,13 +7998,13 @@ func (c *Core) authDEX(dc *dexConnection) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("'connect' error: %w", err)
+		return nil, fmt.Errorf("'connect' error: %w", err)
 	}
 
 	// Check the servers response signature.
 	err = dc.acct.checkSig(sigMsg, result.Sig)
 	if err != nil {
-		return newError(signatureErr, "DEX signature validation error: %w", err)
+		return nil, newError(signatureErr, "DEX signature validation error: %w", err)
 	}
 
 	// Check active and pending bonds, comparing against result.ActiveBonds. For
@@ -7917,7 +8089,6 @@ func (c *Core) authDEX(dc *dexConnection) error {
 		toPost = append(toPost, queuedBond{assetBond(bond), bondAsset.Confs})
 	}
 
-	updatedAssets := make(assetMap)
 	// Flag as authenticated before bondConfirmed and monitorBondConfs, which
 	// may call authDEX if not flagged as such.
 	dc.acct.authMtx.Lock()
@@ -7986,6 +8157,20 @@ func (c *Core) authDEX(dc *dexConnection) error {
 		c.log.Warnf("Unknown bonds for asset %s found for dex %s while target tier is zero.",
 			unbip(uint32(unknownBondAssetID)), dc.acct.host)
 	}
+
+	return &postAuthCtx{result: result}, nil
+}
+
+// authDEXTail runs the post-auth match and order reconciliation
+// portion of authDEX: parseMatches + compareServerMatches +
+// reconcileTrades + broken-trade cancel. Reads dc.trades (under
+// tradeMtx.RLock), so the login path must defer this until after
+// resolveActiveTrades has populated that map -- see
+// dc.tradesLoadedCh(). Non-login callers run it synchronously after
+// the head via the authDEX wrapper.
+func (c *Core) authDEXTail(dc *dexConnection, ctx *postAuthCtx) error {
+	result := ctx.result
+	updatedAssets := make(assetMap)
 
 	// Associate the matches with known trades.
 	matches, _, err := dc.parseMatches(result.ActiveMatches, false)
