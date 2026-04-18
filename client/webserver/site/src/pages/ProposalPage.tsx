@@ -231,7 +231,7 @@ export default function ProposalPage () {
             padding look. `slide-in-from-right` replays on each open
             because FormOverlay remounts its children when `show`
             flips. Overflow-hidden clips the slide-in start state. */}
-        <FormOverlay show={voteFormOpen} onClose={() => setVoteFormOpen(false)}>
+        <FormOverlay bare show={voteFormOpen} onClose={() => setVoteFormOpen(false)}>
           <div className="overflow-hidden">
             <div className="modal-form mw-425 slide-in-from-right">
               <button type="button" className="form-close-btn" onClick={() => setVoteFormOpen(false)} aria-label="Close">

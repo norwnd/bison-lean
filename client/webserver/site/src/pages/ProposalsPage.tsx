@@ -162,7 +162,7 @@ export default function ProposalsPage () {
             clip the slide-in start state (`translateX(100%)`) -- the
             backdrop extends full-viewport so it's a safe clipping
             context. */}
-        <FormOverlay show={filterOpen} onClose={() => setFilterOpen(false)}>
+        <FormOverlay bare show={filterOpen} onClose={() => setFilterOpen(false)}>
           <div className="overflow-hidden">
             <div className="modal-form filter-form mw-500 slide-in-from-right">
               <button type="button" className="form-close-btn" onClick={() => setFilterOpen(false)} aria-label="Close">

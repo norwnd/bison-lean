@@ -61,8 +61,8 @@ export function SuccessCheckmarkModal ({ show, message, onClose }: Props) {
   }, [show])
 
   return (
-    <FormOverlay show={show} onClose={onClose}>
-      <div className="flex-center flex-column plain p-4">
+    <FormOverlay bare show={show} onClose={onClose}>
+      <div className="flex-center flex-column p-4">
         <div className="success-checkmark-box flex-center">
           <span className="ico-check success-checkmark"></span>
         </div>

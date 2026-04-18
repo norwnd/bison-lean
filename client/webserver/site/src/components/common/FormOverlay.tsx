@@ -5,9 +5,14 @@ interface Props {
   show: boolean
   onClose: () => void
   children: React.ReactNode
+  // Skip the default `.modal-form` card styling on the inner wrapper.
+  // Use when children supply their own background/border (e.g. a custom
+  // card class, slide-in animations that live on the card element, or
+  // decoration-free floating content like the success checkmark).
+  bare?: boolean
 }
 
-export function FormOverlay ({ show, onClose, children }: Props) {
+export function FormOverlay ({ show, onClose, children, bare }: Props) {
   const formRef = useRef<HTMLDivElement>(null)
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
@@ -51,7 +56,7 @@ export function FormOverlay ({ show, onClose, children }: Props) {
       }}
       onMouseDown={handleBackdropMouseDown}
     >
-      <div ref={formRef}>
+      <div ref={formRef} className={bare ? undefined : 'modal-form'}>
         {children}
       </div>
     </div>,

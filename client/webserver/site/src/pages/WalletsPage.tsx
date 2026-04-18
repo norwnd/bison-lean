@@ -597,7 +597,7 @@ export default function WalletsPage () {
       </div>
 
       {/* ---- Modals ---- */}
-      <FormOverlay show={activeForm === 'receive'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'receive'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 340 }}>
           <div className="fs18 mb-3">{t('Receive')}</div>
           {selectedAssetID !== null && (
@@ -606,7 +606,7 @@ export default function WalletsPage () {
         </div>
       </FormOverlay>
 
-      <FormOverlay show={activeForm === 'send'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'send'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380 }}>
           {selectedAsset && selectedWallet && (
             <SendForm
@@ -620,7 +620,7 @@ export default function WalletsPage () {
         </div>
       </FormOverlay>
 
-      <FormOverlay show={activeForm === 'txHistory'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'txHistory'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 500, maxHeight: '80vh', overflowY: 'auto' }}>
           {selectedAssetID !== null && (
             <TxHistoryView
@@ -632,7 +632,7 @@ export default function WalletsPage () {
         </div>
       </FormOverlay>
 
-      <FormOverlay show={activeForm === 'config'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'config'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380 }}>
           {selectedAsset && selectedWallet && (
             <WalletConfigView
@@ -650,7 +650,7 @@ export default function WalletsPage () {
           `wallets.tmpl` `recoverWalletConfirm` form (L882-895) +
           `wallets.ts` `showRecoverWallet()` (L2250) + `recoverWallet()`
           (L2669). On `activeOrdersErr`, transitions to confirmForce. */}
-      <FormOverlay show={activeForm === 'recoverWallet'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'recoverWallet'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380, maxWidth: 480 }}>
           {selectedAsset && (
             <RecoverWalletConfirm
@@ -670,7 +670,7 @@ export default function WalletsPage () {
           `wallets.ts` `displayExportWalletAuth()` (L2624) +
           `exportWalletAuthSubmit()` (L2634). On success, transitions to
           restoreWalletInfo with the returned restoration cards. */}
-      <FormOverlay show={activeForm === 'exportWalletAuth'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'exportWalletAuth'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 400, maxWidth: 520 }}>
           {selectedAsset && (
             <ExportWalletAuth
@@ -688,7 +688,7 @@ export default function WalletsPage () {
       {/* WP-07 (cont.): restore wallet info display. Vanilla
           `wallets.tmpl` `restoreWalletInfo` form (L919-947) +
           `wallets.ts` `displayRestoreWalletInfo()` (L2655). */}
-      <FormOverlay show={activeForm === 'restoreWalletInfo'} onClose={() => { setActiveForm(null); setRestorationInfo(null) }}>
+      <FormOverlay bare show={activeForm === 'restoreWalletInfo'} onClose={() => { setActiveForm(null); setRestorationInfo(null) }}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 400, maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
           {restorationInfo && (
             <RestoreWalletInfo
@@ -705,7 +705,7 @@ export default function WalletsPage () {
           The Add Peer / Remove Peer flows poll the wallet for an
           updated peer list (vanilla's `spinUntilPeersUpdate`); we
           re-fetch on every successful mutation. */}
-      <FormOverlay show={activeForm === 'managePeers'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'managePeers'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640, maxHeight: '80vh', overflowY: 'auto' }}>
           {selectedAsset && (
             <ManagePeers
@@ -721,7 +721,7 @@ export default function WalletsPage () {
           `wallets.tmpl` `confirmForce` form (L865-880) + `wallets.ts`
           `confirmForceSubmit()` (L2700). The pendingForce state holds
           the URL + body to retry with `force: true`. */}
-      <FormOverlay show={activeForm === 'confirmForce'} onClose={() => { setActiveForm(null); setPendingForce(null) }}>
+      <FormOverlay bare show={activeForm === 'confirmForce'} onClose={() => { setActiveForm(null); setPendingForce(null) }}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380, maxWidth: 520 }}>
           {pendingForce && (
             <ConfirmForce
@@ -737,7 +737,7 @@ export default function WalletsPage () {
           + WS subscriptions (via its own useNotifications hook), so
           the parent only manages visibility. Mounting also triggers
           the lazy /api/pendingbridges + /api/bridgehistory loads. */}
-      <FormOverlay show={activeForm === 'bridge'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'bridge'} onClose={() => setActiveForm(null)}>
         {bridgePaths && hasBridge && (
           <BridgingPopup
             networkAssetIDs={selectedTickerNetworkIDs}
@@ -753,7 +753,7 @@ export default function WalletsPage () {
           approved swap-contract version for the selected token
           wallet, with a Remove icon per row that transitions to the
           single-version confirmation modal. */}
-      <FormOverlay show={activeForm === 'unapproveTokenTable'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'unapproveTokenTable'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640 }}>
           {selectedAsset && selectedWallet && (
             <UnapproveTokenTable
@@ -779,6 +779,7 @@ export default function WalletsPage () {
           ID with an explorer link (mirroring vanilla's behavior of
           staying on the success-state pane instead of auto-closing). */}
       <FormOverlay
+        bare
         show={activeForm === 'unapproveTokenConfirm'}
         onClose={() => { setActiveForm(null); setUnapprovingVersion(null) }}
       >
@@ -805,7 +806,7 @@ export default function WalletsPage () {
           the wallet definition requires one). `onSuccess` refreshes
           the user state so the newly-created wallet appears in the
           sidebar + detail view immediately. */}
-      <FormOverlay show={activeForm === 'newWallet'} onClose={() => setActiveForm(null)}>
+      <FormOverlay bare show={activeForm === 'newWallet'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 440, maxWidth: 560, maxHeight: '85vh', overflowY: 'auto' }}>
           {selectedAsset && (
             <NewWalletForm
@@ -1444,7 +1445,7 @@ function MixingToggle ({ assetID }: { assetID: number }) {
           points from `wallets.tmpl` L1219-1238 using the existing
           i18n keys (privacy_intro / cspp_how / decred_privacy /
           privacy_optional / privacy_unlocked). */}
-      <FormOverlay show={showInfo} onClose={() => setShowInfo(false)}>
+      <FormOverlay bare show={showInfo} onClose={() => setShowInfo(false)}>
         <div className="bg-body border rounded p-4" style={{ maxWidth: 425 }}>
           <ul className="ps-3 mb-0">
             <li className="mb-2">{t('privacy_intro')}</li>
@@ -3364,7 +3365,7 @@ function StakingView ({ assetID, assets }: {
         `ticketPageN` (L1518-1596): merges `stakeStatus.tickets`
         (live, returned by /api/stakestatus) with paged history
         accumulated from /api/ticketpage. */}
-    <FormOverlay show={showTicketHistory} onClose={() => setShowTicketHistory(false)}>
+    <FormOverlay bare show={showTicketHistory} onClose={() => setShowTicketHistory(false)}>
       <div className="bg-body border rounded p-4" style={{ minWidth: 480, maxWidth: 640, maxHeight: '80vh', overflowY: 'auto' }}>
         {stakeStatus && (
           <TicketHistoryModal
@@ -3383,7 +3384,7 @@ function StakingView ({ assetID, assets }: {
         radios plus the in-progress proposals list. Each radio change
         POSTs /api/setvotes with one of {choices, tSpendPolicy,
         treasuryPolicy} and optimistically updates local stakeStatus. */}
-    <FormOverlay show={showVoting} onClose={() => setShowVoting(false)}>
+    <FormOverlay bare show={showVoting} onClose={() => setShowVoting(false)}>
       <div className="bg-body border rounded p-4" style={{ minWidth: 520, maxWidth: 720, maxHeight: '85vh', overflowY: 'auto' }}>
         {stakeStatus && (
           <SetVotesModal

@@ -795,7 +795,7 @@ export default function OrderPage () {
           mount because `FormOverlay` returns null when `show` is
           false. Mirrors the same pattern applied in B-L3 to the
           Proposals/Proposal forms. */}
-      <FormOverlay show={showAccelerate} onClose={() => setShowAccelerate(false)}>
+      <FormOverlay bare show={showAccelerate} onClose={() => setShowAccelerate(false)}>
         <div className="overflow-hidden">
           <div className="bg-body border rounded p-3 slide-in-from-right" style={{ minWidth: 340 }}>
             {order && (

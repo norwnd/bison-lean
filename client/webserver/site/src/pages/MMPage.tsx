@@ -253,7 +253,7 @@ export default function MMPage () {
   }, [mmStatus?.cexes, assets, fiatRatesMap])
 
   return (
-    <div className="page-view p-3">
+    <div className="page-view p-3 overflow-y-auto" style={{ height: '100%' }}>
       {/* Header */}
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
         <h2 className="mb-0">{t('Market Making')}</h2>
@@ -449,28 +449,26 @@ export default function MMPage () {
 
       {/* Remove Bot Confirmation Overlay */}
       <FormOverlay show={showRemoveConfirm} onClose={() => setShowRemoveConfirm(false)}>
-        <div className="p-3">
-          <h5>{t('Remove Bot Configuration')}</h5>
-          {removingBot && (
-            <p>
-              {t('Are you sure you want to remove the bot configuration for')}{' '}
-              <strong>
-                {assets[removingBot.baseID]?.unitInfo?.conventional?.unit ?? '?'}
-                /
-                {assets[removingBot.quoteID]?.unitInfo?.conventional?.unit ?? '?'}
-              </strong>
-              {' '}{t('on')} <em>{removingBot.host}</em>?
-            </p>
-          )}
-          {removeErr && <div className="text-danger mb-2">{removeErr}</div>}
-          <div className="d-flex gap-2 justify-content-end">
-            <button className="btn btn-secondary" onClick={() => setShowRemoveConfirm(false)}>
-              {t('Cancel')}
-            </button>
-            <button className="btn btn-danger" onClick={removeCfg}>
-              {t('Remove')}
-            </button>
-          </div>
+        <h5>{t('Remove Bot Configuration')}</h5>
+        {removingBot && (
+          <p>
+            {t('Are you sure you want to remove the bot configuration for')}{' '}
+            <strong>
+              {assets[removingBot.baseID]?.unitInfo?.conventional?.unit ?? '?'}
+              /
+              {assets[removingBot.quoteID]?.unitInfo?.conventional?.unit ?? '?'}
+            </strong>
+            {' '}{t('on')} <em>{removingBot.host}</em>?
+          </p>
+        )}
+        {removeErr && <div className="text-danger mb-2">{removeErr}</div>}
+        <div className="d-flex gap-2 justify-content-end">
+          <button className="btn btn-secondary" onClick={() => setShowRemoveConfirm(false)}>
+            {t('Cancel')}
+          </button>
+          <button className="btn btn-danger" onClick={removeCfg}>
+            {t('Remove')}
+          </button>
         </div>
       </FormOverlay>
     </div>
@@ -548,7 +546,7 @@ function BotCard ({
     (b?.available ?? 0) + (b?.locked ?? 0) + (b?.pending ?? 0) + (b?.reserved ?? 0)
 
   return (
-    <div className="col-12 col-md-6" ref={refCallback}>
+    <div className="col-24 col-md-12" ref={refCallback}>
       <div
         className="card"
         style={{
@@ -583,13 +581,13 @@ function BotCard ({
 
           {/* DEX / CEX Price & Volume */}
           <div className="row mb-2">
-            <div className="col-6">
+            <div className="col-12">
               <div className="text-secondary small">{t('DEX Price')}</div>
               <div>{spot && mkt ? formatRateToRateStep(dexPrice, bui, qui, mkt.ratestep) : '---'}</div>
               <div className="text-secondary small">{t('24h Vol')}: ${spot ? formatBestWeCan(dexVol) : '---'}</div>
             </div>
             {bt !== botTypeBasicMM && cexName && (
-              <div className="col-6">
+              <div className="col-12">
                 <div className="text-secondary small">{t('CEX Price')}</div>
                 <div>{cexPrice && mkt ? formatRateToRateStep(cexPrice, bui, qui, mkt.ratestep) : '---'}</div>
                 <div className="text-secondary small">{t('24h Vol')}: ${cexVol ? formatBestWeCan(cexVol) : '---'}</div>
@@ -601,34 +599,34 @@ function BotCard ({
           {running && runStats && (
             <div className="mb-2">
               <div className="row">
-                <div className="col-6">
+                <div className="col-12">
                   <div className="text-secondary small">{t('Profit/Loss')}</div>
                   <div className={formatProfit(runStats.profitLoss.profit).cls}>
                     {formatProfit(runStats.profitLoss.profit).text}
                   </div>
                 </div>
-                <div className="col-6">
+                <div className="col-12">
                   <div className="text-secondary small">{t('Profit Ratio')}</div>
                   <div>{(runStats.profitLoss.profitRatio * 100).toFixed(2)}%</div>
                 </div>
               </div>
               <div className="row mt-1">
-                <div className="col-6">
+                <div className="col-12">
                   <div className="text-secondary small">{t('Completed Matches')}</div>
                   <div>{runStats.completedMatches}</div>
                 </div>
-                <div className="col-6">
+                <div className="col-12">
                   <div className="text-secondary small">{t('Traded USD')}</div>
                   <div>${formatFiat(runStats.tradedUSD)}</div>
                 </div>
               </div>
               {(runStats.pendingDeposits > 0 || runStats.pendingWithdrawals > 0) && (
                 <div className="row mt-1">
-                  <div className="col-6">
+                  <div className="col-12">
                     <div className="text-secondary small">{t('Pending Deposits')}</div>
                     <div>{runStats.pendingDeposits}</div>
                   </div>
-                  <div className="col-6">
+                  <div className="col-12">
                     <div className="text-secondary small">{t('Pending Withdrawals')}</div>
                     <div>{runStats.pendingWithdrawals}</div>
                   </div>
@@ -638,12 +636,12 @@ function BotCard ({
               <div className="mt-2">
                 <div className="text-secondary small fw-bold">{t('Running Balances')}</div>
                 <div className="row">
-                  <div className="col-6">
+                  <div className="col-12">
                     <div className="small">DEX {baseTicker}: {formatCoinAtom(sumBotBalance(runStats.dexBalances[baseID]), bui)}</div>
                     <div className="small">DEX {quoteTicker}: {formatCoinAtom(sumBotBalance(runStats.dexBalances[quoteID]), qui)}</div>
                   </div>
                   {cexName && (
-                    <div className="col-6">
+                    <div className="col-12">
                       <div className="small">CEX {baseTicker}: {formatCoinAtom(sumBotBalance(runStats.cexBalances[cfg.cexBaseID]), bui)}</div>
                       <div className="small">CEX {quoteTicker}: {formatCoinAtom(sumBotBalance(runStats.cexBalances[cfg.cexQuoteID]), qui)}</div>
                     </div>
@@ -658,12 +656,12 @@ function BotCard ({
             <div className="mb-2">
               <div className="text-secondary small fw-bold">{t('Available Balances')}</div>
               <div className="row">
-                <div className="col-6">
+                <div className="col-12">
                   <div className="small">DEX {baseTicker}: {formatBal(balances.dexBalances[baseID] ?? 0, bui)}</div>
                   <div className="small">DEX {quoteTicker}: {formatBal(balances.dexBalances[quoteID] ?? 0, qui)}</div>
                 </div>
                 {cexName && (
-                  <div className="col-6">
+                  <div className="col-12">
                     <div className="small">CEX {baseTicker}: {formatBal(balances.cexBalances[cfg.cexBaseID] ?? 0, bui)}</div>
                     <div className="small">CEX {quoteTicker}: {formatBal(balances.cexBalances[cfg.cexQuoteID] ?? 0, qui)}</div>
                   </div>

@@ -414,7 +414,7 @@ export default function DexSettingsPage () {
   }
 
   return (
-    <div className="py-3 px-3">
+    <div className="py-3 px-3 overflow-y-auto" style={{ height: '100%' }}>
       {/* -- Header -- */}
       <div className="d-flex align-items-center gap-3 mb-4">
         <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate(ROUTES.SETTINGS)}>
@@ -576,46 +576,44 @@ export default function DexSettingsPage () {
 
       {/* -- Tier change overlay -- */}
       <FormOverlay show={showTierForm} onClose={closeTierForm}>
-        <div className="col-12 col-sm-10 col-md-8 col-lg-6 mx-auto">
-          {tierStep === 'feeAsset' && exchange && (
-            <FeeAssetSelectionForm
-              exchange={exchange}
-              certFile={tierCertFile}
-              onSuccess={handleTierFeeAssetSuccess}
-            />
-          )}
+        {tierStep === 'feeAsset' && exchange && (
+          <FeeAssetSelectionForm
+            exchange={exchange}
+            certFile={tierCertFile}
+            onSuccess={handleTierFeeAssetSuccess}
+          />
+        )}
 
-          {tierStep === 'newWallet' && tierAssetID !== null && (
-            <NewWalletForm
-              assetID={tierAssetID}
-              onSuccess={handleTierNewWalletSuccess}
-              onBack={() => setTierStep('feeAsset')}
-            />
-          )}
+        {tierStep === 'newWallet' && tierAssetID !== null && (
+          <NewWalletForm
+            assetID={tierAssetID}
+            onSuccess={handleTierNewWalletSuccess}
+            onBack={() => setTierStep('feeAsset')}
+          />
+        )}
 
-          {tierStep === 'walletWait' && exchange && tierAssetID !== null && (
-            <WalletWaitForm
-              exchange={exchange}
-              assetID={tierAssetID}
-              bondFeeBuffer={tierBondFeeBuffer}
-              tier={tierValue}
-              onSuccess={handleTierWalletWaitSuccess}
-              onBack={async () => setTierStep('feeAsset')}
-            />
-          )}
+        {tierStep === 'walletWait' && exchange && tierAssetID !== null && (
+          <WalletWaitForm
+            exchange={exchange}
+            assetID={tierAssetID}
+            bondFeeBuffer={tierBondFeeBuffer}
+            tier={tierValue}
+            onSuccess={handleTierWalletWaitSuccess}
+            onBack={async () => setTierStep('feeAsset')}
+          />
+        )}
 
-          {tierStep === 'confirm' && exchange && tierAssetID !== null && (
-            <ConfirmRegistrationForm
-              exchange={exchange}
-              certFile={tierCertFile}
-              bondAssetID={tierAssetID}
-              tier={tierValue}
-              fees={tierBondFeeBuffer}
-              onSuccess={handleTierConfirmSuccess}
-              onBack={async () => setTierStep('feeAsset')}
-            />
-          )}
-        </div>
+        {tierStep === 'confirm' && exchange && tierAssetID !== null && (
+          <ConfirmRegistrationForm
+            exchange={exchange}
+            certFile={tierCertFile}
+            bondAssetID={tierAssetID}
+            tier={tierValue}
+            fees={tierBondFeeBuffer}
+            onSuccess={handleTierConfirmSuccess}
+            onBack={async () => setTierStep('feeAsset')}
+          />
+        )}
       </FormOverlay>
 
       {/* DSP-02: penalty comps confirmation modal. Modeled on the
@@ -626,40 +624,36 @@ export default function DexSettingsPage () {
           avoid introducing new fall-through i18n keys for what is
           already universally understood. */}
       <FormOverlay show={pendingPenaltyComps !== null} onClose={cancelPenaltyCompsUpdate}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Penalty compensations')}</div>
-          <p className="fs15">
-            <strong>{appliedPenaltyComps}</strong> → <strong>{pendingPenaltyComps}</strong>
-          </p>
-          <div className="d-flex gap-2">
-            <button className="btn btn-secondary" onClick={cancelPenaltyCompsUpdate}>
-              {t('Cancel')}
-            </button>
-            <button className="btn btn-primary" onClick={confirmPenaltyCompsUpdate}>
-              {t('Confirm')}
-            </button>
-          </div>
+        <div className="fs20 mb-3">{t('Penalty compensations')}</div>
+        <p className="fs15">
+          <strong>{appliedPenaltyComps}</strong> → <strong>{pendingPenaltyComps}</strong>
+        </p>
+        <div className="d-flex gap-2">
+          <button className="btn btn-secondary" onClick={cancelPenaltyCompsUpdate}>
+            {t('Cancel')}
+          </button>
+          <button className="btn btn-primary" onClick={confirmPenaltyCompsUpdate}>
+            {t('Confirm')}
+          </button>
         </div>
       </FormOverlay>
 
       {/* -- Disable account confirmation overlay -- */}
       <FormOverlay show={showDisableAccount} onClose={() => setShowDisableAccount(false)}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Disable Account')}</div>
-          <p className="fs15">
-            {t('Are you sure you want to disable your account on')} <strong>{host}</strong>?
-          </p>
-          {disableError && (
-            <div className="fs15 text-danger mb-2">{disableError}</div>
-          )}
-          <div className="d-flex gap-2">
-            <button className="btn btn-secondary" onClick={() => setShowDisableAccount(false)}>
-              {t('Cancel')}
-            </button>
-            <button className="btn btn-danger" onClick={() => toggleAccountStatus(true)}>
-              {t('Disable')}
-            </button>
-          </div>
+        <div className="fs20 mb-3">{t('Disable Account')}</div>
+        <p className="fs15">
+          {t('Are you sure you want to disable your account on')} <strong>{host}</strong>?
+        </p>
+        {disableError && (
+          <div className="fs15 text-danger mb-2">{disableError}</div>
+        )}
+        <div className="d-flex gap-2">
+          <button className="btn btn-secondary" onClick={() => setShowDisableAccount(false)}>
+            {t('Cancel')}
+          </button>
+          <button className="btn btn-danger" onClick={() => toggleAccountStatus(true)}>
+            {t('Disable')}
+          </button>
         </div>
       </FormOverlay>
 

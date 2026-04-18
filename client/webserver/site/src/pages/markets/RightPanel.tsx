@@ -355,7 +355,7 @@ export function RightPanel ({
       </section>
 
       {/* MP-59: Approve token form modal. */}
-      <FormOverlay show={approveAssetID !== null} onClose={() => setApproveAssetID(null)}>
+      <FormOverlay bare show={approveAssetID !== null} onClose={() => setApproveAssetID(null)}>
         {approveAssetID !== null && (
           <div className="form-panel bg-dark-2 p-3 border position-relative" style={{ maxWidth: 500 }}>
             <button type="button" className="form-close-btn" onClick={() => setApproveAssetID(null)} aria-label="Close">

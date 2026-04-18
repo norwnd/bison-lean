@@ -432,7 +432,7 @@ export default function SettingsPage () {
   const isPaired = companionAppPaired && !companionUnpaired
 
   return (
-    <div className="py-3 px-3">
+    <div className="py-3 px-3 overflow-y-auto" style={{ height: '100%' }}>
       <h2 className="mb-4">{t('Settings')}</h2>
 
       {/* -- Appearance toggles -- */}
@@ -604,102 +604,98 @@ export default function SettingsPage () {
 
       {/* -- Add DEX overlay -- */}
       <FormOverlay show={showAddDex} onClose={closeAddDex}>
-        <div className="col-12 col-sm-10 col-md-8 col-lg-6 mx-auto">
-          {regStep === 'dexAddress' && (
-            <DEXAddressForm onSuccess={handleDexAddressSuccess} />
-          )}
+        {regStep === 'dexAddress' && (
+          <DEXAddressForm onSuccess={handleDexAddressSuccess} />
+        )}
 
-          {regStep === 'feeAsset' && regExchange && (
-            <FeeAssetSelectionForm
-              exchange={regExchange}
-              certFile={regCertFile}
-              onSuccess={handleFeeAssetSuccess}
-            />
-          )}
+        {regStep === 'feeAsset' && regExchange && (
+          <FeeAssetSelectionForm
+            exchange={regExchange}
+            certFile={regCertFile}
+            onSuccess={handleFeeAssetSuccess}
+          />
+        )}
 
-          {regStep === 'newWallet' && regAssetID !== null && (
-            <NewWalletForm
-              assetID={regAssetID}
-              onSuccess={handleNewWalletSuccess}
-              onBack={() => setRegStep('feeAsset')}
-            />
-          )}
+        {regStep === 'newWallet' && regAssetID !== null && (
+          <NewWalletForm
+            assetID={regAssetID}
+            onSuccess={handleNewWalletSuccess}
+            onBack={() => setRegStep('feeAsset')}
+          />
+        )}
 
-          {regStep === 'walletWait' && regExchange && regAssetID !== null && (
-            <WalletWaitForm
-              exchange={regExchange}
-              assetID={regAssetID}
-              bondFeeBuffer={regBondFeeBuffer}
-              tier={regTier}
-              onSuccess={handleWalletWaitSuccess}
-              onBack={async () => setRegStep('feeAsset')}
-            />
-          )}
+        {regStep === 'walletWait' && regExchange && regAssetID !== null && (
+          <WalletWaitForm
+            exchange={regExchange}
+            assetID={regAssetID}
+            bondFeeBuffer={regBondFeeBuffer}
+            tier={regTier}
+            onSuccess={handleWalletWaitSuccess}
+            onBack={async () => setRegStep('feeAsset')}
+          />
+        )}
 
-          {regStep === 'confirm' && regExchange && regAssetID !== null && (
-            <ConfirmRegistrationForm
-              exchange={regExchange}
-              certFile={regCertFile}
-              bondAssetID={regAssetID}
-              tier={regTier}
-              fees={regBondFeeBuffer}
-              onSuccess={handleConfirmSuccess}
-              onBack={async () => setRegStep('feeAsset')}
-            />
-          )}
-        </div>
+        {regStep === 'confirm' && regExchange && regAssetID !== null && (
+          <ConfirmRegistrationForm
+            exchange={regExchange}
+            certFile={regCertFile}
+            bondAssetID={regAssetID}
+            tier={regTier}
+            fees={regBondFeeBuffer}
+            onSuccess={handleConfirmSuccess}
+            onBack={async () => setRegStep('feeAsset')}
+          />
+        )}
       </FormOverlay>
 
       {/* -- Change password overlay -- */}
       <FormOverlay show={showChangePW} onClose={closeChangePW}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Change App Password')}</div>
-          <div className="mb-2">
-            <label className="form-label">{t('Current Password')}</label>
-            <input
-              type="password"
-              className="form-control"
-              value={currentPW}
-              onChange={e => setCurrentPW(e.target.value)}
-              autoFocus
-              disabled={changePWLoading}
-            />
-          </div>
-          <div className="mb-2">
-            <label className="form-label">{t('New Password')}</label>
-            <input
-              type="password"
-              className="form-control"
-              value={newPW}
-              onChange={e => setNewPW(e.target.value)}
-              disabled={changePWLoading}
-            />
-          </div>
-          <div className="mb-2">
-            <label className="form-label">{t('Confirm New Password')}</label>
-            <input
-              type="password"
-              className="form-control"
-              value={confirmNewPW}
-              onChange={e => setConfirmNewPW(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitChangePassword() }}
-              disabled={changePWLoading}
-            />
-          </div>
-          {changePWError && (
-            <div className="fs15 text-danger mb-2">{changePWError}</div>
-          )}
-          {/* Disable + spinner during the password-change round trip,
-              matching the SP-06 export-seed pattern and vanilla
-              `settings.ts` `changeAppPW()` (L450) `app().loading()`. */}
-          <button
-            className="btn btn-primary w-100"
-            onClick={submitChangePassword}
+        <div className="fs20 mb-3">{t('Change App Password')}</div>
+        <div className="mb-2">
+          <label className="form-label">{t('Current Password')}</label>
+          <input
+            type="password"
+            className="form-control"
+            value={currentPW}
+            onChange={e => setCurrentPW(e.target.value)}
+            autoFocus
             disabled={changePWLoading}
-          >
-            {changePWLoading ? '...' : t('Submit')}
-          </button>
+          />
         </div>
+        <div className="mb-2">
+          <label className="form-label">{t('New Password')}</label>
+          <input
+            type="password"
+            className="form-control"
+            value={newPW}
+            onChange={e => setNewPW(e.target.value)}
+            disabled={changePWLoading}
+          />
+        </div>
+        <div className="mb-2">
+          <label className="form-label">{t('Confirm New Password')}</label>
+          <input
+            type="password"
+            className="form-control"
+            value={confirmNewPW}
+            onChange={e => setConfirmNewPW(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitChangePassword() }}
+            disabled={changePWLoading}
+          />
+        </div>
+        {changePWError && (
+          <div className="fs15 text-danger mb-2">{changePWError}</div>
+        )}
+        {/* Disable + spinner during the password-change round trip,
+            matching the SP-06 export-seed pattern and vanilla
+            `settings.ts` `changeAppPW()` (L450) `app().loading()`. */}
+        <button
+          className="btn btn-primary w-100"
+          onClick={submitChangePassword}
+          disabled={changePWLoading}
+        >
+          {changePWLoading ? '...' : t('Submit')}
+        </button>
       </FormOverlay>
 
       {/* -- Reset password overlay -- */}
@@ -709,219 +705,211 @@ export default function SettingsPage () {
 
       {/* -- Import account overlay -- */}
       <FormOverlay show={showImportAccount} onClose={closeImportAccount}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Import Account')}</div>
-          <div className="mb-3">
-            <input
-              ref={accountFileRef}
-              type="file"
-              className="form-control"
-              accept=".json"
-              onChange={handleImportFileChange}
-              disabled={importLoading}
-            />
-            {/* SP-01: show a persistent "none selected" label when no
-                file is chosen, mirroring vanilla `settings.ts`
-                `clearAccountFile()` (L339) which sets
-                `selectedAccount.textContent = intl.prep(intl.ID_NONE_SELECTED)`.
-                Without this, removing a previously-chosen file leaves
-                no visible feedback that the form is now empty. */}
-            {importFile
-              ? (
-              <div className="fs14 mt-1 d-flex align-items-center gap-2">
-                <span>{importFile.name}</span>
-                <button
-                  className="btn btn-sm btn-outline-danger"
-                  onClick={() => { setImportFile(null); if (accountFileRef.current) accountFileRef.current.value = '' }}
-                  disabled={importLoading}
-                >
-                  {t('Remove')}
-                </button>
-              </div>
-                )
-              : (
-              <div className="fs14 mt-1 text-secondary">{t('NONE_SELECTED')}</div>
-                )}
-          </div>
-          {importError && (
-            <div className="fs15 text-danger mb-2">{importError}</div>
-          )}
-          <button
-            className="btn btn-primary w-100"
-            onClick={submitImportAccount}
-            disabled={importLoading || !importFile}
-          >
-            {importLoading
+        <div className="fs20 mb-3">{t('Import Account')}</div>
+        <div className="mb-3">
+          <input
+            ref={accountFileRef}
+            type="file"
+            className="form-control"
+            accept=".json"
+            onChange={handleImportFileChange}
+            disabled={importLoading}
+          />
+          {/* SP-01: show a persistent "none selected" label when no
+              file is chosen, mirroring vanilla `settings.ts`
+              `clearAccountFile()` (L339) which sets
+              `selectedAccount.textContent = intl.prep(intl.ID_NONE_SELECTED)`.
+              Without this, removing a previously-chosen file leaves
+              no visible feedback that the form is now empty. */}
+          {importFile
+            ? (
+            <div className="fs14 mt-1 d-flex align-items-center gap-2">
+              <span>{importFile.name}</span>
+              <button
+                className="btn btn-sm btn-outline-danger"
+                onClick={() => { setImportFile(null); if (accountFileRef.current) accountFileRef.current.value = '' }}
+                disabled={importLoading}
+              >
+                {t('Remove')}
+              </button>
+            </div>
+              )
+            : (
+            <div className="fs14 mt-1 text-secondary">{t('NONE_SELECTED')}</div>
+              )}
+        </div>
+        {importError && (
+          <div className="fs15 text-danger mb-2">{importError}</div>
+        )}
+        <button
+          className="btn btn-primary w-100"
+          onClick={submitImportAccount}
+          disabled={importLoading || !importFile}
+        >
+          {importLoading
 ? '...'
 : t('Import')}
-          </button>
-        </div>
+        </button>
       </FormOverlay>
 
       {/* -- Export seed overlay -- */}
       <FormOverlay show={showExportSeed} onClose={closeExportSeed}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          {!exportSeedResult
+        {!exportSeedResult
 ? (
-            <>
-              <div className="fs20 mb-3">{t('Export Seed')}</div>
-              <div className="mb-2">
-                <label className="form-label">{t('App Password')}</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={exportSeedPW}
-                  onChange={e => setExportSeedPW(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitExportSeed() }}
-                  autoFocus
-                  disabled={exportSeedLoading}
-                />
-              </div>
-              {exportSeedError && (
-                <div className="fs15 text-danger mb-2">{exportSeedError}</div>
-              )}
-              {/* SP-06: disable + spinner during password check, matching
-                  vanilla's `app().loading()` overlay around the
-                  `/api/exportseed` round trip. */}
-              <button
-                className="btn btn-primary w-100"
-                onClick={submitExportSeed}
-                disabled={exportSeedLoading || !exportSeedPW}
-              >
-                {exportSeedLoading ? '...' : t('Submit')}
-              </button>
-            </>
-          )
+          <>
+            <div className="fs20 mb-3">{t('Export Seed')}</div>
+            <div className="mb-2">
+              <label className="form-label">{t('App Password')}</label>
+              <input
+                type="password"
+                className="form-control"
+                value={exportSeedPW}
+                onChange={e => setExportSeedPW(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitExportSeed() }}
+                autoFocus
+                disabled={exportSeedLoading}
+              />
+            </div>
+            {exportSeedError && (
+              <div className="fs15 text-danger mb-2">{exportSeedError}</div>
+            )}
+            {/* SP-06: disable + spinner during password check, matching
+                vanilla's `app().loading()` overlay around the
+                `/api/exportseed` round trip. */}
+            <button
+              className="btn btn-primary w-100"
+              onClick={submitExportSeed}
+              disabled={exportSeedLoading || !exportSeedPW}
+            >
+              {exportSeedLoading ? '...' : t('Submit')}
+            </button>
+          </>
+        )
 : (
-            <>
-              <div className="fs20 mb-3">{t('Your Seed')}</div>
-              {exportSeedResult.legacy && (
-                <pre className="border rounded p-2 text-break user-select-all fs14">
-                  {exportSeedResult.legacy}
-                </pre>
-              )}
-              {exportSeedResult.mnemonic && (
-                <pre className="border rounded p-2 text-break user-select-all fs14">
-                  {exportSeedResult.mnemonic}
-                </pre>
-              )}
-              <button className="btn btn-secondary w-100 mt-2" onClick={closeExportSeed}>
-                {t('Close')}
-              </button>
-            </>
-          )}
-        </div>
+          <>
+            <div className="fs20 mb-3">{t('Your Seed')}</div>
+            {exportSeedResult.legacy && (
+              <pre className="border rounded p-2 text-break user-select-all fs14">
+                {exportSeedResult.legacy}
+              </pre>
+            )}
+            {exportSeedResult.mnemonic && (
+              <pre className="border rounded p-2 text-break user-select-all fs14">
+                {exportSeedResult.mnemonic}
+              </pre>
+            )}
+            <button className="btn btn-secondary w-100 mt-2" onClick={closeExportSeed}>
+              {t('Close')}
+            </button>
+          </>
+        )}
       </FormOverlay>
 
       {/* -- Companion app overlay -- */}
       <FormOverlay show={showCompanionApp} onClose={closeCompanionApp}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Companion App')}</div>
-          {isPaired
+        <div className="fs20 mb-3">{t('Companion App')}</div>
+        {isPaired
 ? (
-            <div>
-              <p className="fs15 text-success mb-2">{t('Companion app is paired')}</p>
-              <button className="btn btn-outline-danger w-100" onClick={unpairCompanionApp}>
-                {t('Unpair')}
-              </button>
-            </div>
-          )
+          <div>
+            <p className="fs15 text-success mb-2">{t('Companion app is paired')}</p>
+            <button className="btn btn-outline-danger w-100" onClick={unpairCompanionApp}>
+              {t('Unpair')}
+            </button>
+          </div>
+        )
 : (
-            <div>
-              {onionUrl !== ''
+          <div>
+            {onionUrl !== ''
 ? (
-                <div>
-                  <p className="fs14 mb-2">{t('Scan the QR code with the companion app.')}</p>
-                  <div className="text-center mb-2">
-                    <img src="/generatecompanionappqrcode" alt="QR code" style={{ maxWidth: '200px' }} />
-                  </div>
+              <div>
+                <p className="fs14 mb-2">{t('Scan the QR code with the companion app.')}</p>
+                <div className="text-center mb-2">
+                  <img src="/generatecompanionappqrcode" alt="QR code" style={{ maxWidth: '200px' }} />
                 </div>
-              )
+              </div>
+            )
 : (
-                <p className="fs15 text-warning">{t('Tor is not enabled. Enable Tor to use the companion app.')}</p>
-              )}
-            </div>
-          )}
-        </div>
+              <p className="fs15 text-warning">{t('Tor is not enabled. Enable Tor to use the companion app.')}</p>
+            )}
+          </div>
+        )}
       </FormOverlay>
 
       {/* -- Game code overlay -- */}
       <FormOverlay show={showGameCode} onClose={closeGameCode}>
-        <div className="px-4 py-3" style={{ minWidth: '320px' }}>
-          <div className="fs20 mb-3">{t('Redeem Game Code')}</div>
-          <div className="mb-2">
-            <label className="form-label">{t('Code')}</label>
-            <input
-              type="text"
-              className="form-control"
-              value={gameCode}
-              onChange={e => setGameCode(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="mb-2">
-            <label className="form-label">{t('Message (optional)')}</label>
-            <input
-              type="text"
-              className="form-control"
-              value={gameCodeMsg}
-              onChange={e => setGameCodeMsg(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitGameCode() }}
-            />
-          </div>
-          <button
-            className="btn btn-primary w-100"
-            onClick={submitGameCode}
-            disabled={!gameCode}
-          >
-            {t('Submit')}
-          </button>
-
-          {/* SP-07: render the success block with vanilla's structure
-              (settings.tmpl L177-184): "Game code redeemed" header,
-              "Transaction" label with anchor link to the DCR explorer,
-              "Value: X DCR" formatted via `formatCoinValueAtom` against
-              DCR's unit info. Mirrors vanilla `settings.ts`
-              `submitGameCode()` (L504-528) which uses
-              `setCoinHref(dcrBipID, ...)` + `Doc.formatCoinAtom(win, ui)`.
-              Both success and error blocks live AFTER the submit
-              button to match vanilla's `gameCodeSuccess` / `gameCodeErr`
-              ordering in `settings.tmpl`. */}
-          {gameCodeSuccess && (() => {
-            const dcrAsset = assets[DCRAssetID]
-            const dcrUI = dcrAsset?.unitInfo
-            const net = user?.net ?? 0
-            const explorerHref = explorerURL(DCRAssetID, gameCodeSuccess.coinString, net)
-            return (
-              <div className="mt-3 pt-3 border-top">
-                <div className="fs15 text-success mb-2">{t('Game code redeemed')}</div>
-                <div className="fs14 mb-1">{t('Transaction')}</div>
-                {explorerHref
-                  ? (
-                  <a
-                    href={explorerHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="fs14 text-break d-block mb-2"
-                  >
-                    {gameCodeSuccess.coinString}
-                  </a>
-                    )
-                  : (
-                  <div className="fs14 text-break mb-2">{gameCodeSuccess.coinString}</div>
-                    )}
-                <div className="fs14">
-                  {t('Value')}: <span>{formatCoinAtom(gameCodeSuccess.win, dcrUI)}</span>{' '}
-                  <span className="fs12 text-secondary">DCR</span>
-                </div>
-              </div>
-            )
-          })()}
-
-          {gameCodeError && (
-            <div className="fs15 text-danger mt-2 text-break">{gameCodeError}</div>
-          )}
+        <div className="fs20 mb-3">{t('Redeem Game Code')}</div>
+        <div className="mb-2">
+          <label className="form-label">{t('Code')}</label>
+          <input
+            type="text"
+            className="form-control"
+            value={gameCode}
+            onChange={e => setGameCode(e.target.value)}
+            autoFocus
+          />
         </div>
+        <div className="mb-2">
+          <label className="form-label">{t('Message (optional)')}</label>
+          <input
+            type="text"
+            className="form-control"
+            value={gameCodeMsg}
+            onChange={e => setGameCodeMsg(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitGameCode() }}
+          />
+        </div>
+        <button
+          className="btn btn-primary w-100"
+          onClick={submitGameCode}
+          disabled={!gameCode}
+        >
+          {t('Submit')}
+        </button>
+
+        {/* SP-07: render the success block with vanilla's structure
+            (settings.tmpl L177-184): "Game code redeemed" header,
+            "Transaction" label with anchor link to the DCR explorer,
+            "Value: X DCR" formatted via `formatCoinValueAtom` against
+            DCR's unit info. Mirrors vanilla `settings.ts`
+            `submitGameCode()` (L504-528) which uses
+            `setCoinHref(dcrBipID, ...)` + `Doc.formatCoinAtom(win, ui)`.
+            Both success and error blocks live AFTER the submit
+            button to match vanilla's `gameCodeSuccess` / `gameCodeErr`
+            ordering in `settings.tmpl`. */}
+        {gameCodeSuccess && (() => {
+          const dcrAsset = assets[DCRAssetID]
+          const dcrUI = dcrAsset?.unitInfo
+          const net = user?.net ?? 0
+          const explorerHref = explorerURL(DCRAssetID, gameCodeSuccess.coinString, net)
+          return (
+            <div className="mt-3 pt-3 border-top">
+              <div className="fs15 text-success mb-2">{t('Game code redeemed')}</div>
+              <div className="fs14 mb-1">{t('Transaction')}</div>
+              {explorerHref
+                ? (
+                <a
+                  href={explorerHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="fs14 text-break d-block mb-2"
+                >
+                  {gameCodeSuccess.coinString}
+                </a>
+                  )
+                : (
+                <div className="fs14 text-break mb-2">{gameCodeSuccess.coinString}</div>
+                  )}
+              <div className="fs14">
+                {t('Value')}: <span>{formatCoinAtom(gameCodeSuccess.win, dcrUI)}</span>{' '}
+                <span className="fs12 text-secondary">DCR</span>
+              </div>
+            </div>
+          )
+        })()}
+
+        {gameCodeError && (
+          <div className="fs15 text-danger mt-2 text-break">{gameCodeError}</div>
+        )}
       </FormOverlay>
     </div>
   )

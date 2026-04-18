@@ -579,7 +579,7 @@ export function OrderForm ({
       </form>
 
       {/* Order verification modal */}
-      <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
+      <FormOverlay bare show={showVerify} onClose={() => setShowVerify(false)}>
         <VerifyOrderForm
           isSell={isSell}
           order={verifiedOrderRef.current}

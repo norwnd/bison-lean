@@ -562,7 +562,7 @@ export default function OrdersPage () {
       </div>
 
       {/* Delete archived records modal */}
-      <FormOverlay show={showDeleteForm} onClose={() => setShowDeleteForm(false)}>
+      <FormOverlay bare show={showDeleteForm} onClose={() => setShowDeleteForm(false)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 340 }}>
           <div className="fs18 mb-3">{t('Delete Archived Records')}</div>
 
