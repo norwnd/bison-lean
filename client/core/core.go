@@ -4899,7 +4899,13 @@ func (c *Core) Login(pw []byte) error {
 		// is needed for active trades, it will be unlocked in resolveActiveTrades
 		// and the balance updated there.
 		c.notify(newLoginNote("Connecting wallets..."))
-		c.connectWallets(crypter) // initialize reserves
+		walletReady := c.connectWallets(crypter) // initialize reserves
+		// resolveActiveTrades + initializeDEXConnections expect every
+		// wallet's connect attempt to have landed (success or failure),
+		// so block on the readiness map before proceeding.
+		for _, ch := range walletReady {
+			<-ch
+		}
 		c.notify(newLoginNote("Resuming active trades..."))
 		c.resolveActiveTrades(crypter)
 		c.connectMesh()
@@ -4949,13 +4955,29 @@ func (c *Core) upgradeV0CredsToV1(appPW []byte, creds db.PrimaryCredentials) (en
 	return newInnerCrypter, &creds, nil
 }
 
-// connectWallets attempts to connect to and retrieve balance from all known
-// wallets. This should be done only ONCE on Login.
-func (c *Core) connectWallets(crypter encrypt.Crypter) {
-	var wg sync.WaitGroup
+// connectWallets kicks off wallet Open + Connect goroutines in parallel
+// and returns a map of per-wallet readiness channels that close once
+// each wallet's connect attempt finishes (successfully or not). Callers
+// can wait on specific channels to gate downstream work that depends on
+// a particular wallet being ready, rather than stalling on the whole
+// pool. Token-wallet goroutines internally block on their parent's
+// readiness channel before opening, since token backends reuse the
+// parent's connection. Should be invoked only ONCE on Login.
+func (c *Core) connectWallets(crypter encrypt.Crypter) map[uint32]chan struct{} {
 	var connectCount uint32
+	wallets := c.xcWallets()
+	walletCount := len(wallets)
+
+	// Pre-allocate readiness channels for every wallet so token
+	// goroutines can look up their parent's channel without racing the
+	// map population.
+	ready := make(map[uint32]chan struct{}, walletCount)
+	for _, wallet := range wallets {
+		ready[wallet.AssetID] = make(chan struct{})
+	}
+
 	connectWallet := func(wallet *xcWallet) {
-		defer wg.Done()
+		defer close(ready[wallet.AssetID])
 		// Return early if wallet is disabled.
 		if wallet.isDisabled() {
 			return
@@ -4964,6 +4986,12 @@ func (c *Core) connectWallets(crypter encrypt.Crypter) {
 		if token := asset.TokenInfo(wallet.AssetID); token != nil {
 			if parentWallet, found := c.wallet(token.ParentID); found && parentWallet.isDisabled() {
 				return
+			}
+			// Token backends reuse the parent wallet's connection — wait
+			// for the parent's Connect attempt to land before opening
+			// this token.
+			if parentReady, ok := ready[token.ParentID]; ok {
+				<-parentReady
 			}
 		}
 		if !wallet.connected() {
@@ -5035,29 +5063,25 @@ func (c *Core) connectWallets(crypter encrypt.Crypter) {
 		}
 		atomic.AddUint32(&connectCount, 1)
 	}
-	wallets := c.xcWallets()
-	walletCount := len(wallets)
-	var tokenWallets []*xcWallet
 
+	// Launch all goroutines up front — tokens will self-sequence behind
+	// their parent's readiness channel.
 	for _, wallet := range wallets {
-		if asset.TokenInfo(wallet.AssetID) != nil {
-			tokenWallets = append(tokenWallets, wallet)
-			continue
-		}
-		wg.Add(1)
 		go connectWallet(wallet)
 	}
-	wg.Wait()
-
-	for _, wallet := range tokenWallets {
-		wg.Add(1)
-		go connectWallet(wallet)
-	}
-	wg.Wait()
 
 	if walletCount > 0 {
-		c.log.Infof("Connected to %d of %d wallets.", connectCount, walletCount)
+		// Fire the summary log once every wallet goroutine has closed
+		// its readiness channel, without blocking the caller.
+		go func() {
+			for _, ch := range ready {
+				<-ch
+			}
+			c.log.Infof("Connected to %d of %d wallets.", connectCount, walletCount)
+		}()
 	}
+
+	return ready
 }
 
 // Notifications loads the latest notifications from the db.
