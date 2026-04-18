@@ -2184,6 +2184,11 @@ func TestPostBond(t *testing.T) {
 	rig.db.acctErr = tErr
 
 	_ = tCore.Login(tPW)
+	// Drain the Login background goroutine before subscribing to the
+	// notification feed below — otherwise the LoginNote stream
+	// ("Resuming active trades...", "Connecting to DEX servers...")
+	// leaks into the feed and trips the bond/balance note matcher.
+	tCore.loginWG.Wait()
 
 	// (*Core).Register does setupCryptoV2 to make the dc.acct.privKey etc., so
 	// we don't know the ClientPubKey here. It must be set in the request
