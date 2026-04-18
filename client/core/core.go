@@ -4820,7 +4820,19 @@ func (c *Core) Login(pw []byte) error {
 	if err != nil {
 		return err
 	}
-	defer crypter.Close()
+	// The original (pre-upgrade) crypter is always owned by this
+	// function — the switch below may reassign `crypter` to a new one,
+	// but we keep a separate handle so the original is closed even if
+	// the upgrade fails. The POST-switch crypter may be handed off to a
+	// background goroutine (see below); in that case origHandedOff is
+	// set true so this defer becomes a no-op.
+	origCrypter := crypter
+	origHandedOff := false
+	defer func() {
+		if !origHandedOff {
+			origCrypter.Close()
+		}
+	}()
 
 	switch creds.Version {
 	case 0:
@@ -4900,17 +4912,37 @@ func (c *Core) Login(pw []byte) error {
 		// and the balance updated there.
 		c.notify(newLoginNote("Connecting wallets..."))
 		walletReady := c.connectWallets(crypter) // initialize reserves
-		// resolveActiveTrades + initializeDEXConnections expect every
-		// wallet's connect attempt to have landed (success or failure),
-		// so block on the readiness map before proceeding.
-		for _, ch := range walletReady {
-			<-ch
+		// Defer the whole post-wallet chain (trade resumption + mesh
+		// + DEX auth) to a background goroutine so Login returns while
+		// things are still coming online. The UI picks up readiness via
+		// WalletStateNote / TopicOrderLoaded / ConnEventNote as each
+		// stage lands. Order within the goroutine must stay serial:
+		// authDEX's compareServerMatches / reconcileTrades read
+		// dc.trades, which resolveActiveTrades populates via
+		// loadDBTrades — running them concurrently would produce false
+		// "unknown orders" / orphaned match anomalies.
+		//
+		// Crypter ownership transfers to the goroutine. When no
+		// upgrade happened (crypter == origCrypter) we disable the
+		// outer defer so the goroutine's `crypter.Close()` isn't a
+		// double-close; when upgrade replaced crypter, the outer defer
+		// closes the original and the goroutine closes the new one.
+		if crypter == origCrypter {
+			origHandedOff = true
 		}
-		c.notify(newLoginNote("Resuming active trades..."))
-		c.resolveActiveTrades(crypter)
-		c.connectMesh()
-		c.notify(newLoginNote("Connecting to DEX servers..."))
-		c.initializeDEXConnections(crypter)
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			defer crypter.Close()
+			for _, ch := range walletReady {
+				<-ch
+			}
+			c.notify(newLoginNote("Resuming active trades..."))
+			c.resolveActiveTrades(crypter)
+			c.connectMesh()
+			c.notify(newLoginNote("Connecting to DEX servers..."))
+			c.initializeDEXConnections(crypter)
+		}()
 	}
 
 	return nil
