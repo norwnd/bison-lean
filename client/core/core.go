@@ -5014,16 +5014,23 @@ func (c *Core) connectWallets(crypter encrypt.Crypter) {
 				}
 			}
 			if c.cfg.UnlockCoinsOnLogin {
-				if err = wallet.ReturnCoins(nil); err != nil {
-					c.log.Errorf("Failed to unlock all %s wallet coins: %v", unbip(wallet.AssetID), err)
-				}
-				// Gotta update balances here (even if we couldn't return all the coins we might have
-				// returned some but not others, hence updating balances in error-case too) because
-				// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
-				// wallet balance update (e.g. blockchain tip change).
-				if _, err = c.updateWalletBalance(wallet); err != nil {
-					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(wallet.AssetID), err)
-				}
+				// Locked-coins unwind is background housekeeping — don't
+				// block login on it. The ensuing updateWalletBalance
+				// emits a BalanceNote that the UI picks up via the
+				// notification stream, so the user sees the unlocked
+				// balance land shortly after login completes.
+				go func() {
+					if err := wallet.ReturnCoins(nil); err != nil {
+						c.log.Errorf("Failed to unlock all %s wallet coins: %v", unbip(wallet.AssetID), err)
+					}
+					// Gotta update balances here (even if we couldn't return all the coins we might have
+					// returned some but not others, hence updating balances in error-case too) because
+					// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
+					// wallet balance update (e.g. blockchain tip change).
+					if _, err := c.updateWalletBalance(wallet); err != nil {
+						c.log.Warnf("Could not update balances for %s wallet: %v", unbip(wallet.AssetID), err)
+					}
+				}()
 			}
 		}
 		atomic.AddUint32(&connectCount, 1)
