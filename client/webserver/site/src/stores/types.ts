@@ -1332,6 +1332,14 @@ export interface UserResponse {
   companionAppPaired: boolean
 }
 
+// LoginResponse is the shape returned by /api/login. The user payload is
+// folded into the login response so the frontend doesn't need a second
+// /api/user round-trip on successful login.
+export interface LoginResponse extends UserResponse {
+  notes?: CoreNote[]
+  pokes?: CoreNote[]
+}
+
 export interface LogMessage {
   time: string
   msg: string

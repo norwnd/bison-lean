@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { getJSON, postJSON } from '../services/api'
 import { useNotificationStore } from './useNotificationStore'
-import type { User, SupportedAsset, Exchange, WalletState, MarketMakingStatus, CoreNote, UserResponse } from './types'
+import type { User, SupportedAsset, Exchange, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
 
 // LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
 // distinguishes "request failed → show server msg" from "request ok →
@@ -55,29 +55,11 @@ function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number,
   return walletMap
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  authed: false,
-  inited: false,
-  initialFetchDone: false,
-  lang: 'en-US',
-  langs: ['en-US'],
-  onionUrl: '',
-  companionAppPaired: false,
-  seedGenTime: 0,
-  commitHash: '',
-  assets: {},
-  exchanges: {},
-  walletMap: {},
-  fiatRatesMap: {},
-  mmStatus: null,
-
-  fetchUser: async () => {
-    const resp: UserResponse = await getJSON('/api/user')
-    if (!resp.requestSuccessful) {
-      set({ initialFetchDone: true })
-      return null
-    }
+export const useAuthStore = create<AuthState>((set) => {
+  // applyUserResponse hydrates the store from a `/api/user` or `/api/login`
+  // payload. Returns the hydrated User or null when the response carries no
+  // user (e.g. unauthenticated `/api/user` call on first page load).
+  const applyUserResponse = (resp: UserResponse): User | null => {
     const user = resp.user
     if (!user) {
       set({
@@ -108,75 +90,102 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       mmStatus: resp.mmStatus,
     })
     return user
-  },
+  }
 
-  fetchBuildInfo: async () => {
-    const resp = await getJSON('/api/buildinfo')
-    if (resp.requestSuccessful && resp.ok) {
-      set({ commitHash: resp.commitHash || '' })
-    }
-  },
+  return {
+    user: null,
+    authed: false,
+    inited: false,
+    initialFetchDone: false,
+    lang: 'en-US',
+    langs: ['en-US'],
+    onionUrl: '',
+    companionAppPaired: false,
+    seedGenTime: 0,
+    commitHash: '',
+    assets: {},
+    exchanges: {},
+    walletMap: {},
+    fiatRatesMap: {},
+    mmStatus: null,
 
-  login: async (appPass: string) => {
-    const resp = await postJSON('/api/login', { pass: appPass })
-    if (!resp.requestSuccessful || !resp.ok) {
-      return { ok: false, msg: resp.msg || 'login failed' }
-    }
-    // Mirror vanilla `login.ts` `submit()` ordering: fetch the user
-    // first so subscribers that react to a notification arrival can see
-    // the populated `user`/`assets`/`exchanges` state, then deliver the
-    // pre-login notification backlog.
-    await get().fetchUser()
-    // Vanilla reverses the notes backlog before passing it to
-    // `setNotes()` so chronologically older entries sit at lower indices
-    // — matching `prependNoteElement`'s push-append order. `pokes` are
-    // not reversed in vanilla.
-    const notes: CoreNote[] = (resp.notes || []).slice().reverse()
-    const pokes: CoreNote[] = resp.pokes || []
-    const noteStore = useNotificationStore.getState()
-    noteStore.setNotes(notes)
-    noteStore.setPokes(pokes)
-    return { ok: true }
-  },
+    fetchUser: async () => {
+      const resp: UserResponse = await getJSON('/api/user')
+      if (!resp.requestSuccessful) {
+        set({ initialFetchDone: true })
+        return null
+      }
+      return applyUserResponse(resp)
+    },
 
-  logout: async (force?: boolean) => {
-    // The server registers `/api/logout` as POST (webserver.go
-    // `apiAuth.Post("/logout", ...)`); a GET request would fail with
-    // 405. Also check the response before clearing state so an
-    // `activeOrdersErr` from core doesn't result in a half-logged-out
-    // client (auth state cleared, but server session still live).
-    // `force=true` asks the server to skip the active-orders check —
-    // callers use this after explicit user confirmation.
-    const res = await postJSON('/api/logout', { force: !!force })
-    if (!res.requestSuccessful || !res.ok) {
-      return { ok: false, msg: res.msg, code: res.code }
-    }
-    set({
-      user: null,
-      authed: false,
-      assets: {},
-      exchanges: {},
-      walletMap: {},
-      fiatRatesMap: {},
-      mmStatus: null,
-    })
-    // Clear the notification cache too so a subsequent re-login starts
-    // from a clean slate. Without this, stale notes/pokes from the
-    // previous session would briefly remain visible until the next
-    // `login()` overwrites them via `setNotes`/`setPokes`.
-    const noteStore = useNotificationStore.getState()
-    noteStore.setNotes([])
-    noteStore.setPokes([])
-    return { ok: true }
-  },
+    fetchBuildInfo: async () => {
+      const resp = await getJSON('/api/buildinfo')
+      if (resp.requestSuccessful && resp.ok) {
+        set({ commitHash: resp.commitHash || '' })
+      }
+    },
 
-  setUser: (user: User) => {
-    set({
-      user,
-      assets: user.assets,
-      exchanges: user.exchanges,
-      walletMap: buildWalletMap(user.assets),
-      fiatRatesMap: user.fiatRates,
-    })
-  },
-}))
+    login: async (appPass: string) => {
+      const resp: LoginResponse = await postJSON('/api/login', { pass: appPass })
+      if (!resp.requestSuccessful || !resp.ok) {
+        return { ok: false, msg: resp.msg || 'login failed' }
+      }
+      // Hydrate the store from the folded user payload FIRST so any
+      // subscribers that react to note delivery can see populated
+      // `user`/`assets`/`exchanges` state, then deliver the pre-login
+      // notification backlog.
+      applyUserResponse(resp)
+      // Vanilla reverses the notes backlog before passing it to
+      // `setNotes()` so chronologically older entries sit at lower indices
+      // — matching `prependNoteElement`'s push-append order. `pokes` are
+      // not reversed in vanilla.
+      const notes: CoreNote[] = (resp.notes || []).slice().reverse()
+      const pokes: CoreNote[] = resp.pokes || []
+      const noteStore = useNotificationStore.getState()
+      noteStore.setNotes(notes)
+      noteStore.setPokes(pokes)
+      return { ok: true }
+    },
+
+    logout: async (force?: boolean) => {
+      // The server registers `/api/logout` as POST (webserver.go
+      // `apiAuth.Post("/logout", ...)`); a GET request would fail with
+      // 405. Also check the response before clearing state so an
+      // `activeOrdersErr` from core doesn't result in a half-logged-out
+      // client (auth state cleared, but server session still live).
+      // `force=true` asks the server to skip the active-orders check —
+      // callers use this after explicit user confirmation.
+      const res = await postJSON('/api/logout', { force: !!force })
+      if (!res.requestSuccessful || !res.ok) {
+        return { ok: false, msg: res.msg, code: res.code }
+      }
+      set({
+        user: null,
+        authed: false,
+        assets: {},
+        exchanges: {},
+        walletMap: {},
+        fiatRatesMap: {},
+        mmStatus: null,
+      })
+      // Clear the notification cache too so a subsequent re-login starts
+      // from a clean slate. Without this, stale notes/pokes from the
+      // previous session would briefly remain visible until the next
+      // `login()` overwrites them via `setNotes`/`setPokes`.
+      const noteStore = useNotificationStore.getState()
+      noteStore.setNotes([])
+      noteStore.setPokes([])
+      return { ok: true }
+    },
+
+    setUser: (user: User) => {
+      set({
+        user,
+        assets: user.assets,
+        exchanges: user.exchanges,
+        walletMap: buildWalletMap(user.assets),
+        fiatRatesMap: user.fiatRates,
+      })
+    },
+  }
+})

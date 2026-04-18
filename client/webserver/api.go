@@ -1025,6 +1025,44 @@ func (s *WebServer) apiBuildInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
+// userResponseBody is the shared response body returned by both /api/user and
+// /api/login. Folding the user payload into the login response lets the React
+// frontend skip a second round-trip after login.
+type userResponseBody struct {
+	User               *core.User `json:"user"`
+	Lang               string     `json:"lang"`
+	Langs              []string   `json:"langs"`
+	Inited             bool       `json:"inited"`
+	OK                 bool       `json:"ok"`
+	OnionUrl           string     `json:"onionUrl"`
+	MMStatus           *mm.Status `json:"mmStatus"`
+	CompanionAppPaired bool       `json:"companionAppPaired"`
+}
+
+// userResponse builds the shared user payload. Pass u=nil for the
+// unauthenticated case.
+func (s *WebServer) userResponse(u *core.User) *userResponseBody {
+	var mmStatus *mm.Status
+	if s.mm != nil {
+		mmStatus = s.mm.Status()
+	}
+
+	s.authMtx.RLock()
+	paired := s.companionToken != "" && s.companionTokenClaimed
+	s.authMtx.RUnlock()
+
+	return &userResponseBody{
+		User:               u,
+		Lang:               s.lang.Load().(string),
+		Langs:              s.langs,
+		Inited:             s.core.IsInitialized(),
+		OK:                 true,
+		OnionUrl:           s.onion,
+		MMStatus:           mmStatus,
+		CompanionAppPaired: paired,
+	}
+}
+
 // apiLogin handles the 'login' API request.
 func (s *WebServer) apiLogin(w http.ResponseWriter, r *http.Request) {
 	login := new(loginForm)
@@ -1045,13 +1083,13 @@ func (s *WebServer) apiLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, &struct {
-		OK    bool               `json:"ok"`
+		*userResponseBody
 		Notes []*db.Notification `json:"notes"`
 		Pokes []*db.Notification `json:"pokes"`
 	}{
-		OK:    true,
-		Notes: notes,
-		Pokes: pokes,
+		userResponseBody: s.userResponse(s.core.User()),
+		Notes:            notes,
+		Pokes:            pokes,
 	})
 }
 
@@ -1617,36 +1655,7 @@ func (s *WebServer) apiUser(w http.ResponseWriter, r *http.Request) {
 	if s.isAuthed(r) {
 		u = s.core.User()
 	}
-
-	var mmStatus *mm.Status
-	if s.mm != nil {
-		mmStatus = s.mm.Status()
-	}
-
-	s.authMtx.RLock()
-	paired := s.companionToken != "" && s.companionTokenClaimed
-	s.authMtx.RUnlock()
-
-	response := struct {
-		User               *core.User `json:"user"`
-		Lang               string     `json:"lang"`
-		Langs              []string   `json:"langs"`
-		Inited             bool       `json:"inited"`
-		OK                 bool       `json:"ok"`
-		OnionUrl           string     `json:"onionUrl"`
-		MMStatus           *mm.Status `json:"mmStatus"`
-		CompanionAppPaired bool       `json:"companionAppPaired"`
-	}{
-		User:               u,
-		Lang:               s.lang.Load().(string),
-		Langs:              s.langs,
-		Inited:             s.core.IsInitialized(),
-		OK:                 true,
-		OnionUrl:           s.onion,
-		MMStatus:           mmStatus,
-		CompanionAppPaired: paired,
-	}
-	writeJSON(w, response)
+	writeJSON(w, s.userResponse(u))
 }
 
 // apiToggleRateSource handles the /toggleratesource API request.
