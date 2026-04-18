@@ -147,7 +147,7 @@ type clientCore interface {
 	TradeAsync(pw []byte, form *core.TradeForm) (*core.InFlightOrder, error)
 	Cancel(oid dex.Bytes) error
 	NotificationFeed() *core.NoteFeed
-	Logout() error
+	Logout(force bool) error
 	Orders(*core.OrderFilter) ([]*core.Order, error)
 	Order(oid dex.Bytes) (*core.Order, error)
 	MaxBuy(host string, base, quote uint32, rate uint64) (*core.MaxOrderEstimate, error)

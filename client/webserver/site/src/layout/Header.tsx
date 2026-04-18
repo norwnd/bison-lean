@@ -18,6 +18,9 @@ export function Header () {
 
   const isActive = (path: string) => pathname.startsWith(path)
 
+  const burgerTarget = authed ? ROUTES.SETTINGS : ROUTES.LOGIN
+  const burgerActive = isActive(burgerTarget)
+
   return (
     <header id="header">
       {/* Left side: portal slot for page-specific header content (e.g. market stats) */}
@@ -49,8 +52,8 @@ export function Header () {
           </div>
         )}
         <div
-          className={`header-btn${isActive(authed ? ROUTES.SETTINGS : ROUTES.LOGIN) ? ' active' : ''}`}
-          onClick={go(authed ? ROUTES.SETTINGS : ROUTES.LOGIN)}
+          className={`header-btn${burgerActive ? ' active' : ''}`}
+          onClick={burgerActive ? undefined : go(burgerTarget)}
         >
           <span className="ico-hamburger fs20" />
         </div>

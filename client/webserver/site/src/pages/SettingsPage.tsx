@@ -1,10 +1,9 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { postJSON, checkResponse } from '../services/api'
+import { postJSON, checkResponse, Errors } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useUIStore } from '../stores/useUIStore'
-import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { DEXAddressForm } from '../components/common/DEXAddressForm'
 import { FeeAssetSelectionForm } from '../components/common/FeeAssetSelectionForm'
@@ -49,6 +48,7 @@ export default function SettingsPage () {
   const assets = useAuthStore(s => s.assets)
   const exchanges = useAuthStore(s => s.exchanges)
   const fetchUser = useAuthStore(s => s.fetchUser)
+  const logout = useAuthStore(s => s.logout)
   const onionUrl = useAuthStore(s => s.onionUrl)
   const companionAppPaired = useAuthStore(s => s.companionAppPaired)
   const darkMode = useUIStore(s => s.darkMode)
@@ -117,6 +117,14 @@ export default function SettingsPage () {
     typeof Notification !== 'undefined' && Notification.permission === 'denied'
   )
 
+  // -- Sign out --
+  const [signOutError, setSignOutError] = useState('')
+  const [signOutLoading, setSignOutLoading] = useState(false)
+  // `showForceSignOut` triggers the confirmation overlay shown when the
+  // server returns `activeOrdersErr`. Confirming calls `logout(true)` to
+  // bypass the server-side active-orders check at the user's own risk.
+  const [showForceSignOut, setShowForceSignOut] = useState(false)
+
   // Fiat rate sources from user data.
   const fiatRateSources = useMemo(() => {
     if (!user) return []
@@ -127,9 +135,6 @@ export default function SettingsPage () {
 
   // DEX list for navigation.
   const exchangeList = useMemo(() => Object.values(exchanges), [exchanges])
-
-  // -- Notification handlers (none needed for settings, but kept for consistency) --
-  useNotifications(useMemo(() => ({}), []))
 
   // -- DEX registration wizard callbacks --
   const getBondsFeeBuffer = useCallback(async (assetID: number): Promise<number> => {
@@ -429,6 +434,41 @@ export default function SettingsPage () {
     setGameCodeSuccess(null)
   }, [])
 
+  // -- Sign out --
+  // Mirrors vanilla `app.ts` `signOut()` (L1565): on error, display
+  // the server's message. On success, clearing `authed` causes the
+  // router's AuthGuard to redirect to `/login` on the next render —
+  // the component unmounts, so there's no need to reset loading state.
+  //
+  // Special-cases `activeOrdersErr`: instead of blocking the user with
+  // an inline error, opens a confirmation overlay that lets them
+  // force-sign-out after acknowledging the risk.
+  const handleSignOut = useCallback(async () => {
+    setSignOutError('')
+    setSignOutLoading(true)
+    const result = await logout()
+    if (result.ok) return
+    setSignOutLoading(false)
+    if (result.code === Errors.activeOrdersErr) {
+      setShowForceSignOut(true)
+      return
+    }
+    setSignOutError(result.msg)
+  }, [logout])
+
+  // Confirmed sign-out path — calls logout(true) to bypass the
+  // server-side active-orders check. AuthGuard unmounts on success,
+  // so we only need to handle the error path here.
+  const handleForceSignOut = useCallback(async () => {
+    setSignOutError('')
+    setSignOutLoading(true)
+    const result = await logout(true)
+    if (result.ok) return
+    setSignOutLoading(false)
+    setShowForceSignOut(false)
+    setSignOutError(result.msg)
+  }, [logout])
+
   const isPaired = companionAppPaired && !companionUnpaired
 
   return (
@@ -597,6 +637,29 @@ export default function SettingsPage () {
         <h5>{t('Game Code')}</h5>
         <button className="btn btn-outline-secondary" onClick={() => setShowGameCode(true)}>
           {t('Redeem Game Code')}
+        </button>
+      </div>
+
+      {/* -- Order history -- */}
+      <div className="mb-4">
+        <h5>{t('Order History')}</h5>
+        <button className="btn btn-outline-secondary" onClick={() => navigate(ROUTES.ORDERS)}>
+          {t('view')}
+        </button>
+      </div>
+
+      {/* -- Sign out -- */}
+      <div className="mb-4">
+        <h5>{t('Sign Out')}</h5>
+        {signOutError && (
+          <div className="fs15 text-danger mb-2">{signOutError}</div>
+        )}
+        <button
+          className="btn btn-outline-danger"
+          onClick={handleSignOut}
+          disabled={signOutLoading}
+        >
+          {signOutLoading ? '...' : t('Sign Out')}
         </button>
       </div>
 
@@ -910,6 +973,31 @@ export default function SettingsPage () {
         {gameCodeError && (
           <div className="fs15 text-danger mt-2 text-break">{gameCodeError}</div>
         )}
+      </FormOverlay>
+
+      {/* -- Force sign-out confirmation overlay -- */}
+      <FormOverlay
+        show={showForceSignOut}
+        onClose={() => { if (!signOutLoading) setShowForceSignOut(false) }}
+      >
+        <div className="fs20 mb-3">{t('Sign Out')}</div>
+        <div className="fs15 mb-3 text-danger">{t('FORCE_SIGN_OUT_WARNING')}</div>
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-secondary flex-grow-1"
+            onClick={() => setShowForceSignOut(false)}
+            disabled={signOutLoading}
+          >
+            {t('Cancel')}
+          </button>
+          <button
+            className="btn btn-outline-danger flex-grow-1"
+            onClick={handleForceSignOut}
+            disabled={signOutLoading}
+          >
+            {signOutLoading ? '...' : t('Sign Out')}
+          </button>
+        </div>
       </FormOverlay>
     </div>
   )

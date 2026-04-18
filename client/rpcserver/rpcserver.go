@@ -74,7 +74,7 @@ type clientCore interface {
 	Exchanges() (exchanges map[string]*core.Exchange)
 	InitializeClient(appPass []byte, seed *string) (string, error)
 	Login(appPass []byte) error
-	Logout() error
+	Logout(force bool) error
 	OpenWallet(assetID uint32, appPass []byte) error
 	ToggleWalletStatus(assetID uint32, disable bool) error
 	GetDEXConfig(dexAddr string, certI any) (*core.Exchange, error)

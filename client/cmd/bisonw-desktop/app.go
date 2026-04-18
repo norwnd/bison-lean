@@ -275,7 +275,7 @@ func mainCore() error {
 				}
 			logout:
 				for {
-					err := clientCore.Logout()
+					err := clientCore.Logout(false)
 					if err == nil {
 						// Okay to quit.
 						break windowloop

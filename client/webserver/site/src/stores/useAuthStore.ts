@@ -13,6 +13,14 @@ export type LoginResult =
   | { ok: true }
   | { ok: false, msg: string }
 
+// LogoutResult mirrors the login/logout error-surfacing pattern.
+// Vanilla `app.ts` `signOut()` branches on `res.code ===
+// Errors.activeOrdersErr` to show a distinct message — the discriminated
+// union preserves that `code` so callers can special-case it.
+export type LogoutResult =
+  | { ok: true }
+  | { ok: false, msg: string, code?: number }
+
 interface AuthState {
   user: User | null
   authed: boolean
@@ -33,7 +41,7 @@ interface AuthState {
   fetchUser: () => Promise<User | null>
   fetchBuildInfo: () => Promise<void>
   login: (appPass: string) => Promise<LoginResult>
-  logout: () => Promise<void>
+  logout: (force?: boolean) => Promise<LogoutResult>
   setUser: (user: User) => void
 }
 
@@ -131,8 +139,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { ok: true }
   },
 
-  logout: async () => {
-    await getJSON('/api/logout')
+  logout: async (force?: boolean) => {
+    // The server registers `/api/logout` as POST (webserver.go
+    // `apiAuth.Post("/logout", ...)`); a GET request would fail with
+    // 405. Also check the response before clearing state so an
+    // `activeOrdersErr` from core doesn't result in a half-logged-out
+    // client (auth state cleared, but server session still live).
+    // `force=true` asks the server to skip the active-orders check —
+    // callers use this after explicit user confirmation.
+    const res = await postJSON('/api/logout', { force: !!force })
+    if (!res.requestSuccessful || !res.ok) {
+      return { ok: false, msg: res.msg, code: res.code }
+    }
     set({
       user: null,
       authed: false,
@@ -149,6 +167,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const noteStore = useNotificationStore.getState()
     noteStore.setNotes([])
     noteStore.setPokes([])
+    return { ok: true }
   },
 
   setUser: (user: User) => {

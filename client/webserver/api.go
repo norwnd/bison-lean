@@ -1073,9 +1073,18 @@ func (s *WebServer) apiNotes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// apiLogout handles the 'logout' API request.
+// apiLogout handles the 'logout' API request. The optional `force` flag
+// bypasses the active-orders check in Core.Logout; callers that set it accept
+// that in-progress swaps may be disrupted by the subsequent wallet/account
+// locks.
 func (s *WebServer) apiLogout(w http.ResponseWriter, r *http.Request) {
-	err := s.core.Logout()
+	form := struct {
+		Force bool `json:"force"`
+	}{}
+	if !readPost(w, r, &form) {
+		return
+	}
+	err := s.core.Logout(form.Force)
 	if err != nil {
 		s.writeAPIError(w, fmt.Errorf("logout error: %w", err))
 		return

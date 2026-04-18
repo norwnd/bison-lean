@@ -132,7 +132,7 @@ func (c *TCore) InitializeClient(pw []byte, seed *string) (string, error) {
 func (c *TCore) Login(appPass []byte) error {
 	return c.loginErr
 }
-func (c *TCore) Logout() error {
+func (c *TCore) Logout(force bool) error {
 	return c.logoutErr
 }
 func (c *TCore) OpenWallet(assetID uint32, pw []byte) error {

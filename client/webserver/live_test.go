@@ -620,7 +620,7 @@ func (c *TCore) EstimateSendTxFee(addr string, assetID uint32, value uint64, sub
 }
 func (c *TCore) Login([]byte) error  { return nil }
 func (c *TCore) IsInitialized() bool { return c.inited }
-func (c *TCore) Logout() error       { return nil }
+func (c *TCore) Logout(bool) error   { return nil }
 func (c *TCore) Notifications(n int) (notes, pokes []*db.Notification, _ error) {
 	return []*db.Notification{}, []*db.Notification{}, nil
 }

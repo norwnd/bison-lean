@@ -283,7 +283,7 @@ func handleLogin(s *RPCServer, msg *msgjson.Message) *msgjson.ResponsePayload {
 // handleLogout logs out Bison Wallet. *msgjson.ResponsePayload.Error is empty
 // if successful.
 func handleLogout(s *RPCServer, _ *msgjson.Message) *msgjson.ResponsePayload {
-	if err := s.core.Logout(); err != nil {
+	if err := s.core.Logout(false); err != nil {
 		resErr := msgjson.NewError(msgjson.RPCLogoutError, "unable to logout: %v", err)
 		return createResponse(logoutRoute, nil, resErr)
 	}

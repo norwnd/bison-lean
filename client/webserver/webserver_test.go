@@ -231,7 +231,7 @@ func (c *TCore) NotificationFeed() *core.NoteFeed {
 
 func (c *TCore) AckNotes(ids []dex.Bytes) {}
 
-func (c *TCore) Logout() error { return c.logoutErr }
+func (c *TCore) Logout(force bool) error { return c.logoutErr }
 
 func (c *TCore) Orders(*core.OrderFilter) ([]*core.Order, error) { return nil, nil }
 func (c *TCore) Order(oid dex.Bytes) (*core.Order, error)        { return nil, nil }
@@ -836,7 +836,13 @@ func TestPasswordCache(t *testing.T) {
 		pwKeyCK: hex.EncodeToString(key1),
 	})
 
-	s.apiLogout(writer, nil)
+	// apiLogout now parses a JSON body for the `force` flag, so pass a
+	// request with an empty JSON body rather than a nil request.
+	logoutReq, err := http.NewRequest("POST", "/", bytes.NewReader([]byte("{}")))
+	if err != nil {
+		t.Fatalf("error creating logout request: %v", err)
+	}
+	s.apiLogout(writer, logoutReq)
 
 	if len(s.cachedPasswords) != 0 {
 		t.Fatal("logout should clear all cached passwords")

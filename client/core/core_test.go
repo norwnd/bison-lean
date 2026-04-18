@@ -6878,7 +6878,7 @@ func TestLogout(t *testing.T) {
 		tCore.loggedIn = true
 		tCore.loginMtx.Unlock()
 
-		err := tCore.Logout()
+		err := tCore.Logout(false)
 		if err == nil {
 			t.Fatalf("%s: no error", tag)
 		}
@@ -10515,7 +10515,7 @@ func TestCredentialHandling(t *testing.T) {
 		t.Fatalf("InitializeClient error: %v", err)
 	}
 
-	tCore.Logout()
+	tCore.Logout(false)
 
 	err = tCore.Login(tPW)
 	if err != nil {

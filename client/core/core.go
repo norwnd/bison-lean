@@ -5162,8 +5162,10 @@ func (c *Core) Active() bool {
 	return false
 }
 
-// Logout logs the user out
-func (c *Core) Logout() error {
+// Logout logs the user out. If force is true, the check for active orders is
+// skipped — the caller accepts that in-progress swaps may be disrupted by the
+// ensuing wallet and DEX-account locks.
+func (c *Core) Logout(force bool) error {
 	c.loginMtx.Lock()
 	defer c.loginMtx.Unlock()
 
@@ -5171,8 +5173,8 @@ func (c *Core) Logout() error {
 		return nil
 	}
 
-	// Check active orders
-	if c.Active() {
+	// Check active orders unless the caller is explicitly forcing logout.
+	if !force && c.Active() {
 		return codedError(activeOrdersErr, ActiveOrdersLogoutErr)
 	}
 
