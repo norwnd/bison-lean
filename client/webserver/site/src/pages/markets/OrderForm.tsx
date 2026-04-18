@@ -46,17 +46,25 @@ export function OrderForm ({
   const buiConv = bui?.conventional
   const quiConv = qui?.conventional
 
-  // Fully independent form state
+  // Fully independent form state. Both the display string (rateInput) and
+  // the parsed/adjusted atom value (rateAtom) are first-class state. Keeping
+  // atoms as state rather than refs means memos that depend on the atomic
+  // value (previewTotal, rateMinMsg, the button's `enabled`) read the value
+  // directly instead of using the string as a dep proxy, which would leave
+  // them stale if a future code path mutates the atom without also calling
+  // the string setter.
   const [rateInput, setRateInput] = useState('')
   const [qtyInput, setQtyInput] = useState('')
-  const rateAtomRef = useRef(0)
-  const qtyAtomRef = useRef(0)
+  const [rateAtom, setRateAtom] = useState(0)
+  const [qtyAtom, setQtyAtom] = useState(0)
   const [sliderValue, setSliderValue] = useState(0)
-  const [submitEnabled, setSubmitEnabled] = useState(false)
-  const [submitMsg, setSubmitMsg] = useState('')
-  const [orderError, setOrderError] = useState('')
+  // Click-time validation: errorMsg is the post-click failure (insufficient
+  // balance, etc.); inFlight is the depressed visual while max-est is in
+  // flight after a click. Background validation is intentionally absent so
+  // the button never flashes "calculating..." on its own.
+  const [errorMsg, setErrorMsg] = useState('')
+  const [inFlight, setInFlight] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
   const verifiedOrderRef = useRef<any>(null)
 
   // MP-51: disclaimer ack state, persisted to localStorage. Vanilla
@@ -79,17 +87,21 @@ export function OrderForm ({
 
   // Max estimation cache. Buy: keyed by rateAtom. Sell: keyed by 0.
   const maxCacheRef = useRef<Record<number, MaxOrderEstimate>>({})
-  // Used only by the validate effect below to detect when a newer validate
-  // has superseded an in-flight one. The requestMax market-switch guard uses
-  // the separate `selectedRef` snapshot pattern instead of a counter.
-  const maxReqIdRef = useRef(0)
   // MP-17: market-switch guard. Snapshot `selected` at requestMax call time,
   // compare against `selectedRef.current` after the fetch returns; drop the
   // response if the market has changed. The OrderForm `key` prop normally
   // remounts the component on a market switch, but this guard is a defensive
   // safety net that mirrors vanilla's marketBefore/marketAfter check.
   const selectedRef = useRef(selected)
-  selectedRef.current = selected
+  useEffect(() => { selectedRef.current = selected }, [selected])
+  // Mirror of walletMap for requestMax so its callback identity stays stable
+  // across WS balance notes (every balance note creates a new walletMap
+  // identity). Without this, requestMax would get a new identity on every
+  // balance note, churning through every downstream callback that depends
+  // on it (stepSubmit, syncSlider, etc.). Consumers reading via the ref
+  // see the latest walletMap because event handlers run after effects.
+  const walletMapRef = useRef(walletMap)
+  useEffect(() => { walletMapRef.current = walletMap }, [walletMap])
 
   // Refs to the price/quantity input boxes so we can flash a red outline on
   // invalid submission. Matches the vanilla highlightOutlineRed animation.
@@ -112,10 +124,15 @@ export function OrderForm ({
     el.classList.add('flash-invalid')
   }, [])
 
-  // Invalidate max caches when wallets change (balance updates)
+  // Invalidate max caches when the relevant wallets change. Narrowed to
+  // the base/quote wallet entries so unrelated WS balance notes don't
+  // churn the cache — useMarketStore's immutable updates replace only
+  // the notified asset's wallet, so these refs stay stable otherwise.
+  const baseWallet = selected ? walletMap[selected.baseID] : undefined
+  const quoteWallet = selected ? walletMap[selected.quoteID] : undefined
   useEffect(() => {
     maxCacheRef.current = {}
-  }, [walletMap])
+  }, [baseWallet, quoteWallet])
 
   // MP-15: Initialize qty to 1 lot when the market first becomes available.
   // Mirrors vanilla setBuyQtyDefault/setSellQtyDefault. The OrderForm is
@@ -130,7 +147,7 @@ export function OrderForm ({
   useEffect(() => {
     if (qtyInitRef.current || !currentMkt || !bui) return
     qtyInitRef.current = true
-    qtyAtomRef.current = currentMkt.lotsize
+    setQtyAtom(currentMkt.lotsize)
     setQtyInput(formatCoinAtomToLotSizeBaseCurrency(currentMkt.lotsize, bui, currentMkt.lotsize))
     setSliderValue(0)
     maxCacheRef.current = {}
@@ -142,7 +159,7 @@ export function OrderForm ({
     const adjusted = isSell
       ? adjRateAtomSell(bookRateAtom, currentMkt.ratestep)
       : adjRateAtomBuy(bookRateAtom, currentMkt.ratestep)
-    rateAtomRef.current = adjusted
+    setRateAtom(adjusted)
     setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, currentMkt.ratestep, isSell))
     if (!isSell) maxCacheRef.current = {}
   }, [bookRateVersion])
@@ -155,10 +172,11 @@ export function OrderForm ({
       selectedRef.current.host !== reqSelected.host ||
       selectedRef.current.baseID !== reqSelected.baseID ||
       selectedRef.current.quoteID !== reqSelected.quoteID
+    const wm = walletMapRef.current
     if (isSell) {
       const cached = maxCacheRef.current[0]
       if (cached) return cached
-      const baseWallet = walletMap[selected.baseID]
+      const baseWallet = wm[selected.baseID]
       if (!baseWallet?.running) return null
       const res = await postJSON('/api/maxsell', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID
@@ -168,11 +186,10 @@ export function OrderForm ({
       maxCacheRef.current[0] = res.maxSell
       return res.maxSell as MaxOrderEstimate
     } else {
-      const rateAtom = rateAtomRef.current
       if (!rateAtom) return null
       const cached = maxCacheRef.current[rateAtom]
       if (cached) return cached
-      const quoteWallet = walletMap[selected.quoteID]
+      const quoteWallet = wm[selected.quoteID]
       if (!quoteWallet?.running) return null
       const res = await postJSON('/api/maxbuy', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID, rate: rateAtom
@@ -182,13 +199,16 @@ export function OrderForm ({
       maxCacheRef.current[rateAtom] = res.maxBuy
       return res.maxBuy as MaxOrderEstimate
     }
-  }, [selected, currentMkt, bui, qui, isSell, walletMap])
+  }, [selected, currentMkt, bui, qui, isSell, rateAtom])
 
-  // Sync slider position from current qty vs max estimate
-  const syncSlider = useCallback(async () => {
+  // Sync slider position from a given qty vs max estimate. Takes qty as a
+  // parameter because callers often invoke it immediately after queuing a
+  // setQtyAtom update, and state updates are asynchronous — reading the
+  // captured qtyAtom from a closure would see the old value.
+  const syncSlider = useCallback(async (qty: number) => {
     if (!currentMkt) return
     const lotsize = currentMkt.lotsize
-    const currentLots = Math.floor(qtyAtomRef.current / lotsize)
+    const currentLots = Math.floor(qty / lotsize)
     if (currentLots <= 0) { setSliderValue(0); return }
     const maxEst = await requestMax()
     if (maxEst && maxEst.swap.lots > 0) {
@@ -205,16 +225,15 @@ export function OrderForm ({
       const last = value.charAt(value.length - 1)
       if (last === '.' || last === ',') return
     }
-    const rateAtom = parseConvRate(value, bui, qui)
-    if (!rateAtom) {
-      rateAtomRef.current = 0
-      setSubmitEnabled(false)
+    const parsed = parseConvRate(value, bui, qui)
+    if (!parsed) {
+      setRateAtom(0)
       return
     }
     const adjusted = isSell
-      ? adjRateAtomSell(rateAtom, currentMkt.ratestep)
-      : adjRateAtomBuy(rateAtom, currentMkt.ratestep)
-    rateAtomRef.current = adjusted
+      ? adjRateAtomSell(parsed, currentMkt.ratestep)
+      : adjRateAtomBuy(parsed, currentMkt.ratestep)
+    setRateAtom(adjusted)
     if (!isSell) maxCacheRef.current = {}
   }, [bui, qui, currentMkt, isSell])
 
@@ -226,36 +245,36 @@ export function OrderForm ({
     // animation). React's handleRateChange is the live input path, this
     // is the commit path. Detect both invalid and rounded-down inputs by
     // re-parsing the typed value and comparing against the adjusted
-    // value already stored in `rateAtomRef` by handleRateChange — if
-    // they differ, the input was rounded; if it parsed to 0, it was
-    // invalid (vanilla L3030 animates errors in both cases).
+    // `rateAtom` that handleRateChange stored — if they differ, the
+    // input was rounded; if it parsed to 0, it was invalid (vanilla
+    // L3030 animates errors in both cases).
     const typedAtom = parseConvRate(rateInput, bui, qui)
     if (typedAtom === 0) {
       // Empty is silent, anything else is a parse error worth flashing.
       if (rateInput.trim().length > 0) flashInvalid(priceBoxRef.current)
       return
     }
-    if (typedAtom !== rateAtomRef.current) {
+    if (typedAtom !== rateAtom) {
       flashInvalid(priceBoxRef.current)
     }
-    if (rateAtomRef.current > 0) {
-      setRateInput(formatRateAtomToRateStep(rateAtomRef.current, bui, qui, currentMkt.ratestep, isSell))
+    if (rateAtom > 0) {
+      setRateInput(formatRateAtomToRateStep(rateAtom, bui, qui, currentMkt.ratestep, isSell))
     }
-  }, [bui, qui, currentMkt, isSell, rateInput, flashInvalid])
+  }, [bui, qui, currentMkt, isSell, rateInput, rateAtom, flashInvalid])
 
   const handleRateStep = useCallback((direction: 1 | -1) => {
     if (!bui || !qui || !currentMkt) return
     const step = currentMkt.ratestep
-    let current = rateAtomRef.current || 0
+    let current = rateAtom || 0
     current += step * direction
     if (current < step) current = step
     const adjusted = isSell
       ? adjRateAtomSell(current, step)
       : adjRateAtomBuy(current, step)
-    rateAtomRef.current = adjusted
+    setRateAtom(adjusted)
     setRateInput(formatRateAtomToRateStep(adjusted, bui, qui, step, isSell))
     if (!isSell) maxCacheRef.current = {}
-  }, [bui, qui, currentMkt, isSell])
+  }, [bui, qui, currentMkt, isSell, rateAtom])
 
   const handleQtyChange = useCallback((value: string) => {
     setQtyInput(value)
@@ -266,15 +285,15 @@ export function OrderForm ({
       const last = value.charAt(value.length - 1)
       if (last === '.' || last === ',') return
     }
-    const qtyAtom = parseConvQty(value, bui)
-    if (!qtyAtom) {
-      qtyAtomRef.current = 0
-      setSubmitEnabled(false)
+    const parsed = parseConvQty(value, bui)
+    if (!parsed) {
+      setQtyAtom(0)
       return
     }
-    const lots = Math.floor(qtyAtom / currentMkt.lotsize)
-    qtyAtomRef.current = lots * currentMkt.lotsize
-    syncSlider()
+    const lots = Math.floor(parsed / currentMkt.lotsize)
+    const next = lots * currentMkt.lotsize
+    setQtyAtom(next)
+    syncSlider(next)
   }, [bui, currentMkt, syncSlider])
 
   const handleQtyBlur = useCallback(() => {
@@ -289,26 +308,27 @@ export function OrderForm ({
       if (qtyInput.trim().length > 0) flashInvalid(qtyBoxRef.current)
       return
     }
-    if (typedAtom !== qtyAtomRef.current) {
+    if (typedAtom !== qtyAtom) {
       flashInvalid(qtyBoxRef.current)
     }
-    if (qtyAtomRef.current > 0) {
-      setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, currentMkt.lotsize))
+    if (qtyAtom > 0) {
+      setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtom, bui, currentMkt.lotsize))
     }
-    syncSlider()
-  }, [bui, currentMkt, syncSlider, qtyInput, flashInvalid])
+    syncSlider(qtyAtom)
+  }, [bui, currentMkt, syncSlider, qtyInput, qtyAtom, flashInvalid])
 
   const handleQtyStep = useCallback((direction: 1 | -1) => {
     if (!bui || !currentMkt) return
     const lotsize = currentMkt.lotsize
-    let current = qtyAtomRef.current || 0
+    let current = qtyAtom || 0
     current += lotsize * direction
     if (current < lotsize) current = lotsize
     const lots = Math.floor(current / lotsize)
-    qtyAtomRef.current = lots * lotsize
-    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(qtyAtomRef.current, bui, lotsize))
-    syncSlider()
-  }, [bui, currentMkt, syncSlider])
+    const next = lots * lotsize
+    setQtyAtom(next)
+    setQtyInput(formatCoinAtomToLotSizeBaseCurrency(next, bui, lotsize))
+    syncSlider(next)
+  }, [bui, currentMkt, syncSlider, qtyAtom])
 
   // Slider handler: slider value (0-1) -> qty via max lots estimate
   const handleSlider = useCallback(async (value: number) => {
@@ -320,71 +340,47 @@ export function OrderForm ({
     if (maxLots <= 0) return
     const lots = Math.max(1, Math.floor(maxLots * value))
     const adjQty = lots * lotsize
-    qtyAtomRef.current = adjQty
+    setQtyAtom(adjQty)
     setQtyInput(formatCoinAtomToLotSizeBaseCurrency(adjQty, bui, lotsize))
   }, [bui, currentMkt, requestMax])
 
-  // Validate and enable submit button
-  useEffect(() => {
-    if (!selected || !currentMkt || !bui || !qui) {
-      setSubmitEnabled(false)
-      return
-    }
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
-    if (!rateAtom || !qtyAtom) {
-      setSubmitEnabled(false)
-      setSubmitMsg('')
-      return
-    }
+  // Cheap, synchronous "rate below min" check. This is the only validation
+  // we surface as a persistent message before the user clicks — it doesn't
+  // require a server round-trip, so showing it eagerly costs nothing and
+  // helps the user fix the input. Insufficient-balance and similar checks
+  // require requestMax() and are deferred to click time.
+  const rateMinMsg = useMemo(() => {
+    if (!currentMkt || !bui || !qui) return ''
+    if (!rateAtom) return ''
     if (rateAtom < currentMkt.minimumRate) {
-      setSubmitEnabled(false)
-      setSubmitMsg(t('RATE_BELOW_MIN_MSG', {
+      return t('RATE_BELOW_MIN_MSG', {
         minRate: formatRateAtomToRateStep(currentMkt.minimumRate, bui, qui, currentMkt.ratestep, isSell)
-      }))
-      return
+      })
     }
-    let cancelled = false
-    const validate = async () => {
-      setSubmitMsg(t('CALCULATING'))
-      setSubmitEnabled(false)
-      maxReqIdRef.current++
-      const reqId = maxReqIdRef.current
-      const maxEst = await requestMax()
-      if (cancelled || reqId !== maxReqIdRef.current) return
-      if (isSell) {
-        if (!maxEst || qtyAtom > maxEst.swap.value) {
-          setSubmitEnabled(false)
-          setSubmitMsg(t('INSUFFICIENT_BALANCE'))
-          return
-        }
-      } else {
-        if (!maxEst || qtyAtom > maxEst.swap.lots * currentMkt.lotsize) {
-          setSubmitEnabled(false)
-          setSubmitMsg(t('INSUFFICIENT_BALANCE'))
-          return
-        }
-      }
-      setSubmitEnabled(true)
-      setSubmitMsg('')
-    }
-    validate()
-    return () => { cancelled = true }
-  }, [selected, currentMkt, bui, qui, isSell, rateInput, qtyInput, requestMax, t])
+    return ''
+  }, [rateAtom, currentMkt, bui, qui, isSell, t])
+
+  // Reactive error clearing: when the inputs change OR the relevant wallet
+  // state changes, the previous click's error may no longer apply (user
+  // adjusted qty, balance update arrived, etc.). Clear it so the user can
+  // try again. We deliberately avoid re-running validation here — the
+  // next click does that. Narrowed to base/quote wallets so unrelated WS
+  // balance notes don't clear errors unnecessarily.
+  useEffect(() => {
+    setErrorMsg('')
+  }, [rateInput, qtyInput, baseWallet, quoteWallet])
 
   // Preview total
   const previewTotal = useMemo(() => {
-    const rateAtom = rateAtomRef.current
-    const qtyAtom = qtyAtomRef.current
     if (!rateAtom || !qtyAtom || !bui || !qui || !currentMkt) return ''
     const total = baseToQuote(rateAtom, qtyAtom)
     return formatCoinAtomToLotSizeQuoteCurrency(total, bui, qui, currentMkt.lotsize, currentMkt.ratestep)
-  }, [rateInput, qtyInput, bui, qui, currentMkt])
+  }, [rateAtom, qtyAtom, bui, qui, currentMkt])
 
   // MP-13: Wallet-readiness gate. Mirrors vanilla displayMessageIfMissingWallet
   // priority order — both missing > base missing > quote missing > base
   // disabled/not-running > quote disabled/not-running. When set, this message
-  // replaces submitMsg and the submit button is disabled.
+  // is shown on the submit button and gates it disabled.
   const walletMsg = useMemo(() => {
     if (!selected) return ''
     const baseW = walletMap[selected.baseID]
@@ -399,35 +395,42 @@ export function OrderForm ({
     return ''
   }, [selected, walletMap, baseSymbol, quoteSymbol, t])
 
-  // Submit order: step 1 - show confirmation. All validation (zero rate/qty,
-  // min-rate, insufficient balance, wallet readiness) is handled by the
-  // validate effect + walletMsg, which gate `submitEnabled` + disabled on the
-  // button. By the time this runs, the button was clickable, so no further
-  // checks are needed here.
+  // Submit order: step 1 — click-time validation. The button label/disabled
+  // state only gates on cheap synchronous checks (wallet ready, rate above
+  // min, non-zero rate/qty); the expensive max-est fetch happens here so
+  // the button never flashes a "calculating..." text on its own. While the
+  // fetch is in flight the button shows a depressed visual (`inFlight`)
+  // and can't be re-clicked (disabled). On failure we set `errorMsg`,
+  // which the button shows in place of its label until the user changes
+  // an input or a balance update arrives (see the reactive-clear effect).
   const stepSubmit = useCallback(async () => {
     if (!selected || !currentMkt || !bui || !qui) return
-    setOrderError('')
+    if (!rateAtom || !qtyAtom) return
+    setErrorMsg('')
+    setInFlight(true)
+    const maxEst = await requestMax()
+    setInFlight(false)
+    const enough = isSell
+      ? maxEst && qtyAtom <= maxEst.swap.value
+      : maxEst && qtyAtom <= maxEst.swap.lots * currentMkt.lotsize
+    if (!enough) {
+      setErrorMsg(t('INSUFFICIENT_BALANCE'))
+      return
+    }
     verifiedOrderRef.current = {
       host: selected.host, isLimit: true, sell: isSell,
       base: selected.baseID, quote: selected.quoteID,
-      qty: qtyAtomRef.current, rate: rateAtomRef.current, tifnow: false, options: {}
+      qty: qtyAtom, rate: rateAtom, tifnow: false, options: {}
     }
     setShowVerify(true)
-  }, [selected, currentMkt, bui, qui, isSell])
+  }, [selected, currentMkt, bui, qui, isSell, requestMax, rateAtom, qtyAtom, t])
 
-  // Submit order: step 2 - send to server
-  const submitVerifiedOrder = useCallback(async () => {
-    if (!verifiedOrderRef.current) return
-    setSubmitting(true)
-    setOrderError('')
-    const res = await postJSON('/api/tradeasync', { order: verifiedOrderRef.current })
-    setSubmitting(false)
-    if (!checkResponse(res)) {
-      setOrderError(res.msg || 'Order submission failed')
-      return
-    }
+  // Called by VerifyOrderForm after a successful order submit. Resets the
+  // form state and closes the modal; VerifyOrderForm owns the POST + its
+  // own submitting/error state.
+  const handleOrderSuccess = useCallback(() => {
     setShowVerify(false)
-    qtyAtomRef.current = currentMkt?.lotsize ?? 0
+    setQtyAtom(currentMkt?.lotsize ?? 0)
     if (bui && currentMkt) {
       setQtyInput(formatCoinAtomToLotSizeBaseCurrency(currentMkt.lotsize, bui, currentMkt.lotsize))
     }
@@ -544,26 +547,39 @@ export function OrderForm ({
             )}
         </div>
         {(() => {
-          const msg = walletMsg || submitMsg
           const defaultLabel = `${isSell ? t('Sell') : t('Buy')} ${shortSymbol(baseSymbol)}`
-          const btn = (
-            <button
-              type="button"
-              className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-              disabled={!submitEnabled || !!walletMsg}
-              onClick={stepSubmit}
-            >
-              <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
-                {msg || defaultLabel}
-              </span>
-            </button>
+          // Priority: wallet readiness > sync rate-min check > last click error.
+          // The button never shows "calculating..." — it keeps the default
+          // label and applies the `submit-pressed` visual for the entire
+          // time the user is "mid-order": while the async max-est is in
+          // flight, and continuing through the verify-modal lifetime until
+          // it closes. This gives stable click feedback regardless of how
+          // fast the max-est fetch resolves (e.g. warm cache = instant).
+          const msg = walletMsg || rateMinMsg || errorMsg
+          const pressed = inFlight || showVerify
+          const enabled = !msg && !pressed && !!rateAtom && !!qtyAtom &&
+            !!selected && !!currentMkt && !!bui && !!qui
+          // Always wrap in Tooltip so the button doesn't remount when msg
+          // toggles empty↔non-empty. Tooltip is a no-op on empty content.
+          return (
+            <Tooltip content={msg}>
+              <button
+                type="button"
+                className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}${pressed ? ' submit-pressed' : ''}`}
+                disabled={!enabled}
+                onClick={stepSubmit}
+              >
+                <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
+                  {msg || defaultLabel}
+                </span>
+              </button>
+            </Tooltip>
           )
-          return msg ? <Tooltip content={msg}>{btn}</Tooltip> : btn
         })()}
       </form>
 
       {/* Order verification modal */}
-      <FormOverlay show={showVerify} onClose={() => { setShowVerify(false); setOrderError('') }}>
+      <FormOverlay show={showVerify} onClose={() => setShowVerify(false)}>
         <VerifyOrderForm
           isSell={isSell}
           order={verifiedOrderRef.current}
@@ -575,13 +591,11 @@ export function OrderForm ({
           quiUnit={quiConv?.unit ?? ''}
           baseFiatRate={baseFiatRate}
           quoteFiatRate={quoteFiatRate}
-          submitting={submitting}
-          orderError={orderError}
           disclaimerAcked={disclaimerAcked}
           onAckDisclaimer={ackDisclaimer}
           onUnackDisclaimer={unackDisclaimer}
-          onClose={() => { setShowVerify(false); setOrderError('') }}
-          onSubmit={submitVerifiedOrder}
+          onClose={() => setShowVerify(false)}
+          onSuccess={handleOrderSuccess}
           t={t}
         />
       </FormOverlay>

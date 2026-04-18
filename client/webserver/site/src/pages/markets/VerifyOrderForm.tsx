@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { postJSON, checkResponse } from '../../services/api'
 import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
@@ -9,16 +11,24 @@ import type { Market, UnitInfo } from '../../stores/types'
 
 // ---------------------------------------------------------------------------
 // VerifyOrderForm — confirmation modal shown after the user submits the
-// main order form. Pure props in, callbacks out; no side effects.
+// main order form. Owns the submit request + its transient state
+// (submitting, orderError); the parent only receives the success signal
+// and performs any form-reset work in response.
 // ---------------------------------------------------------------------------
 
 export interface VerifyOrderFormProps {
   isSell: boolean
+  // Full `/api/tradeasync` payload — this component POSTs it on submit.
   order: {
     host: string
-    rate: number
+    isLimit: boolean
+    sell: boolean
+    base: number
+    quote: number
     qty: number
-    tifnow?: boolean
+    rate: number
+    tifnow: boolean
+    options: Record<string, unknown>
   } | null
   bui: UnitInfo | null
   qui: UnitInfo | null
@@ -28,22 +38,40 @@ export interface VerifyOrderFormProps {
   quiUnit: string
   baseFiatRate: number
   quoteFiatRate: number
-  submitting: boolean
-  orderError: string
   disclaimerAcked: boolean
   onAckDisclaimer: () => void
   onUnackDisclaimer: () => void
   onClose: () => void
-  onSubmit: () => void
+  // Called after the order has been successfully submitted. The parent
+  // uses this to reset its form state (qty, slider, max-est cache).
+  onSuccess: () => void
   t: (key: string, opts?: Record<string, string>) => string
 }
 
 export function VerifyOrderForm ({
   isSell, order, bui, qui, currentMkt, baseSymbol, buiUnit, quiUnit,
-  baseFiatRate, quoteFiatRate, submitting, orderError,
+  baseFiatRate, quoteFiatRate,
   disclaimerAcked, onAckDisclaimer, onUnackDisclaimer,
-  onClose, onSubmit, t
+  onClose, onSuccess, t
 }: VerifyOrderFormProps) {
+  // Submit state lives here — the modal is fully remounted every time it
+  // opens (FormOverlay unmounts when show=false), so these always start
+  // fresh and don't need external reset.
+  const [submitting, setSubmitting] = useState(false)
+  const [orderError, setOrderError] = useState('')
+
+  const handleSubmit = async () => {
+    if (!order) return
+    setSubmitting(true)
+    setOrderError('')
+    const res = await postJSON('/api/tradeasync', { order })
+    setSubmitting(false)
+    if (!checkResponse(res)) {
+      setOrderError(res.msg || 'Order submission failed')
+      return
+    }
+    onSuccess()
+  }
   const buySellStr = isSell ? t('Sell') : t('Buy')
   const orderDesc = `Limit ${buySellStr} Order`
   const orderTypeLabel = order?.tifnow ? `${orderDesc} (immediate)` : orderDesc
@@ -119,7 +147,7 @@ export function VerifyOrderForm ({
       <button type="button" className="form-close-btn" onClick={onClose} aria-label="Close"><span className="ico-cross"></span></button>
       {order && bui && qui && currentMkt && (
         <>
-          <div className="d-flex justify-content-between align-items-center fs14 pe-4">
+          <div className="d-flex justify-content-between align-items-center fs14 mt-4">
             <span id="vOrderType" className="grey">{orderTypeLabel}</span>
             <span id="vOrderHost" className="grey">{order.host}</span>
           </div>
@@ -155,25 +183,20 @@ export function VerifyOrderForm ({
         </>
       )}
       <div className="flex-stretch-column mt-3">
-        {/* While submitting, hide the submit button and show a loader
-            block instead. */}
-        {!submitting && (
-          <button
-            id="vSubmit"
-            type="button"
-            className={`justify-content-center fs18 go ${isSell ? 'sellred-bg' : 'buygreen-bg'}`}
-            onClick={onSubmit}
-          >
-            <span id="vSideSubmit">{buySellStr}</span>
-            {' '}
-            <span>{shortSymbol(baseSymbol)}</span>
-          </button>
-        )}
-        {submitting && (
-          <div id="vLoader" className="loader flex-center">
-            <div className="ico-spinner spinner"></div>
-          </div>
-        )}
+        {/* While submitting, keep the button visible but apply the
+            "depressed" visual (see `#verifyForm button` in markets.scss)
+            so the click is acknowledged. Disabled prevents double-submit. */}
+        <button
+          id="vSubmit"
+          type="button"
+          className={`justify-content-center fs18 go ${isSell ? 'sellred-bg' : 'buygreen-bg'}${submitting ? ' submit-pressed' : ''}`}
+          disabled={submitting}
+          onClick={handleSubmit}
+        >
+          <span id="vSideSubmit">{buySellStr}</span>
+          {' '}
+          <span>{shortSymbol(baseSymbol)}</span>
+        </button>
       </div>
       {orderError && (
         <div id="vErr" className="fs17 p-3 text-center text-danger text-break">{orderError}</div>

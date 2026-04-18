@@ -287,6 +287,22 @@ div[data-handler=markets] {
       &.sellred-bg {
         background-color: var(--market-sellred-bg);
       }
+
+      // Click-time "depressed" visual: applied while a max-est fetch is
+      // in flight after the user clicked Buy/Sell, and while the verify
+      // modal is open. The button is also `disabled` during this window.
+      // Strategy: desaturate (grayscale) + dim (opacity/brightness) +
+      // shrink (scale) so the button clearly reads as "not active right
+      // now" while keeping the button's shape/position stable.
+      transition: transform 120ms ease-out, filter 120ms ease-out, opacity 120ms ease-out;
+
+      &.submit-pressed,
+      &.submit-pressed:disabled {
+        opacity: 0.55;
+        transform: scale(0.96);
+        filter: grayscale(80%) brightness(0.85);
+        cursor: wait;
+      }
     }
 
     #orderTotalPreviewBuyLeft {
@@ -650,10 +666,18 @@ div[data-handler=markets] {
     &.sellred-bg {
       background-color: var(--market-sellred-bg);
     }
-  }
 
-  .loader {
-    height: 40px;
+    // Click-time "depressed" visual — mirrors `button.submit` in the
+    // main order form. Applied while the tradeasync POST is in flight.
+    transition: transform 120ms ease-out, filter 120ms ease-out, opacity 120ms ease-out;
+
+    &.submit-pressed,
+    &.submit-pressed:disabled {
+      opacity: 0.55;
+      transform: scale(0.96);
+      filter: grayscale(80%) brightness(0.85);
+      cursor: wait;
+    }
   }
 
   #youSpend {
