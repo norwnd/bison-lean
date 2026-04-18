@@ -7,7 +7,8 @@ set -e
 # pprof is available at:
 # http://127.0.0.1:3333/debug/pprof/goroutine?debug=1
 #
-(./client/cmd/bisonw/bisonw --webaddr=127.0.0.1:3333 --log=trace --httpprof)
+# --no-embed-site is helful for development, but should be removed for production releases
+(./client/cmd/bisonw/bisonw --webaddr=127.0.0.1:3333 --log=trace --httpprof --no-embed-site)
 
 ## mainnet with dedicated DB:
 #(./client/cmd/bisonw/bisonw --db=/Users/norwnd/d-e-x-c-db/db_mainnet --webaddr=127.0.0.1:3333 --log=trace --httpprof)
