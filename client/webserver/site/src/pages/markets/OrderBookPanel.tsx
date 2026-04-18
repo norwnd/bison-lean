@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { formatRateToRateStep, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { ConnectionStatus } from '../../stores/types'
 import type { Exchange } from '../../stores/types'
+import { useAuthStore } from '../../stores/useAuthStore'
 import { useUIStore } from '../../stores/useUIStore'
 import { useMarketPageContext } from './MarketPageContext'
 import { OrderBookRow } from './OrderBookRow'
@@ -41,8 +43,10 @@ export function OrderBookPanel ({
   isConnected,
   hasBook
 }: OrderBookPanelProps) {
+  const { t } = useTranslation()
   const { currentMkt, bui, qui } = useMarketPageContext()
   const darkMode = useUIStore(s => s.darkMode)
+  const authFailed = useAuthStore(s => s.authFailed)
 
   // marketSearch state is local to this panel.
   const [marketSearch, setMarketSearch] = useState('')
@@ -91,6 +95,18 @@ export function OrderBookPanel ({
                 const isDisconnected = xcForRow
                   ? xcForRow.connectionStatus !== ConnectionStatus.Connected
                   : false
+                // UI-AUTH: show a small spinner on market-list rows whose
+                // DEX is WS-connected but still authing. Avoids showing
+                // rows as "ready to trade" until auth actually completes.
+                // Suppress when auth has failed — that host won't auth
+                // further; an error state is more informative than a
+                // forever-spinning indicator.
+                const isAuthing = !isDisconnected && xcForRow
+                  ? xcForRow.connectionStatus === ConnectionStatus.Connected &&
+                    !xcForRow.authed && !xcForRow.viewOnly &&
+                    !authFailed[m.host]
+                  : false
+                const hasAuthFailed = !isDisconnected && !!authFailed[m.host]
                 return (
                   <div
                     key={`${m.host}-${m.baseID}-${m.quoteID}`}
@@ -111,6 +127,18 @@ export function OrderBookPanel ({
                           <span
                             className="text-danger ico-disconnected fs11 ps-1"
                             title="DEX host disconnected"
+                          />
+                        )}
+                        {isAuthing && (
+                          <span
+                            className="ico-spinner spinner fs11 ps-1"
+                            title={t('AUTHENTICATING_WITH_DEX')}
+                          />
+                        )}
+                        {hasAuthFailed && (
+                          <span
+                            className="text-danger ico-cross fs11 ps-1"
+                            title="DEX authentication failed"
                           />
                         )}
                       </div>

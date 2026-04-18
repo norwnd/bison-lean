@@ -16,6 +16,7 @@ import {
   ConnectionStatus
 } from '../../stores/types'
 import { useMarketPageContext } from './MarketPageContext'
+import { deriveWarmupState } from './helpers'
 import { StatusPanels } from './StatusPanels'
 import type { StatusPanelData } from './StatusPanels'
 import { TierSection } from './TierSection'
@@ -53,6 +54,7 @@ export function RightPanel ({
 
   const assets = useAuthStore(s => s.assets)
   const exchanges = useAuthStore(s => s.exchanges)
+  const authFailed = useAuthStore(s => s.authFailed)
   const currentXc = exchanges[selected.host]
   const baseAsset = assets[selected.baseID] ?? null
   const quoteAsset = assets[selected.quoteID] ?? null
@@ -94,8 +96,28 @@ export function RightPanel ({
     return ''
   }, [currentXc, baseAsset, quoteAsset, bui, qui, selected, t])
 
+  // UI-AUTH: derive the login-warmup triple via the shared helper so
+  // MarketsPage and this panel stay in lockstep. `authingDex` gates
+  // the no-wallet cascade below and doubles as the discriminator for
+  // the statusPanel `kind: 'authing'` branch; `warmupMsg` is the
+  // already-picked sub-state label ("Connecting..." vs
+  // "Authenticating...") fed into that descriptor.
+  const { authFailedMsg, authingDex, warmupMsg } = deriveWarmupState(currentXc, authFailed, t)
+
   // MP-33: noWalletMsg
+  // UI-AUTH: during the login-warmup window (connected but not yet
+  // authed, and no terminal auth failure), `wallet.running` is `false`
+  // on every wallet until each per-wallet `Connect` lands. Surfacing
+  // "Enable / Activate X wallet" in that window is misleading -- the
+  // wallet is already enabled; it just hasn't finished connecting.
+  // Suppress the whole cascade; the "Connecting to DEX server..."
+  // spinner covers the warmup state. After auth completes (or fails),
+  // the real wallet-status cascade takes over. Genuinely-missing
+  // wallets (`wallet === undefined`) also get suppressed here -- on
+  // success they surface immediately; on failure the auth error is
+  // the more urgent signal anyway.
   const noWalletMsg = useMemo<string>(() => {
+    if (authingDex || authFailedMsg) return ''
     if (!baseAsset || !quoteAsset) return ''
     const baseWallet = baseAsset.wallet
     const quoteWallet = quoteAsset.wallet
@@ -111,7 +133,7 @@ export function RightPanel ({
       return t('ENABLE_ASSET_WALLET_MSG', { asset: quoteSymbol })
     }
     return ''
-  }, [baseAsset, quoteAsset, baseSymbol, quoteSymbol, t])
+  }, [authingDex, authFailedMsg, baseAsset, quoteAsset, baseSymbol, quoteSymbol, t])
 
   // MP-34: hasUnreadyOrders
   const hasUnreadyOrders = useMemo<boolean>(() => {
@@ -124,6 +146,19 @@ export function RightPanel ({
   // MP-29..MP-32: statusPanel
   const statusPanel = useMemo<StatusPanelData>(() => {
     if (!currentXc) return { kind: 'none' }
+
+    // UI-AUTH: show auth-failed first -- it's a terminal state that
+    // supersedes the "still connecting" / registration cascade.
+    if (authFailedMsg) return { kind: 'authFailed', failedMsg: authFailedMsg }
+
+    // UI-AUTH: login-warmup window. Covers both pre-WS-connect
+    // ("Connecting...") and post-connect/pre-auth ("Authenticating...")
+    // -- the helper already picked the right sub-state label. Gate
+    // above the registration cascade because `auth.effectiveTier` is
+    // 0 during this window and would otherwise trip the "Create an
+    // account" branch below.
+    if (authingDex) return { kind: 'authing', authingMsg: warmupMsg }
+
     if (currentXc.connectionStatus !== ConnectionStatus.Connected) return { kind: 'none' }
     const auth = currentXc.auth
     if (!auth) return { kind: 'none' }
@@ -155,7 +190,7 @@ export function RightPanel ({
 
     if (targetTier > 0) return { kind: 'bondCreationPending' }
     return { kind: 'bondRequired', effectiveTier }
-  }, [currentXc, t])
+  }, [currentXc, authFailedMsg, authingDex, warmupMsg, t])
 
   // MP-27: tokenApprovalStatus
   const tokenApprovalStatus = useMemo<{

@@ -26,7 +26,7 @@ import {
 import {
   ORDER_BOOK_SIDE_MAX, MAX_ACTIVE_ORDERS,
   CANDLE_DUR_24H, MAX_PRICE_DIVERGENCE,
-  midGapRate, binOrdersByRateAndEpoch, collectMarkets,
+  midGapRate, binOrdersByRateAndEpoch, collectMarkets, deriveWarmupState,
   type OrderBookDisplayRow, type SelectedMarket
 } from './helpers'
 
@@ -56,6 +56,7 @@ export default function MarketsPage () {
   const walletMap = useAuthStore(s => s.walletMap)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const fetchUser = useAuthStore(s => s.fetchUser)
+  const authFailed = useAuthStore(s => s.authFailed)
 
   // -------------------------------------------------------------------------
   // Market selector state
@@ -188,6 +189,14 @@ export default function MarketsPage () {
     ? !currentXc.viewOnly && currentXc.acctID !== ''
     : false
   const isConnected = currentXc?.connectionStatus === ConnectionStatus.Connected
+  // UI-AUTH: derive the login-warmup triple via the shared helper so
+  // RightPanel stays in lockstep. `warmupMsg` is non-empty exactly
+  // when the DEX is in the warmup window (not view-only, not
+  // disabled, not yet authed, not auth-failed) and picks the specific
+  // sub-state label ("Connecting..." pre-WS vs "Authenticating..."
+  // post-WS/pre-auth). `authFailedMsg` takes precedence -- overlays
+  // and status panels render it instead of the spinner.
+  const { authFailedMsg, warmupMsg } = deriveWarmupState(currentXc, authFailed, t)
   // MP-18 + MP-69: chart overlay message shown when the selected DEX is
   // disabled, disconnected, or has no markets configured.
   const chartErrMsg = (() => {
@@ -782,6 +791,13 @@ export default function MarketsPage () {
 
     // 2. Registration / bond status (statusPanel equivalent)
     if (currentXc.connectionStatus === ConnectionStatus.Connected) {
+      // UI-AUTH: during the login-warmup window (WS connected but
+      // Core's background authDEX goroutine hasn't flipped `authed`
+      // yet), return null so the TradeForms spinner overlay handles
+      // the message. Without this short-circuit, auth.effectiveTier
+      // is 0 and the "Create an account" branch below would fire,
+      // misleading users during normal login.
+      if (!currentXc.authed && !currentXc.viewOnly) return null
       const auth = currentXc.auth
       if (auth && (auth.effectiveTier ?? 0) < 1) {
         return t('create_account_to_trade')
@@ -935,6 +951,8 @@ export default function MarketsPage () {
                     bookRateAtom={bookRateAtom}
                     bookRateVersion={bookRateVersion}
                     cantTradeReason={cantTradeReason}
+                    warmupMsg={warmupMsg}
+                    authFailedMsg={authFailedMsg}
                   />
                 </section>
 

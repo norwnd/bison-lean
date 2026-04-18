@@ -8,14 +8,25 @@ import { useMarketPageContext } from './MarketPageContext'
 // computed `statusPanel` descriptor and renders the appropriate panel.
 // ---------------------------------------------------------------------------
 
-export interface StatusPanelData {
-  kind: 'none' | 'notRegistered' | 'penaltyCompsRequired' | 'registrationStatus' | 'bondCreationPending' | 'bondRequired'
-  penalties?: number
-  penaltyComps?: number
-  regStatusTitle?: string
-  regStatusConfs?: string
-  effectiveTier?: number
-}
+// Discriminated union -- each `kind` carries exactly the fields it
+// needs. Lets consumers (and the JSX below) drop optional-field
+// fallbacks; the compiler narrows the payload after the `kind` check.
+// Keep the variant-specific field comments close to each branch.
+export type StatusPanelData =
+  | { kind: 'none' }
+  // `authingMsg` is the already-translated sub-state label
+  // ("Connecting to DEX server..." vs "Authenticating with DEX
+  // server...") chosen upstream by `deriveWarmupState` based on
+  // whether the WS is connected yet.
+  | { kind: 'authing', authingMsg: string }
+  // `failedMsg` is the Core-side failure message surfaced from a
+  // `dex_auth` note with topic DexAuthError*.
+  | { kind: 'authFailed', failedMsg: string }
+  | { kind: 'notRegistered' }
+  | { kind: 'penaltyCompsRequired', penalties: number, penaltyComps: number }
+  | { kind: 'registrationStatus', regStatusTitle: string, regStatusConfs: string }
+  | { kind: 'bondCreationPending' }
+  | { kind: 'bondRequired', effectiveTier: number }
 
 export interface StatusPanelsProps {
   statusPanel: StatusPanelData
@@ -33,6 +44,35 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
       {/* MP-28: Unsupported-asset-version loader message. */}
       {loaderMsgText && (
         <div className="fs15 pt-3 text-center">{loaderMsgText}</div>
+      )}
+
+      {/* UI-AUTH: DEX connection / auth in progress. Shown while Core's
+          background authDEX goroutine is still running (connected but
+          !authed && !viewOnly). Replaces the misleading "Create account"
+          messaging that used to appear in this window because auth.tier
+          is 0 until auth completes. The specific label
+          ("Connecting..." vs "Authenticating...") is picked upstream
+          by `deriveWarmupState` based on whether the WS is connected
+          yet -- `authingMsg` is always populated for this kind. */}
+      {!loaderMsgText && statusPanel.kind === 'authing' && (
+        <div className="p-3 flex-center fs17 grey">
+          <div className="ico-spinner spinner fs20 me-2"></div>
+          <span>{statusPanel.authingMsg}</span>
+        </div>
+      )}
+
+      {/* UI-AUTH: DEX auth failed (bad password, bond wallet, etc.).
+          Guard the sub-message on truthiness in case Core ever emits
+          a DexAuthError* note with an empty detail string -- we'd
+          otherwise render an empty grey div. */}
+      {!loaderMsgText && statusPanel.kind === 'authFailed' && (
+        <div className="p-3 flex-center flex-column fs16 text-danger text-center">
+          <span className="ico-cross fs20 mb-1"></span>
+          <div>{t('DEX_AUTH_FAILED')}</div>
+          {statusPanel.failedMsg && (
+            <div className="fs13 mt-1 grey">{statusPanel.failedMsg}</div>
+          )}
+        </div>
       )}
 
       {/* Not registered notice (viewOnly DEX). Gated on loaderMsgText per vanilla. */}
@@ -84,8 +124,8 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
           <div className="border-top border-bottom flex-center p-2">
             <p className="text-center fs14 p-2 m-0">
               {t('set_penalty_comps', {
-                penalties: statusPanel.penalties ?? 0,
-                penaltyComps: statusPanel.penaltyComps ?? 0,
+                penalties: statusPanel.penalties,
+                penaltyComps: statusPanel.penaltyComps,
               })}{' '}
               <a
                 className="fs15 hoverbg subtlelink pointer"
@@ -104,7 +144,7 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
           <div className="p-3 flex-center fs17 grey">{t('action_required_to_trade')}</div>
           <div className="border-top border-bottom flex-center p-2">
             <p className="text-center fs16 p-2 m-0">
-              {t('acct_tier_post_bond', { tier: statusPanel.effectiveTier ?? 0 })}{' '}
+              {t('acct_tier_post_bond', { tier: statusPanel.effectiveTier })}{' '}
               <a
                 className="fs16 hoverbg subtlelink pointer"
                 onClick={() => navigate(`/dexsettings/${encodeURIComponent(selected.host)}`)}

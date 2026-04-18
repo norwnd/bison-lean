@@ -5,7 +5,7 @@ import OrderBook from '../../components/OrderBook'
 import type { Exchange, Market, MiniOrder, Order, UnitInfo } from '../../stores/types'
 import {
   OrderTypeLimit, StatusEpoch, StatusBooked, StatusExecuted,
-  StatusCanceled, StatusRevoked, ImmediateTiF
+  StatusCanceled, StatusRevoked, ImmediateTiF, ConnectionStatus
 } from '../../stores/types'
 
 // ---------------------------------------------------------------------------
@@ -252,6 +252,61 @@ export function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMa
     return volB - volA
   })
   return result
+}
+
+// ---------------------------------------------------------------------------
+// UI-AUTH: DEX warmup-state helper. Derives the "auth-failed" /
+// "in-warmup" / warmup-label triple that the markets page uses to gate
+// overlays and status panels during the login-warmup window. Keeps
+// MarketsPage and RightPanel in lockstep — both need the same
+// authingDex / warmupMsg to decide whether to show the spinner and
+// which sub-state label ("Connecting..." vs "Authenticating...") to
+// render.
+//
+// Warmup covers two sub-states:
+//   1. Pre-WS-connect: `connectionStatus !== Connected` (fresh dial /
+//      reconnect). Label → `CONNECTING_TO_DEX`.
+//   2. Post-connect / pre-auth: WS up but `authed` still false. Label
+//      → `AUTHENTICATING_WITH_DEX`.
+// Gated on `!disabled` so an admin-disabled DEX (which isn't actively
+// trying to connect) doesn't sit behind a forever-spinning overlay --
+// the chart error cascade already surfaces that case.
+// ---------------------------------------------------------------------------
+
+export interface WarmupState {
+  // Non-null when Core surfaced a DexAuthError* note for this host.
+  // Terminal state — callers should prefer this over the warmup
+  // spinner when both are set.
+  authFailedMsg: string | null
+  // True while the DEX is in the warmup window (see above). False
+  // when the DEX is view-only, admin-disabled, already authed, or
+  // has hit a terminal auth failure.
+  authingDex: boolean
+  // Translated label for the current warmup sub-state. Empty string
+  // when `authingDex` is false. Callers can branch on the string's
+  // truthiness directly instead of re-checking `authingDex`.
+  warmupMsg: string
+}
+
+export function deriveWarmupState (
+  currentXc: Exchange | null | undefined,
+  authFailed: Record<string, string>,
+  t: (key: string) => string
+): WarmupState {
+  if (!currentXc) {
+    return { authFailedMsg: null, authingDex: false, warmupMsg: '' }
+  }
+  const authFailedMsg = authFailed[currentXc.host] ?? null
+  const authingDex = !currentXc.disabled &&
+    !currentXc.authed && !currentXc.viewOnly && !authFailedMsg
+  if (!authingDex) {
+    return { authFailedMsg, authingDex: false, warmupMsg: '' }
+  }
+  const isConnected = currentXc.connectionStatus === ConnectionStatus.Connected
+  const warmupMsg = isConnected
+    ? t('AUTHENTICATING_WITH_DEX')
+    : t('CONNECTING_TO_DEX')
+  return { authFailedMsg, authingDex, warmupMsg }
 }
 
 // ---------------------------------------------------------------------------

@@ -53,7 +53,11 @@ export function ChartPanel ({
             </div>
           )}
           {/* MP-21: Hide the duration buttons while candles are loading
-              (matches vanilla Doc.hide(page.candleDurBttnBox)). */}
+              (matches vanilla Doc.hide(page.candleDurBttnBox)).
+              Note: the chart is NOT gated on the DEX auth state -- like
+              the order book, candles are public data that arrive as
+              soon as the market is subscribed, regardless of whether
+              the DEX auth round-trip has completed. */}
           {!candleLoading && !chartErrMsg && (
             <div id="candleDurBttnBox">
               {candleDurs.map(dur => (
@@ -68,7 +72,10 @@ export function ChartPanel ({
             </div>
           )}
           {candleLoading && !chartErrMsg && (
-            <Wave message={t('waiting for candlesticks')} backgroundColor={true} />
+            <Wave
+              message={t('waiting for candlesticks')}
+              backgroundColor={true}
+            />
           )}
           {/* MP-21: Canvas is made `visibility: hidden` (not just
               opacity 0) while loading so it doesn't intercept mouse
@@ -78,7 +85,7 @@ export function ChartPanel ({
             style={{
               width: '100%',
               height: '100%',
-              visibility: candleLoading || chartErrMsg ? 'hidden' : 'visible'
+              visibility: (candleLoading || chartErrMsg) ? 'hidden' : 'visible'
             }}
           >
             <CandleChart

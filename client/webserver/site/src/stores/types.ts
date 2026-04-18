@@ -400,6 +400,15 @@ export interface BondNote extends CoreNote {
   auth: ExchangeAuth | null
 }
 
+// DEXAuthNote — emitted by Core when per-DEX auth edge flips or fails.
+// Topics: 'DexAuthError' / 'DexAuthErrorBond' (auth failure), plus
+// 'UnknownOrders' / 'OrdersReconciled' which also use this type — callers
+// should filter by topic before treating as an auth error.
+export interface DEXAuthNote extends CoreNote {
+  host: string
+  authenticated: boolean
+}
+
 export interface ReputationNote extends CoreNote {
   host: string
   rep: Reputation

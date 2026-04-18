@@ -37,12 +37,18 @@ interface AuthState {
   walletMap: Record<number, WalletState>
   fiatRatesMap: Record<number, number>
   mmStatus: MarketMakingStatus | null
+  // authFailed: per-host DEX auth error message. Populated by the
+  // `dex_auth` note dispatcher in AppLayout when `authenticated=false`
+  // arrives with a DexAuthError* topic. Cleared when a subsequent
+  // `/api/user` refresh shows the DEX as authed, or on logout.
+  authFailed: Record<string, string>
 
   fetchUser: () => Promise<User | null>
   fetchBuildInfo: () => Promise<void>
   login: (appPass: string) => Promise<LoginResult>
   logout: (force?: boolean) => Promise<LogoutResult>
   setUser: (user: User) => void
+  setAuthFailed: (host: string, msg: string) => void
 }
 
 function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number, WalletState> {
@@ -55,7 +61,7 @@ function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number,
   return walletMap
 }
 
-export const useAuthStore = create<AuthState>((set) => {
+export const useAuthStore = create<AuthState>((set, get) => {
   // applyUserResponse hydrates the store from a `/api/user` or `/api/login`
   // payload. Returns the hydrated User or null when the response carries no
   // user (e.g. unauthenticated `/api/user` call on first page load).
@@ -73,6 +79,18 @@ export const useAuthStore = create<AuthState>((set) => {
       })
       return null
     }
+    // Clear authFailed entries for any host that is now authed — a stale
+    // error from a prior login attempt shouldn't linger once Core signals
+    // success via the refreshed user payload.
+    const prevFailed = get().authFailed
+    let nextFailed = prevFailed
+    let changed = false
+    for (const [host, xc] of Object.entries(user.exchanges)) {
+      if (xc.authed && prevFailed[host]) {
+        if (!changed) { nextFailed = { ...prevFailed }; changed = true }
+        delete nextFailed[host]
+      }
+    }
     set({
       user,
       authed: true,
@@ -88,6 +106,7 @@ export const useAuthStore = create<AuthState>((set) => {
       walletMap: buildWalletMap(user.assets),
       fiatRatesMap: user.fiatRates,
       mmStatus: resp.mmStatus,
+      ...(changed ? { authFailed: nextFailed } : {}),
     })
     return user
   }
@@ -108,6 +127,7 @@ export const useAuthStore = create<AuthState>((set) => {
     walletMap: {},
     fiatRatesMap: {},
     mmStatus: null,
+    authFailed: {},
 
     fetchUser: async () => {
       const resp: UserResponse = await getJSON('/api/user')
@@ -167,6 +187,7 @@ export const useAuthStore = create<AuthState>((set) => {
         walletMap: {},
         fiatRatesMap: {},
         mmStatus: null,
+        authFailed: {},
       })
       // Clear the notification cache too so a subsequent re-login starts
       // from a clean slate. Without this, stale notes/pokes from the
@@ -186,6 +207,10 @@ export const useAuthStore = create<AuthState>((set) => {
         walletMap: buildWalletMap(user.assets),
         fiatRatesMap: user.fiatRates,
       })
+    },
+
+    setAuthFailed: (host: string, msg: string) => {
+      set({ authFailed: { ...get().authFailed, [host]: msg } })
     },
   }
 })

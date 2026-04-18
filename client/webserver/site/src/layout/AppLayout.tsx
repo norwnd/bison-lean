@@ -81,6 +81,19 @@ export function AppLayout () {
         // DexSettingsPage, MMPage, and any other reputation-aware view.
         case 'feepayment': fetchUser(); break
         case 'reputation': fetchUser(); break
+        // `dex_auth` covers both auth-success and auth-failure edges,
+        // plus unrelated housekeeping (UnknownOrders, OrdersReconciled) —
+        // filter by topic. DexAuthError* with authenticated=false means
+        // the background authDEX goroutine failed (bad password, bond
+        // wallet, etc.); surface via authFailed so UI overlays can show
+        // the cause instead of sitting on a spinner forever.
+        case 'dex_auth': {
+          if (!note.authenticated && (note.topic === 'DexAuthError' || note.topic === 'DexAuthErrorBond')) {
+            const msg = note.details || note.subject || 'DEX authentication failed'
+            useAuthStore.getState().setAuthFailed(note.host, msg)
+          }
+          break
+        }
         case 'runstats': handleRunStatsNote(note); break
         case 'epochreport': handleEpochReportNote(note); break
         case 'cexproblems': handleCEXProblemsNote(note); break
