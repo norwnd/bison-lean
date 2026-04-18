@@ -7215,6 +7215,13 @@ func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexC
 	// 2) will execute and result into slippage of 1% or more
 
 	book := dc.bookie(market)
+	if book == nil {
+		// The market isn't currently being subscribed to, so we don't
+		// have any order book data to validate against. Skip the
+		// immediate-match warning; caller will still hit the server-side
+		// validation.
+		return nil
+	}
 	bestBuy, err := book.BestBuy()
 	if err != nil {
 		return newError(walletErr, "couldn't fetch best buy order in Bison book: %v", err)
@@ -7387,19 +7394,25 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (result *tradeReq
 		// otherwise the resulting trade request will keep track of & resolve errCloser
 	}()
 	errCloser.Add(func() error {
+		// NOTE: do NOT use the outer function's named return `err` here;
+		// this callback runs inside a defer-triggered errCloser.Done()
+		// path, and assigning to `err` would clobber the error we are
+		// currently returning, causing prepareTradeRequest to appear
+		// to succeed (return nil, nil). Use a local variable instead.
+		var localErr error
 		defer func() {
 			// Gotta update balances here (even if we couldn't return all the coins we might have
 			// returned some but not others, hence updating balances in error-case too) because
 			// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
 			// wallet balance update (e.g. blockchain tip change).
-			_, err = c.updateWalletBalance(fromWallet)
-			if err != nil {
-				c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), err)
+			_, localErr = c.updateWalletBalance(fromWallet)
+			if localErr != nil {
+				c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), localErr)
 			}
 		}()
-		err = fromWallet.ReturnCoins(coins)
-		if err != nil {
-			return fmt.Errorf("Unable to return %s funding coins: %v", unbip(fromWallet.AssetID), err)
+		localErr = fromWallet.ReturnCoins(coins)
+		if localErr != nil {
+			return fmt.Errorf("Unable to return %s funding coins: %v", unbip(fromWallet.AssetID), localErr)
 		}
 		return nil
 	})
@@ -7509,19 +7522,25 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 			// otherwise the resulting trade request will keep track of & resolve errCloser
 		}()
 		errCloser.Add(func() error {
+			// NOTE: do NOT assign to the outer `err`; this callback can
+			// run inside a defer-triggered errCloser.Done() path, and
+			// clobbering `err` there would confuse the defer chain (see
+			// matching note in prepareTradeRequest). Use a local
+			// variable instead.
+			var localErr error
 			defer func() {
 				// Gotta update balances here (even if we couldn't return all the coins we might have
 				// returned some but not others, hence updating balances in error-case too) because
 				// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
 				// wallet balance update (e.g. blockchain tip change).
-				_, err = c.updateWalletBalance(fromWallet)
-				if err != nil {
-					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), err)
+				_, localErr = c.updateWalletBalance(fromWallet)
+				if localErr != nil {
+					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), localErr)
 				}
 			}()
-			err = fromWallet.ReturnCoins(theseCoins)
-			if err != nil {
-				return fmt.Errorf("unable to return %s funding coins: %v", unbip(fromWallet.AssetID), err)
+			localErr = fromWallet.ReturnCoins(theseCoins)
+			if localErr != nil {
+				return fmt.Errorf("unable to return %s funding coins: %v", unbip(fromWallet.AssetID), localErr)
 			}
 			return nil
 		})

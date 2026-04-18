@@ -403,8 +403,20 @@ func (w *xcWallet) Connect() error {
 	// No parent context; use Disconnect instead. Also note that there's no
 	// reconnect loop for wallet like with the server Connectors, so we use
 	// ConnectOnce so that the ConnectionMaster's On method will report false.
+	//
+	// Note: dex.ConnectionMaster is strictly single-use — once Connect (or
+	// ConnectOnce) has been invoked on an instance, any subsequent call
+	// will panic. If this connect attempt fails (either ConnectOnce itself
+	// or any post-connect validation below), we must replace the connector
+	// so the user can retry Connect later without panicking. Without this
+	// reset, a wallet whose first connect attempt fails would be
+	// permanently unusable until full application reload.
 	err := w.connector.ConnectOnce(context.Background())
 	if err != nil {
+		// ConnectOnce already called Disconnect internally on failure, but
+		// the connector is now used up. Replace it so future Connect calls
+		// can proceed.
+		w.connector = dex.NewConnectionMaster(w.Wallet)
 		return fmt.Errorf("ConnectOnce error: %w", err)
 	}
 
@@ -414,6 +426,9 @@ func (w *xcWallet) Connect() error {
 		// since we are considering this wallet not "hookedUp".
 		if !ready {
 			w.connector.Disconnect()
+			// Connector is now used up — replace it so future Connect
+			// calls can proceed (see comment above).
+			w.connector = dex.NewConnectionMaster(w.Wallet)
 		}
 	}()
 
