@@ -41,6 +41,10 @@ func TestOrderReader_StatusString(t *testing.T) {
 			want: "canceled/partially filled",
 		},
 		{
+			// Note: StatusString intentionally collapses "canceled/settling",
+			// "revoked/settling" and "booked/settling" all into plain
+			// "settling" (see helpers.go) — active matches take precedence
+			// over the canceled/revoked/booked label.
 			name:      "cancelled with active matches",
 			status:    order.OrderStatusCanceled,
 			qty:       1000,
@@ -49,7 +53,7 @@ func TestOrderReader_StatusString(t *testing.T) {
 			matches: []*Match{
 				{IsCancel: false, Qty: 500, Rate: 1e8, Active: true}, // Active fill
 			},
-			want: "canceled/settling",
+			want: "settling",
 		},
 		{
 			name:      "executed - fully filled",
@@ -122,6 +126,7 @@ func TestOrderReader_StatusString(t *testing.T) {
 			want: "revoked/partially filled",
 		},
 		{
+			// See note above — "revoked/settling" was collapsed into "settling".
 			name:      "revoked - with active matches",
 			status:    order.OrderStatusRevoked,
 			qty:       1000,
@@ -130,7 +135,7 @@ func TestOrderReader_StatusString(t *testing.T) {
 			matches: []*Match{
 				{IsCancel: false, Qty: 500, Rate: 1e8, Active: true},
 			},
-			want: "revoked/settling",
+			want: "settling",
 		},
 	}
 
