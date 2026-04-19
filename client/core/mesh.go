@@ -36,7 +36,7 @@ func (c *Core) coreMesh() *Mesh {
 	c.meshMtx.RLock()
 	mesh, meshCM := c.mesh, c.meshCM
 	c.meshMtx.RUnlock()
-	if mesh == nil || !meshCM.On() {
+	if mesh == nil || !meshCM.Running() {
 		return nil
 	}
 	return &Mesh{}

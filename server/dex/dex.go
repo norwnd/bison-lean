@@ -1295,7 +1295,7 @@ func (dm *DEX) SuspendMarket(name string, tSusp time.Time, persistBooks bool) (s
 		err = fmt.Errorf("market subsystem %s not found", name)
 		return
 	}
-	if !dm.subsystems[i].ssw.On() {
+	if !dm.subsystems[i].ssw.Active() {
 		err = fmt.Errorf("market subsystem %s is not running", name)
 		return
 	}
@@ -1363,7 +1363,7 @@ func (dm *DEX) ResumeMarket(name string, asSoonAs time.Time) (startEpoch int64, 
 		err = fmt.Errorf("market subsystem %s not found", name)
 		return
 	}
-	if dm.subsystems[i].ssw.On() {
+	if dm.subsystems[i].ssw.Active() {
 		err = fmt.Errorf("market subsystem %s not stopped", name)
 		return
 	}

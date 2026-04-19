@@ -278,7 +278,7 @@ func (w *xcWallet) state() *WalletState {
 	}
 
 	var tokenApprovals map[uint32]asset.ApprovalStatus
-	if w.connector.Load().On() {
+	if w.connector.Load().Running() {
 		tokenApprovals = w.ApprovalStatus()
 	}
 
@@ -291,7 +291,7 @@ func (w *xcWallet) state() *WalletState {
 		Symbol:       unbip(w.AssetID),
 		AssetID:      w.AssetID,
 		Open:         len(w.encPass) == 0 || len(w.pw) > 0,
-		Running:      w.connector.Load().On(),
+		Running:      w.connector.Load().Running(),
 		Balance:      w.balance,
 		Address:      w.address,
 		Encrypted:    len(w.encPass) > 0,

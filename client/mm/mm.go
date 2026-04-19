@@ -400,7 +400,7 @@ func (m *MarketMaker) Status() *Status {
 
 		s := &CEXStatus{Config: cex.CEXConfig}
 		cex.mtx.RLock()
-		s.Connected = cex.cm != nil && cex.cm.On()
+		s.Connected = cex.cm != nil && cex.cm.Running()
 		s.Markets = cex.mkts
 		s.ConnectionError = cex.connectErr
 		s.Balances = cex.balancesCopy()
@@ -548,14 +548,14 @@ func (m *MarketMaker) connectCEX(ctx context.Context, c *centralizedExchange) er
 	var cm *dex.ConnectionMaster
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	if c.cm == nil || !c.cm.On() {
+	if c.cm == nil || !c.cm.Running() {
 		cm = dex.NewConnectionMaster(c)
 		c.cm = cm
 	} else {
 		cm = c.cm
 	}
 
-	if !cm.On() {
+	if !cm.Running() {
 		c.connectErr = ""
 		if err := cm.ConnectOnce(ctx); err != nil {
 			c.connectErr = core.UnwrapErr(err).Error()

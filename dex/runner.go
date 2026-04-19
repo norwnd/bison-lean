@@ -25,8 +25,13 @@ func (cm *contextManager) init(ctx context.Context) {
 	cm.ctx, cm.cancel = context.WithCancel(ctx)
 }
 
-// On will be true until the context is canceled.
-func (cm *contextManager) On() bool {
+// Active will be true until the context is canceled.
+//
+// Naming note: separate from ConnectionMaster.Running (defined below
+// in the same file) — contextManager tracks the context-canceled state
+// of a StartStopWaiter-managed subsystem, which is a distinct concern
+// from whether a Connector-backed connection is still live.
+func (cm *contextManager) Active() bool {
 	cm.mtx.RLock()
 	defer cm.mtx.RUnlock()
 	return cm.ctx != nil && cm.ctx.Err() == nil
@@ -113,16 +118,32 @@ const (
 )
 
 // ConnectionMaster manages a Connector.
+//
+// Lifecycle invariants, enforced with panics at the responsible methods:
+//   - Connect (or ConnectOnce) must be called exactly once per
+//     ConnectionMaster instance. A second call panics in Connect
+//     (the Unset→Started CompareAndSwap on connectState fails).
+//   - Disconnect must be called only after Connect has returned.
+//     Calling earlier panics in Disconnect (connectState is not yet
+//     Finished — see connState docs for why "returned" is the right
+//     framing rather than "succeeded").
+//   - To retry a connection that errored, mint a fresh
+//     ConnectionMaster via NewConnectionMaster. Instances are
+//     single-use; there is no Reset.
+//
+// Violating any invariant is a caller bug, and the panics exist to
+// surface such bugs loudly rather than let them corrupt state silently.
 type ConnectionMaster struct {
 	// connector is the actual connection ConnectionMaster wraps/manages
 	connector Connector
 	// wg is WaitGroup associated with Connector so that ConnectionMaster is able to tell
 	// when Connector is done, it's atomic so ConnectionMaster can work in concurrent setting
-	wg atomic.Value
+	wg atomic.Pointer[sync.WaitGroup]
 	// ctxCancel is a cancel for ctx passed down to wrapped Connector, it's used to forcefully
 	// terminate wrapped Connector if necessary, it's atomic so ConnectionMaster can work
-	// in concurrent setting
-	ctxCancel atomic.Value
+	// in concurrent setting. Stored as *context.CancelFunc (pointer to the function value)
+	// because atomic.Pointer's type parameter can't be a function type directly.
+	ctxCancel atomic.Pointer[context.CancelFunc]
 	// connectState holds a connState tracking the connect-attempt
 	// lifecycle: Unset → Started → Finished. Stored as int32 so
 	// CompareAndSwap is available (Go has no atomic primitive over
@@ -131,9 +152,14 @@ type ConnectionMaster struct {
 	// — the pair had a TOCTOU gap in the single-use check, which
 	// the CAS-based transition from Unset → Started now closes.
 	connectState atomic.Int32
-	// on indicates if the Connector is running (meaning ConnectionMaster instance is still
-	// relevant to keep around and use)
-	on atomic.Bool
+	// running indicates if the Connector is running (meaning ConnectionMaster instance is still
+	// relevant to keep around and use). Set to true exactly once by Connect after the
+	// wrapped Connector returns. Cleared to false by whichever of these fires first:
+	//   - Disconnect (explicit shutdown), or
+	//   - the internal wg-watcher goroutine spawned by Connect when the wrapped
+	//     Connector reports a WaitGroup (the Connector shut itself down).
+	// Both writes are idempotent, so the ordering doesn't matter.
+	running atomic.Bool
 }
 
 // NewConnectionMaster creates a new ConnectionMaster.
@@ -146,7 +172,7 @@ func NewConnectionMaster(c Connector) *ConnectionMaster {
 // Connect connects the Connector, and returns any initial connection error. Disconnect
 // method may be called to shut down the Connector and stop it from automatically retrying
 // to connect further (as well as release associated resources).
-// Even if Connect returns a non-nil error, On may report true until Disconnect is called.
+// Even if Connect returns a non-nil error, Running may report true until Disconnect is called.
 //
 // Connect (or ConnectOnce) must be called at most 1 time per ConnectionMaster instance.
 //
@@ -167,20 +193,20 @@ func (c *ConnectionMaster) Connect(ctx context.Context) error {
 
 	// prepare dedicated context for wrapped Connector
 	ctx, cancel := context.WithCancel(ctx)
-	c.ctxCancel.Store(cancel)
+	c.ctxCancel.Store(&cancel)
 
 	// make an initial attempt to start wrapped Connector, a non-nil error does not indicate
 	// that wrapped Connector is not running, only that the initial connection attempt has
-	// failed, hence we have to set c.on to true regardless to signal we didn't give up on
+	// failed, hence we have to set c.running to true regardless to signal we didn't give up on
 	// this connection just yet
 	wg, err := c.connector.Connect(ctx)
 	if wg != nil {
 		// non-nil WaitGroup means Connector can communicate back to us to tell us when it is
 		// done with this connection (and hence when this ConnectionMaster instance is no
-		// longer relevant, no longer considered to be on)
+		// longer relevant, no longer considered to be running)
 		go func() {
 			wg.Wait()
-			c.on.Store(false) // ConnectionMaster instance is no longer relevant
+			c.running.Store(false) // ConnectionMaster instance is no longer relevant
 			// release context resources only after wrapped Connector has finished, we have to
 			// cancel context ourselves here because we cannot rely on ConnectionMaster caller
 			// to always call Disconnect method just so resources are freed
@@ -196,10 +222,10 @@ func (c *ConnectionMaster) Connect(ctx context.Context) error {
 			wg.Done()
 		}()
 	}
-	// note: c.wg must be initialized before c.on is set to true for ConnectionMaster.Done
+	// note: c.wg must be initialized before c.running is set to true for ConnectionMaster.Done
 	// method to work properly
 	c.wg.Store(wg)
-	c.on.Store(true) // error or not, ConnectionMaster instance is regarded as relevant
+	c.running.Store(true) // error or not, ConnectionMaster instance is regarded as relevant
 	if err != nil {
 		return fmt.Errorf("connect failure: %w", err)
 	}
@@ -224,16 +250,21 @@ func (c *ConnectionMaster) ConnectOnce(ctx context.Context) error {
 	return nil
 }
 
-// On indicates if the Connector is running (meaning ConnectionMaster instance is still relevant
-// to keep around and use).
-func (c *ConnectionMaster) On() bool {
-	return c.on.Load()
+// Running indicates if the Connector is running (meaning ConnectionMaster instance is still
+// relevant to keep around and use).
+//
+// Naming note: separate from contextManager.Active (defined above in
+// the same file) — ConnectionMaster.Running tracks whether a wrapped
+// Connector is still live, which is a distinct concern from whether a
+// StartStopWaiter's context has been canceled.
+func (c *ConnectionMaster) Running() bool {
+	return c.running.Load()
 }
 
 // Done returns a channel that is closed when the Connector's WaitGroup is done.
 // If called before Connect method has finished, a closed channel is returned.
 func (c *ConnectionMaster) Done() <-chan struct{} {
-	if !c.on.Load() {
+	if !c.running.Load() {
 		closedChan := make(chan struct{})
 		close(closedChan)
 		return closedChan
@@ -241,7 +272,7 @@ func (c *ConnectionMaster) Done() <-chan struct{} {
 
 	done := make(chan struct{})
 	go func() {
-		wg := c.wg.Load().(*sync.WaitGroup)
+		wg := c.wg.Load()
 		wg.Wait()
 		close(done)
 	}()
@@ -267,9 +298,9 @@ func (c *ConnectionMaster) Disconnect() {
 		panic("ConnectionMaster.Disconnect called before Connect/ConnectOnce returned")
 	}
 
-	c.on.Store(false) // ConnectionMaster instance is no longer relevant
+	c.running.Store(false) // ConnectionMaster instance is no longer relevant
 
-	cancel := c.ctxCancel.Load().(context.CancelFunc)
-	cancel()
+	cancel := c.ctxCancel.Load()
+	(*cancel)()
 	c.Wait()
 }

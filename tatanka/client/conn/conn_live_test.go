@@ -229,7 +229,7 @@ func (m *tMesh) start(i int) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	if m.tatankas[i].cm.On() {
+	if m.tatankas[i].cm.Running() {
 		m.t.Fatalf("tatanka %d already running", i)
 	}
 
