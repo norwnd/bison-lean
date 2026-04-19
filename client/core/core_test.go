@@ -3028,9 +3028,10 @@ func TestSend(t *testing.T) {
 	}
 	tWallet.connectErr = nil
 	// The previous sub-test drove ConnectionMaster.ConnectOnce to an
-	// error, which set connectInitiated=true on this connector.
-	// ConnectionMaster enforces a single-use invariant (runner.go:132),
-	// so any subsequent xcWallet.Connect() would panic. Mint a fresh
+	// error, which advanced this connector's connectState to
+	// Started/Finished. ConnectionMaster enforces a single-use
+	// invariant via a CAS from Unset (see runner.go), so any
+	// subsequent xcWallet.Connect() would panic. Mint a fresh
 	// connector for the next sub-test and restore hookedUp so Send's
 	// retry path sees a connected wallet.
 	wallet.connector.Store(dex.NewConnectionMaster(tWallet))
@@ -8336,9 +8337,10 @@ func TestReconfigureWallet(t *testing.T) {
 	}
 	asset.Register(assetID, assetDriver)
 	// Reset the default hookedUp=true so Connect actually drives the
-	// ConnectionMaster through a real Connect -> connectCompleted=true cycle.
-	// Otherwise the deferred Disconnect below panics (ConnectionMaster.Disconnect
-	// refuses to run before connectCompleted is set).
+	// ConnectionMaster through a real Connect → connectState=Finished
+	// cycle. Otherwise the deferred Disconnect below panics
+	// (ConnectionMaster.Disconnect refuses to run before the connect
+	// attempt has finished).
 	xyzWallet.hookedUp = false
 	if err = xyzWallet.Connect(); err != nil {
 		t.Fatal(err)

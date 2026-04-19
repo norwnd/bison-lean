@@ -86,6 +86,32 @@ type Connector interface {
 	Connect(ctx context.Context) (*sync.WaitGroup, error)
 }
 
+// connState tracks the lifecycle of a ConnectionMaster's connect
+// attempt. Transitions are strictly monotonic
+// (Unset → Started → Finished) and the machine is single-use: once
+// Finished, it stays Finished for the life of the ConnectionMaster.
+type connState int32
+
+const (
+	// connStateUnset is the initial state — Connect/ConnectOnce has
+	// not been called yet.
+	connStateUnset connState = 0
+	// connStateStarted is set (via CompareAndSwap from Unset) at the
+	// top of Connect, before the wrapped Connector.Connect call. The
+	// CAS is the single-use guard: a second Connect/ConnectOnce on
+	// the same ConnectionMaster panics here.
+	connStateStarted connState = 1
+	// connStateFinished is set (via defer) when Connect returns.
+	// Naming note: Connect reaching this state does NOT imply the
+	// wrapped Connector connected successfully — a non-nil error
+	// from Connector.Connect still transitions to Finished (that's
+	// expected in the Connect (vs. ConnectOnce) case where the
+	// Connector does its own retry loop). "Finished" reads as
+	// "Connect function returned", which is what's being tracked.
+	// Disconnect's panic guard checks for this state.
+	connStateFinished connState = 2
+)
+
 // ConnectionMaster manages a Connector.
 type ConnectionMaster struct {
 	// connector is the actual connection ConnectionMaster wraps/manages
@@ -97,13 +123,14 @@ type ConnectionMaster struct {
 	// terminate wrapped Connector if necessary, it's atomic so ConnectionMaster can work
 	// in concurrent setting
 	ctxCancel atomic.Value
-	// connectInitiated indicates whether connect attempt has been initiated at least once,
-	// used for sanity-checks only
-	connectInitiated atomic.Bool
-	// connectCompleted indicates whether connect attempt has been completed (note, it doesn't
-	// necessarily have to succeed since Connector might be doing retries on its side - see
-	// Connect / ConnectOnce methods for details)
-	connectCompleted atomic.Bool
+	// connectState holds a connState tracking the connect-attempt
+	// lifecycle: Unset → Started → Finished. Stored as int32 so
+	// CompareAndSwap is available (Go has no atomic primitive over
+	// custom int32-backed types yet). This single Int32 replaces a
+	// prior pair of atomic.Bool (connectInitiated + connectCompleted)
+	// — the pair had a TOCTOU gap in the single-use check, which
+	// the CAS-based transition from Unset → Started now closes.
+	connectState atomic.Int32
 	// on indicates if the Connector is running (meaning ConnectionMaster instance is still
 	// relevant to keep around and use)
 	on atomic.Bool
@@ -127,14 +154,16 @@ func NewConnectionMaster(c Connector) *ConnectionMaster {
 // attempt to establish a connection even if the initial attempt fails. Use ConnectOnce
 // if the Connector should be given only one chance to connect.
 func (c *ConnectionMaster) Connect(ctx context.Context) error {
-	// trying to call Connect (or ConnectOnce) multiple times is probably a bug on the
-	// caller side, sanity check we aren't doing that (panic to spot this sooner)
-	if c.connectInitiated.Load() {
+	// Trying to call Connect (or ConnectOnce) multiple times is probably a bug on
+	// the caller side; sanity check we aren't doing that (panic to spot this
+	// sooner). The Unset → Started transition is a single CompareAndSwap so two
+	// concurrent Connect calls can't both pass this check — only the winning CAS
+	// proceeds; the loser panics.
+	if !c.connectState.CompareAndSwap(int32(connStateUnset), int32(connStateStarted)) {
 		panic("ConnectionMaster.Connect spotted multiple connect attempts on single ConnectionMaster instance")
 	}
-	c.connectInitiated.Store(true)
 
-	defer c.connectCompleted.Store(true)
+	defer c.connectState.Store(int32(connStateFinished))
 
 	// prepare dedicated context for wrapped Connector
 	ctx, cancel := context.WithCancel(ctx)
@@ -230,10 +259,12 @@ func (c *ConnectionMaster) Wait() {
 // only AFTER connection has been established (through Connect or ConnectOnce method).
 // It's the caller responsibility to always call it only AFTER Connect method has finished.
 func (c *ConnectionMaster) Disconnect() {
-	// trying to call Disconnect before finishing connection establishing is probably
-	// a bug on the caller side, sanity check we aren't doing that (panic to spot this sooner)
-	if !c.connectCompleted.Load() {
-		panic("ConnectionMaster.Disconnect called BEFORE connection has completed")
+	// Trying to call Disconnect before Connect (or ConnectOnce) has returned is
+	// probably a bug on the caller side; sanity check we aren't doing that (panic
+	// to spot this sooner). Note this does NOT mean the wrapped Connector
+	// succeeded — see connState docs for why "finished" is the right framing.
+	if connState(c.connectState.Load()) != connStateFinished {
+		panic("ConnectionMaster.Disconnect called before Connect/ConnectOnce returned")
 	}
 
 	c.on.Store(false) // ConnectionMaster instance is no longer relevant
