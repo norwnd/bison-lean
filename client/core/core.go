@@ -1685,8 +1685,8 @@ type Core struct {
 	credMtx     sync.RWMutex
 	credentials *db.PrimaryCredentials
 
-	loginMtx      sync.Mutex
-	loggedIn      bool
+	loginMtx sync.Mutex
+	loggedIn bool
 	// loginWG tracks the outer Login background goroutine (post-B5
 	// async flow) so tests can synchronize with its completion —
 	// `tCore.loginWG.Wait()` after `tCore.Login(pw)` blocks until
@@ -1744,8 +1744,12 @@ type Core struct {
 	mesh    *mesh.Mesh
 	meshCM  *dex.ConnectionMaster
 
-	// previouslyFailedTradeAttempt is used to track last trade user tried to place but
-	// failed to pass all validation rules
+	// previouslyFailedTradeAttempt caches the (market, rate) of the
+	// most recent validateTradeRate failure to drive the retry-bypass
+	// warning flow. Production code should go through the named
+	// helpers (rememberFailedTradeAttempt / clearFailedTradeAttempt /
+	// isRetryOfFailedTradeAttempt) rather than touching the atomic
+	// directly. See the tradeAttempt type doc for the state machine.
 	previouslyFailedTradeAttempt atomic.Pointer[tradeAttempt]
 }
 
@@ -7188,19 +7192,52 @@ func (c *Core) activeMatchCount(dc *dexConnection) int {
 	return n
 }
 
-// tradeAttempt represents user-initiated trade attempt. Used to drive
-// the Bison-specific 1-time-warning state machine in validateTradeRate
-// via Core.previouslyFailedTradeAttempt (atomic.Pointer[tradeAttempt]).
+// tradeAttempt holds the (market, rate) tuple of the most recent
+// validateTradeRate failure, used to drive the Bison-specific retry-
+// bypass cache: if the user's next validateTradeRate call matches the
+// stored tuple exactly, the warning is bypassed (the assumption is
+// that the user saw the warning and is retrying deliberately). A
+// different tuple replaces the stored one; a successful call clears
+// it.
 //
-// IMPORTANT: the "no previous attempt" sentinel is a nil pointer stored
-// in the atomic — NOT a zero-value tradeAttempt. An empty
-// {market: "", rate: 0} is treated as a valid tuple and will try to
-// match the current call (rate: 0 fails up-front, so it's usually
-// harmless, but the precedent is brittle). Callers clearing the state
-// must use Store(nil), not Store(&tradeAttempt{}).
+// Note this is NOT a sync.Once-style one-shot — a fresh (market, rate)
+// after a clear re-arms the warning. See TestValidateTradeRateWarningFlow
+// for the full state machine.
+//
+// The "no prior attempt" sentinel is a nil pointer in the atomic —
+// NOT a zero-value {market:"" rate:0}. Use Core.clearFailedTradeAttempt
+// rather than Store(&tradeAttempt{}) to avoid accidentally matching
+// a rate=0 call (which currently fails the rate!=0 check up-front,
+// so it's harmless but brittle).
 type tradeAttempt struct {
 	market string
 	rate   uint64
+}
+
+// rememberFailedTradeAttempt records (market, rate) so that the next
+// validateTradeRate call with the same tuple short-circuits its
+// warning (retry-bypass). Any subsequent remember/clear replaces
+// the stored state — this is a cache of the LAST failure, not a
+// set.
+func (c *Core) rememberFailedTradeAttempt(market string, rate uint64) {
+	c.previouslyFailedTradeAttempt.Store(&tradeAttempt{market: market, rate: rate})
+}
+
+// clearFailedTradeAttempt removes any stored retry-bypass state —
+// called on a successful validateTradeRate so the next warning is
+// treated as a fresh one.
+func (c *Core) clearFailedTradeAttempt() {
+	c.previouslyFailedTradeAttempt.Store(nil)
+}
+
+// isRetryOfFailedTradeAttempt reports whether (market, rate) matches
+// the currently-stored retry-bypass tuple exactly. When true, the
+// user is retrying the same trade they just saw a warning for —
+// validateTradeRate treats this as an implicit acknowledgement and
+// returns nil without re-running the rate checks.
+func (c *Core) isRetryOfFailedTradeAttempt(market string, rate uint64) bool {
+	prev := c.previouslyFailedTradeAttempt.Load()
+	return prev != nil && prev.market == market && prev.rate == rate
 }
 
 func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexConnection) (err error) {
@@ -7214,17 +7251,14 @@ func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexC
 
 	defer func() {
 		if err != nil {
-			// remember this failed attempt to do future trade-requests validation properly
-			c.previouslyFailedTradeAttempt.Store(&tradeAttempt{market: market, rate: rate})
+			// remember this failed attempt so a same-tuple retry bypasses the warning
+			c.rememberFailedTradeAttempt(market, rate)
 			return
 		}
-		c.previouslyFailedTradeAttempt.Store(nil) // resetting to default
-		return
+		c.clearFailedTradeAttempt()
 	}()
 
-	prevTradeAttempt := c.previouslyFailedTradeAttempt.Load()
-	if prevTradeAttempt != nil &&
-		market == prevTradeAttempt.market && rate == prevTradeAttempt.rate {
+	if c.isRetryOfFailedTradeAttempt(market, rate) {
 		// the caller repeated the same trade-request for the 2nd time now, assume it means he
 		// understood the warning and don't perform any strict rate validation (as is done below)
 		// this time around

@@ -3158,9 +3158,11 @@ func TestValidateTradeRateNilBook(t *testing.T) {
 // validateTradeRate warns when a limit order's rate would immediately
 // match an opposite-side order in the local Bison book. The state
 // is keyed on (market, rate) and stored in
-// Core.previouslyFailedTradeAttempt (an atomic.Pointer[tradeAttempt]).
-// A trailing defer updates the state: failure stores the current
-// (market, rate); success clears to nil.
+// Core.previouslyFailedTradeAttempt (an atomic.Pointer[tradeAttempt])
+// via the rememberFailedTradeAttempt / clearFailedTradeAttempt /
+// isRetryOfFailedTradeAttempt helpers. A trailing defer updates the
+// state: failure stores the current (market, rate); success clears
+// to nil.
 //
 // The expected state machine:
 //
@@ -3211,7 +3213,7 @@ func TestValidateTradeRateWarningFlow(t *testing.T) {
 	// Start from a known-clean state (newTestRig gives us an
 	// atomic.Pointer with zero value — Load() returns nil — but
 	// setting it explicitly documents intent).
-	tCore.previouslyFailedTradeAttempt.Store(nil)
+	tCore.clearFailedTradeAttempt()
 
 	// 1) First attempt at crossRate: warning returned, state stored.
 	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err == nil {
@@ -3248,10 +3250,7 @@ func TestValidateTradeRateWarningFlow(t *testing.T) {
 
 	// 5) Retry-bypass key is (market, rate) — a stored state under a
 	//    different market must not short-circuit the current call.
-	tCore.previouslyFailedTradeAttempt.Store(&tradeAttempt{
-		market: "other_mkt",
-		rate:   crossRate,
-	})
+	tCore.rememberFailedTradeAttempt("other_mkt", crossRate)
 	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err == nil {
 		t.Fatalf("expected warning since stored-market != current-market")
 	}
@@ -3324,15 +3323,12 @@ func TestPrepareTradeRequestErrorCloser(t *testing.T) {
 	}}
 	tDcrWallet.fundRedeemScripts = []dex.Bytes{nil}
 
-	// Pre-seed previouslyFailedTradeAttempt so validateTradeRate's
+	// Pre-seed the retry-bypass state so validateTradeRate's
 	// 1-time-warning branch short-circuits. This lets us skip the
 	// book/Sync boilerplate that trade() uses — we only need to
 	// reach createTradeRequest's messageCoins call to trigger the
 	// errCloser path we're guarding.
-	tCore.previouslyFailedTradeAttempt.Store(&tradeAttempt{
-		market: marketName(form.Base, form.Quote),
-		rate:   form.Rate,
-	})
+	tCore.rememberFailedTradeAttempt(marketName(form.Base, form.Quote), form.Rate)
 
 	// Inject failure inside createTradeRequest's messageCoins call.
 	// This is what makes createTradeRequest return (nil, err) while
@@ -3736,10 +3732,7 @@ func trade(t *testing.T, async bool) {
 	// rate that matches the test book's order get rejected by the
 	// Bison-specific immediate-match safety check.
 	bypassRateWarning := func() {
-		tCore.previouslyFailedTradeAttempt.Store(&tradeAttempt{
-			market: marketName(form.Base, form.Quote),
-			rate:   form.Rate,
-		})
+		tCore.rememberFailedTradeAttempt(marketName(form.Base, form.Quote), form.Rate)
 	}
 
 	trade := func() (*Order, error) {
