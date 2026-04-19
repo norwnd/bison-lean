@@ -429,7 +429,9 @@ func (w *xcWallet) Connect() error {
 	var ready bool
 	defer func() {
 		// Now that we are connected, we must Disconnect if any calls fail below
-		// since we are considering this wallet not "hookedUp".
+		// since we are considering this wallet not "hookedUp". Running as a
+		// defer (rather than inline on the error path) preserves rollback
+		// semantics even if validatePostConnect panics.
 		if !ready {
 			w.connector.Load().Disconnect()
 			// Connector is now used up — replace it so future Connect
@@ -438,6 +440,21 @@ func (w *xcWallet) Connect() error {
 		}
 	}()
 
+	if err := w.validatePostConnect(); err != nil {
+		return err
+	}
+	ready = true
+	return nil
+}
+
+// validatePostConnect is called by Connect after a successful ConnectOnce.
+// It probes SyncStatus, validates/fetches the deposit address, primes the
+// fee state, and commits the xcWallet's connected state (address,
+// hookedUp, syncStatus) under w.mtx.
+//
+// On error the caller is responsible for rolling back the connector (see
+// Connect's defer). On success the wallet is fully "hooked up".
+func (w *xcWallet) validatePostConnect() error {
 	ss, err := w.SyncStatus()
 	if err != nil {
 		return fmt.Errorf("SyncStatus error: %w", err)
@@ -459,8 +476,6 @@ func (w *xcWallet) Connect() error {
 	w.feeRate() // prime the feeState
 	w.hookedUp = true
 	w.syncStatus = ss
-	ready = true
-
 	return nil
 }
 
