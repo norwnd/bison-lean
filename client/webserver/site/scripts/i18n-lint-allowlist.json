@@ -1,0 +1,77 @@
+{
+  "_README": "Allowlist for i18n-lint.mjs — declares every dynamic `t(variable)` call site and the set of keys those variables may resolve to at runtime. Each call site must appear in `dynamicCallSites` (suppresses the 'unknown dynamic site' warning). Each key that dynamic code paths can construct must appear somewhere in `referencedKeys` — the groups there are just for readability, the linter flattens them. If a declared key isn't in en-US.json, i18n-lint fails loud — the dynamic path would fall back to the literal string at runtime, which is almost always a bug. Line numbers in `dynamicCallSites` will drift when the call-site files are edited; `node scripts/i18n-lint.mjs --list-dynamic` prints the current set so the allowlist can be refreshed.",
+
+  "dynamicCallSites": [
+    "src/pages/OrderPage.tsx:166",
+    "src/pages/OrdersPage.tsx:498",
+    "src/pages/ProposalsPage.tsx:185",
+    "src/pages/SettingsPage.tsx:617",
+    "src/pages/WalletsPage.tsx:138",
+    "src/pages/WalletsPage.tsx:3552"
+  ],
+
+  "referencedKeys": {
+    "OrderPage_matchStatusString_revoked": [
+      "MATCH_REDEMPTION_CONFIRMED",
+      "MATCH_STATUS_COMPLETE",
+      "MATCH_STATUS_REDEEM_PENDING",
+      "MATCH_STATUS_REDEMPTION_SENT",
+      "MATCH_STATUS_REFUND_PENDING",
+      "MATCH_STATUS_REFUNDED"
+    ],
+    "OrdersPage_STATUS_OPTIONS": [
+      "EPOCH",
+      "BOOKED",
+      "EXECUTED",
+      "CANCELED",
+      "REVOKED"
+    ],
+    "ProposalsPage_VOTE_STATUS_OPTIONS": [
+      "ALL",
+      "Authorized",
+      "Started",
+      "Finished",
+      "Approved",
+      "Rejected"
+    ],
+    "SettingsPage_noteTypes": [
+      "Orders",
+      "Matches",
+      "Bonds",
+      "Connections"
+    ],
+    "WalletsPage_TX_TYPE_KEYS": [
+      "TX_TYPE_UNKNOWN",
+      "TX_TYPE_SEND",
+      "TX_TYPE_RECEIVE",
+      "TX_TYPE_SWAP",
+      "TX_TYPE_REDEEM",
+      "TX_TYPE_REFUND",
+      "TX_TYPE_SPLIT",
+      "TX_TYPE_CREATE_BOND",
+      "TX_TYPE_REDEEM_BOND",
+      "TX_TYPE_APPROVE_TOKEN",
+      "TX_TYPE_ACCELERATION",
+      "TX_TYPE_SELF_TRANSFER",
+      "TX_TYPE_REVOKE_TOKEN_APPROVAL",
+      "TX_TYPE_TICKET_PURCHASE",
+      "TX_TYPE_TICKET_VOTE",
+      "TX_TYPE_TICKET_REVOCATION",
+      "TX_TYPE_SWAP_OR_SEND",
+      "TX_TYPE_MIX",
+      "TX_TYPE_BRIDGE_INITIATION",
+      "TX_TYPE_BRIDGE_COMPLETION"
+    ],
+    "WalletsPage_TICKET_STATUS_KEYS": [
+      "TICKET_STATUS_UNKNOWN",
+      "TICKET_STATUS_UNMINED",
+      "TICKET_STATUS_IMMATURE",
+      "TICKET_STATUS_LIVE",
+      "TICKET_STATUS_VOTED",
+      "TICKET_STATUS_MISSED",
+      "TICKET_STATUS_EXPIRED",
+      "TICKET_STATUS_UNSPENT",
+      "TICKET_STATUS_REVOKED"
+    ]
+  }
+}

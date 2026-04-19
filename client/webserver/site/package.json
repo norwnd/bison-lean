@@ -9,7 +9,8 @@
     "analyze": "webpack --config webpack/analyze.js",
     "build": "npm exec tsc && webpack --config webpack/prod.js --progress --color",
     "build_dev": "npm exec tsc && webpack --config webpack/dev.js --progress --color",
-    "lint": "npm exec tsc && npm exec -- eslint src",
+    "lint": "npm exec tsc && npm exec -- eslint src && node scripts/i18n-lint.mjs",
+    "lint:i18n": "node scripts/i18n-lint.mjs",
     "check-types": "npm exec tsc"
   },
   "keywords": [],
