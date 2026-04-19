@@ -156,7 +156,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
           {/* Fee estimate */}
           {feeEstimate && (
             <div className="mb-2">
-              <span className="fs14 text-secondary">{t('Estimated Fee')}: </span>
+              <span className="fs14 text-secondary">{t('ESTIMATED_FEE')}: </span>
               <span className="fs14">{feeEstimate}</span>
             </div>
           )}
@@ -173,7 +173,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
           {showAddress && (
             <div className="mb-2 p-2 border rounded bg-light">
               <div className="fs14 text-warning mb-1">
-                {t('Insufficient balance. Deposit to your {{parentName}} wallet:', { parentName })}
+                {t('INSUFFICIENT_BALANCE_DEPOSIT_TO_YOUR_PARENTNAME_WALLET', { parentName })}
               </div>
               <code className="text-break fs14">{depositAddress}</code>
             </div>
@@ -199,7 +199,7 @@ export function TokenApprovalForm ({ assetID, host, onSuccess }: Props) {
         <div>
           {/* Success: show txID */}
           <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Transaction ID')}: </span>
+            <span className="text-secondary">{t('TRANSACTION_ID')}: </span>
             {txURL
 ? (
               <a href={txURL} target="_blank" rel="noopener noreferrer" className="text-break">

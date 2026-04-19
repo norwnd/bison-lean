@@ -61,7 +61,7 @@ export default function LoginPage () {
                     keyed as `Forgot Password` (no `?`) in `locales/en-us.go`
                     L477 — the question mark lives in the translation, not
                     the key. */}
-                {t('Forgot Password')}
+                {t('FORGOT_PASSWORD')}
               </button>
             </div>
           </div>

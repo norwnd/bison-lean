@@ -167,7 +167,7 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
         dispatch({
           type: 'PATCH',
           patch: {
-            error: t('Failed to load history: {{err}}', { err: String(e) }),
+            error: t('FAILED_TO_LOAD_HISTORY_ERR', { err: String(e) }),
             historyLoading: false,
             bridgeHistoryLoaded: true
           }

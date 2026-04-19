@@ -86,18 +86,18 @@ export function CEXConfigurationForm ({ cexName, onUpdated }: Props) {
 
       {showPrompt && (
         <div className="fs15 mb-2 text-secondary">
-          {t('Enter your API credentials for')} {cexName}
+          {t('ENTER_YOUR_API_CREDENTIALS_FOR')} {cexName}
         </div>
       )}
 
       {connectErr && (
         <div className="fs14 text-danger mb-2">
-          <strong>{t('Connection error')}:</strong> {connectErr}
+          <strong>{t('CONNECTION_ERROR')}:</strong> {connectErr}
         </div>
       )}
 
       <div className="mb-2">
-        <label className="fs14">{t('API Key')}</label>
+        <label className="fs14">{t('API_KEY')}</label>
         <input
           type="text"
           className="form-control"
@@ -108,7 +108,7 @@ export function CEXConfigurationForm ({ cexName, onUpdated }: Props) {
       </div>
 
       <div className="mb-2">
-        <label className="fs14">{t('API Secret')}</label>
+        <label className="fs14">{t('API_SECRET')}</label>
         <input
           type="password"
           className="form-control"
@@ -120,7 +120,7 @@ export function CEXConfigurationForm ({ cexName, onUpdated }: Props) {
 
       {requiresPassphrase && (
         <div className="mb-2">
-          <label className="fs14">{t('API Passphrase')}</label>
+          <label className="fs14">{t('API_PASSPHRASE')}</label>
           <input
             type="password"
             className="form-control"

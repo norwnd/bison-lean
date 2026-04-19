@@ -53,14 +53,14 @@ export function NewUserBanner () {
   return (
     <div className="p-2 d-flex justify-content-center align-items-center new-user-banner">
       <span className="ico-info fs14 me-1"></span>
-      <span className="fs15">{t('new_user_banner_msg')}</span>
+      <span className="fs15">{t('NEW_USER_BANNER_MSG')}</span>
       <a
         href="https://github.com/decred/dcrdex/wiki/Home#new-users"
         target="_blank"
         rel="noopener noreferrer"
         className="fs15 ps-2 me-3"
       >
-        {t('Learn More')}
+        {t('LEARN_MORE')}
       </a>
       <span
         className="ico-cross fs12 pointer"

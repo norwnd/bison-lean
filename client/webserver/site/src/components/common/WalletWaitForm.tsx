@@ -182,7 +182,7 @@ export function WalletWaitForm ({
   }), [assetID, reportProgress, reportBalance, walletMap]))
 
   if (!asset || !bondAsset) {
-    return <div className="px-3 py-2">{t('Loading...')}</div>
+    return <div className="px-3 py-2">{t('LOADING')}</div>
   }
 
   const { symbol, unitInfo: ui } = asset
@@ -196,7 +196,7 @@ export function WalletWaitForm ({
     <div className="px-3 py-2">
       <div className="fs20 mb-2 d-flex align-items-center gap-2">
         <img className="mini-icon" src={logoPath(symbol)} alt="" />
-        {t('Waiting for wallet sync and funds')}
+        {t('WAITING_FOR_WALLET_SYNC_AND_FUNDS')}
       </div>
 
       {/* Sync status */}
@@ -217,7 +217,7 @@ export function WalletWaitForm ({
         </span>
         {!synced && remainingTime && !finishingUp && (
           <span className="fs14 text-secondary">
-            (~{remainingTime} {t('remaining')})
+            (~{remainingTime} {t('REMAINING')})
           </span>
         )}
         {!synced && finishingUp && (
@@ -245,20 +245,20 @@ export function WalletWaitForm ({
           {bondFeeBuffer > 0
 ? (
             <div className="fs14 mb-1">
-              <div>{t('Bond lock')}: {formatCoinAtom(bondLock, ui)} {ui.conventional.unit}</div>
-              <div>{t('Fee buffer')}: {formatCoinAtom(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
+              <div>{t('BOND_LOCK')}: {formatCoinAtom(bondLock, ui)} {ui.conventional.unit}</div>
+              <div>{t('FEE_BUFFER')}: {formatCoinAtom(bondFeeBuffer, ui)} {ui.conventional.unit}</div>
               <div className="fw-bold">
-                {t('Amount needed')}: {formatCoinAtom(needMore, ui)} {ui.conventional.unit}
+                {t('AMOUNT_NEEDED')}: {formatCoinAtom(needMore, ui)} {ui.conventional.unit}
               </div>
 
               {isToken && parentAsset && (
                 <div className="mt-1">
                   <div>
-                    {t('Parent fees')}: {formatCoinAtom(bondFeeBuffer, parentAsset.unitInfo)}{' '}
+                    {t('PARENT_FEES')}: {formatCoinAtom(bondFeeBuffer, parentAsset.unitInfo)}{' '}
                     {parentAsset.unitInfo.conventional.unit}
                   </div>
                   <div>
-                    {t('Parent balance')}: {formatCoinAtom(parentBalance, parentAsset.unitInfo)}{' '}
+                    {t('PARENT_BALANCE')}: {formatCoinAtom(parentBalance, parentAsset.unitInfo)}{' '}
                     {parentAsset.unitInfo.conventional.unit}
                   </div>
                 </div>
@@ -273,13 +273,13 @@ export function WalletWaitForm ({
           )
 : (
             <div className="fs14 mb-1">
-              {t('Send enough funds to cover the bond.')}
+              {t('SEND_ENOUGH_FUNDS_TO_COVER_THE_BOND')}
             </div>
           )}
 
           {depositAddress && (
             <div className="mb-2">
-              <label className="fs14">{t('Deposit Address')}</label>
+              <label className="fs14">{t('DEPOSIT_ADDRESS')}</label>
               <div className="fs13 text-break user-select-all border rounded p-2">
                 {depositAddress}
               </div>

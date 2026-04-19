@@ -54,10 +54,10 @@ export function AppPassResetForm ({ onSuccess }: Props) {
   return (
     <form onSubmit={handleSubmit}>
       <div className="px-3 py-2">
-        <div className="fs18 mb-2">{t('Reset App Password')}</div>
-        <p className="fs15">{t('reset_app_pw_msg')}</p>
+        <div className="fs18 mb-2">{t('RESET_APP_PASSWORD')}</div>
+        <p className="fs15">{t('RESET_APP_PW_MSG')}</p>
         <div className="mb-2">
-          <label className="form-label">{t('New Password')}</label>
+          <label className="form-label">{t('NEW_PASSWORD')}</label>
           <input
             type="password"
             className="form-control"
@@ -68,7 +68,7 @@ export function AppPassResetForm ({ onSuccess }: Props) {
           />
         </div>
         <div className="mb-2">
-          <label className="form-label">{t('Confirm New Password')}</label>
+          <label className="form-label">{t('CONFIRM_NEW_PASSWORD')}</label>
           <input
             type="password"
             className="form-control"
@@ -78,7 +78,7 @@ export function AppPassResetForm ({ onSuccess }: Props) {
           />
         </div>
         <div className="mb-2">
-          <label className="form-label">{t('Restoration Seed')}</label>
+          <label className="form-label">{t('RESTORATION_SEED')}</label>
           <textarea
             className="form-control"
             value={seed}

@@ -53,7 +53,7 @@ export default function ProposalPage () {
     const resp = await getJSON(`/api/proposal/${token}?assetID=${assetID}`)
     setLoading(false)
     if (!resp.requestSuccessful) {
-      setError(resp.msg || t('Failed to load proposal'))
+      setError(resp.msg || t('FAILED_TO_LOAD_PROPOSAL'))
       return
     }
     setProposal(resp)
@@ -108,7 +108,7 @@ export default function ProposalPage () {
     return (
       <div id="main" className="py-5 overflow-y-auto">
         <section className="flex-stretch-column mw-500 mx-auto pb-3 pt-2 px-3">
-          <div className="text-center my-5">{t('Loading...')}</div>
+          <div className="text-center my-5">{t('LOADING')}</div>
         </section>
       </div>
     )
@@ -219,7 +219,7 @@ export default function ProposalPage () {
             className="btn w-100 rounded25 mt-2 mb-2"
             onClick={openVoteForm}
           >
-            {t('Vote Now')}
+            {t('VOTE_NOW')}
           </button>
         )}
 
@@ -238,8 +238,8 @@ export default function ProposalPage () {
                 <span className="ico-cross" />
               </button>
               <header>{t('Vote')}</header>
-              <p className="text-muted mt-2">{t('Cast your vote on this proposal')}</p>
-              <div>{t('Voting power')}: {proposal.votingPower}</div>
+              <p className="text-muted mt-2">{t('CAST_YOUR_VOTE_ON_THIS_PROPOSAL')}</p>
+              <div>{t('VOTING_POWER')}: {proposal.votingPower}</div>
 
               <div className="vote-actions mt-2">
                 <button
@@ -275,7 +275,7 @@ export default function ProposalPage () {
                 onClick={handleVote}
                 disabled={!voteChoice || voteLoading}
               >
-                {voteLoading ? '...' : t('Submit Vote')}
+                {voteLoading ? '...' : t('SUBMIT_VOTE')}
               </button>
 
               {voteError && (

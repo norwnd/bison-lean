@@ -244,7 +244,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   if (view === 'whatsABond') {
     return (
       <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('What is a fidelity bond?')}</div>
+        <div className="fs20 mb-2">{t('WHAT_IS_A_FIDELITY_BOND')}</div>
         <p className="fs15">
           {t('WHATS_A_BOND_DESC')}
         </p>
@@ -253,7 +253,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
             {t('Back')}
           </button>
           <button className="btn btn-primary" onClick={() => setView('assets')}>
-            {t('Got it')}
+            {t('GOT_IT')}
           </button>
         </div>
       </div>
@@ -263,9 +263,9 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   if (view === 'prepaid') {
     return (
       <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('Prepaid Bond')}</div>
+        <div className="fs20 mb-2">{t('PREPAID_BOND')}</div>
         <div className="mb-3">
-          <label>{t('Bond Code')}</label>
+          <label>{t('BOND_CODE')}</label>
           <input
             type="text"
             className="form-control"
@@ -292,7 +292,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   if (view === 'assets') {
     return (
       <div className="px-3 py-2">
-        <div className="fs20 mb-2">{t('Choose your bond asset')}</div>
+        <div className="fs20 mb-2">{t('CHOOSE_YOUR_BOND_ASSET')}</div>
 
         {/* Bond asset list */}
         <div className="flex-stretch-column">
@@ -328,13 +328,13 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
             className="btn btn-sm btn-outline-secondary"
             onClick={() => setView('whatsABond')}
           >
-            {t('What is a bond?')}
+            {t('WHAT_IS_A_BOND')}
           </button>
           <button
             className="btn btn-sm btn-outline-secondary"
             onClick={() => setView('prepaid')}
           >
-            {t('Use a prepaid bond')}
+            {t('USE_A_PREPAID_BOND')}
           </button>
         </div>
       </div>
@@ -344,18 +344,18 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   // ---- Tier configuration view ----
   return (
     <div className="px-3 py-2">
-      <div className="fs20 mb-2">{t('Trading Tier')}</div>
+      <div className="fs20 mb-2">{t('TRADING_TIER')}</div>
 
       {tierInfo && (
         <>
           <div className="fs15 mb-1">
-            {t('Bond size')}: {tierInfo.bondSizeConventional} {tierInfo.unit}
+            {t('BOND_SIZE')}: {tierInfo.bondSizeConventional} {tierInfo.unit}
           </div>
           <div className="fs15 mb-1">
             {t('Tier')}: {tier}
           </div>
           <div className="fs15 mb-1">
-            {t('Total bond lock')}: {tierInfo.bondLockConventional} {tierInfo.unit}
+            {t('TOTAL_BOND_LOCK')}: {tierInfo.bondLockConventional} {tierInfo.unit}
             {tierInfo.fiatLock && (
               <span className="ms-1">(~${tierInfo.fiatLock})</span>
             )}
@@ -390,7 +390,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
       {/* Current bonds */}
       {currentBonds.length > 0 && (
         <div className="mb-3">
-          <div className="fs16 mb-1">{t('Current bonds')}</div>
+          <div className="fs16 mb-1">{t('CURRENT_BONDS')}</div>
           {currentBonds.map(({ assetID, bonded }) => {
             const a = assets[assetID]
             if (!a) return null
@@ -414,7 +414,7 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
       {/* Market limits table */}
       {marketLimits.length > 0 && (
         <div className="mb-3">
-          <div className="fs16 mb-1">{t('Market Limits')}</div>
+          <div className="fs16 mb-1">{t('MARKET_LIMITS')}</div>
           <table className="table table-sm fs14">
             <thead>
               <tr>

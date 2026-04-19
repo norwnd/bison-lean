@@ -78,7 +78,7 @@ export function VerifyOrderForm ({
 
   // The `order_disclaimer` i18n key contains `<span class="red">IMPORTANT</span>`
   // presentational HTML, so we need `dangerouslySetInnerHTML`.
-  const disclaimerHtml = t('order_disclaimer', {
+  const disclaimerHtml = t('ORDER_DISCLAIMER', {
     brand: 'Bison Wallet',
     baseTicker: buiUnit,
     quoteTicker: quiUnit,
@@ -160,7 +160,7 @@ export function VerifyOrderForm ({
               </span>
             </div>
             <div className="d-flex align-items-center mt-3">
-              <span className="grey fs18 flex-grow-1 text-start">{t('You Spend')}</span>
+              <span className="grey fs18 flex-grow-1 text-start">{t('YOU_SPEND')}</span>
               <span id="youSpend" className="fs18 demi">{'-' + youSpendText}</span>
               <span id="youSpendTicker" className="grey fs18 ms-2">{youSpendUnit}</span>
             </div>
@@ -170,7 +170,7 @@ export function VerifyOrderForm ({
               </span>
             )}
             <div className="d-flex align-items-center mt-3">
-              <span className="grey fs18 flex-grow-1 text-start">{t('You Get')}</span>
+              <span className="grey fs18 flex-grow-1 text-start">{t('YOU_GET')}</span>
               <span id="youGet" className="fs18 demi">{'+' + youGetText}</span>
               <span id="youGetTicker" className="grey fs18 ms-2">{youGetUnit}</span>
             </div>
@@ -219,7 +219,7 @@ export function VerifyOrderForm ({
             onClick={onAckDisclaimer}
           >
             <span className="ico-check me-2"></span>
-            <span>{t('acknowledge_and_hide')}</span>
+            <span>{t('ACKNOWLEDGE_AND_HIDE')}</span>
           </button>
         </>
       )}
@@ -231,7 +231,7 @@ export function VerifyOrderForm ({
           onClick={onUnackDisclaimer}
         >
           <span className="ico-plus me-2"></span>
-          <span>{t('show_disclaimer')}</span>
+          <span>{t('SHOW_DISCLAIMER')}</span>
         </button>
       )}
     </form>

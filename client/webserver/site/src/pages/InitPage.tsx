@@ -148,7 +148,7 @@ export default function InitPage () {
     const walletFailures: string[] = []
 
     // Add servers in parallel.
-    setQuickConfigMessage(t('Adding servers...'))
+    setQuickConfigMessage(t('ADDING_SERVERS'))
     const serverPromises = servers
       .filter(s => s.checked)
       .map(async (s) => {
@@ -158,7 +158,7 @@ export default function InitPage () {
     await Promise.all(serverPromises)
 
     // Create wallets in parallel.
-    setQuickConfigMessage(t('Creating wallets...'))
+    setQuickConfigMessage(t('CREATING_WALLETS'))
     const walletPromises = wallets
       .filter(w => w.checked)
       .map(async (w) => {
@@ -224,11 +224,11 @@ export default function InitPage () {
           <div>
             <header className="flex-center py-3 lh1 border-bottom fs26">
               <span className="ico-locked fs20 grey me-2" />
-              <span>{t('Set App Password')}</span>
+              <span>{t('SET_APP_PASSWORD')}</span>
             </header>
 
             <div className="px-2">
-              <div className="fs18 py-3">{t('reg_set_app_pw_msg', { brand: 'Bison Wallet' })}</div>
+              <div className="fs18 py-3">{t('REG_SET_APP_PW_MSG', { brand: 'Bison Wallet' })}</div>
 
               <div className="mt-3 border-top pt-3">
                 <label htmlFor="appPW">{t('Password')}</label>
@@ -245,7 +245,7 @@ export default function InitPage () {
               </div>
 
               <div className="pt-2">
-                <label htmlFor="appPWAgain">{t('Password Again')}</label>
+                <label htmlFor="appPWAgain">{t('PASSWORD_AGAIN')}</label>
                 <input
                   id="appPWAgain"
                   type="password"
@@ -264,7 +264,7 @@ export default function InitPage () {
                     onClick={() => setShowSeedInput(!showSeedInput)}
                   >
                     <span className={`fs11 ${showSeedInput ? 'ico-minus' : 'ico-plus'} me-1`} />
-                    {t('Restoration Seed')}
+                    {t('RESTORATION_SEED')}
                   </label>
                 </div>
                 <button
@@ -289,7 +289,7 @@ export default function InitPage () {
                     disabled={passwordLoading}
                   />
                   <div className="pt-2 text-center fs15 text-warning">
-                    {t('seed_same_wallet_warning')}
+                    {t('SEED_SAME_WALLET_WARNING')}
                   </div>
                 </div>
               )}
@@ -317,11 +317,11 @@ export default function InitPage () {
               <>
                 <header className="flex-center py-3 lh1 border-bottom fs26">
                   <span className="ico-settings fs22 grey me-2" />
-                  <span>{t('Quick Configuration')}</span>
+                  <span>{t('QUICK_CONFIGURATION')}</span>
                 </header>
 
                 <div className="px-2 pt-3">
-                  <div className="fs18 mb-2">{t('quickconfig_wallet_header')}</div>
+                  <div className="fs18 mb-2">{t('QUICKCONFIG_WALLET_HEADER')}</div>
                   <div className="mt-2">
                     {wallets.map((wRow, idx) => (
                       <label key={wRow.asset.id} className="p-1 d-flex justify-content-start align-items-center hoverbg pointer">
@@ -341,7 +341,7 @@ export default function InitPage () {
                     ))}
                   </div>
 
-                  <div className="fs18 mt-3 pt-3 border-top">{t('quickconfig_server_header')}</div>
+                  <div className="fs18 mt-3 pt-3 border-top">{t('QUICKCONFIG_SERVER_HEADER')}</div>
                   <div>
                     {servers.map((srv, idx) => (
                       <label key={srv.host} className="d-flex justify-content-start align-items-center p-1 hoverbg pointer my-1">
@@ -370,7 +370,7 @@ export default function InitPage () {
               <div className="px-2 pt-3">
                 {failedWallets.length > 0 && (
                   <div className="my-1">
-                    <span className="fs16">{t('quickconfig_wallet_error_header')}</span>
+                    <span className="fs16">{t('QUICKCONFIG_WALLET_ERROR_HEADER')}</span>
                     <div className="p-2 my-1">
                       {failedWallets.map(name => (
                         <div key={name}>{name}</div>
@@ -381,7 +381,7 @@ export default function InitPage () {
 
                 {failedHosts.length > 0 && (
                   <div className="my-1">
-                    <span className="fs16">{t('quickconfig_server_error_header')}</span>
+                    <span className="fs16">{t('QUICKCONFIG_SERVER_ERROR_HEADER')}</span>
                     <div className="p-2 my-1">
                       {failedHosts.map(host => (
                         <div key={host}>{host}</div>
@@ -409,7 +409,7 @@ export default function InitPage () {
       <div className="col-12 col-sm-8 col-md-6 col-lg-4">
         <div>
           <header className="flex-center py-3 lh1 border-bottom fs26">
-            <span>{t('Backup App Seed')}</span>
+            <span>{t('BACKUP_APP_SEED')}</span>
           </header>
 
           {!seedRevealed
@@ -420,7 +420,7 @@ export default function InitPage () {
               </div>
               <div className="flex-stretch-column pt-2">
                 <button className="feature" onClick={() => setSeedRevealed(true)}>
-                  {t('Backup Now')}
+                  {t('BACKUP_NOW')}
                 </button>
               </div>
               <div className="d-flex justify-content-end pt-3">
@@ -428,7 +428,7 @@ export default function InitPage () {
                   className="d-block plainlink fs15 flex-center hoverbg pointer"
                   onClick={finishSeedBackup}
                 >
-                  <span>{t('Skip this step for now')}</span>
+                  <span>{t('SKIP_THIS_STEP_FOR_NOW')}</span>
                   <span
                     className="ico-info mx-1"
                     title="You can backup your seed at any time in the Settings view"
@@ -439,7 +439,7 @@ export default function InitPage () {
           )
 : (
             <div className="px-2 pt-3">
-              <div className="fs18 mb-3">{t('save_seed_instructions')}</div>
+              <div className="fs18 mb-3">{t('SAVE_SEED_INSTRUCTIONS')}</div>
               <div className="mt-2 border-top flex-center">
                 <div className="fs18 mono mx-auto user-select-all text-break py-3">
                   {mnemonic}

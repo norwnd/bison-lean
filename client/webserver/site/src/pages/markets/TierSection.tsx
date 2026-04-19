@@ -46,14 +46,14 @@ export function TierSection ({ tierData, isRegistered }: TierSectionProps) {
         onClick={() => setShowTradingTier(!showTradingTier)}
       >
         <span className={`ico-${showTradingTier ? 'minus' : 'plus'} fs10 me-2`}></span>
-        <span>{showTradingTier ? t('Hide trading tier info') : t('Show trading tier info')}</span>
+        <span>{showTradingTier ? t('HIDE_TRADING_TIER_INFO') : t('SHOW_TRADING_TIER_INFO')}</span>
       </div>
       {showTradingTier && (
         <div className="d-flex flex-stretch-column fs15 mx-2 mb-2 border">
           <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1 border-bottom">
             <div className="d-flex justify-content-between align-items-center">
-              <span>{t('Parcel Size')}</span>
-              <span>{tierData.parcelSize} {t('lots')}</span>
+              <span>{t('PARCEL_SIZE')}</span>
+              <span>{tierData.parcelSize} {t('LOTS')}</span>
             </div>
             <div className="d-flex justify-content-between align-items-center">
               <span></span>
@@ -70,15 +70,15 @@ export function TierSection ({ tierData, isRegistered }: TierSectionProps) {
           </div>
           <div className="d-flex flex-column flex-grow-1 align-items-stretch p-1">
             <div className="d-flex justify-content-between align-items-center">
-              <span>{t('Trading Tier')}</span>
+              <span>{t('TRADING_TIER')}</span>
               <span>{tierData.tier}</span>
             </div>
             <div className="d-flex justify-content-between align-items-center">
-              <span>{t('Trading Limit')}</span>
-              <span>{tierData.tradingLimitStr} {t('lots')}</span>
+              <span>{t('TRADING_LIMIT')}</span>
+              <span>{tierData.tradingLimitStr} {t('LOTS')}</span>
             </div>
             <div className="d-flex justify-content-between align-items-center">
-              <span>{t('Current Usage')}</span>
+              <span>{t('CURRENT_USAGE')}</span>
               <span>{tierData.limitUsageStr}%</span>
             </div>
           </div>
@@ -91,7 +91,7 @@ export function TierSection ({ tierData, isRegistered }: TierSectionProps) {
         onClick={() => setShowReputation(!showReputation)}
       >
         <span className={`ico-${showReputation ? 'minus' : 'plus'} fs10 me-2`}></span>
-        <span>{showReputation ? t('Hide reputation') : t('Show reputation')}</span>
+        <span>{showReputation ? t('HIDE_REPUTATION') : t('SHOW_REPUTATION')}</span>
       </div>
       {showReputation && (
         <div className="px-3 mb-3 border-bottom">

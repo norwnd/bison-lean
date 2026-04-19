@@ -313,13 +313,13 @@ export function RightPanel ({
           {tokenApprovalStatus.visible && (
             <div className="fs15 pt-1 pb-3 text-center border-bottom">
               {tokenApprovalStatus.noticeKey === 'approval_required_buy' && (
-                <span className="p-3 flex-center fs17 grey">{t('approval_required_buy')}</span>
+                <span className="p-3 flex-center fs17 grey">{t('APPROVAL_REQUIRED_BUY')}</span>
               )}
               {tokenApprovalStatus.noticeKey === 'approval_required_sell' && (
-                <span className="p-3 flex-center fs17 grey">{t('approval_required_sell')}</span>
+                <span className="p-3 flex-center fs17 grey">{t('APPROVAL_REQUIRED_SELL')}</span>
               )}
               {tokenApprovalStatus.noticeKey === 'approval_required_both' && (
-                <span className="p-3 flex-center fs17 grey">{t('approval_required_both')}</span>
+                <span className="p-3 flex-center fs17 grey">{t('APPROVAL_REQUIRED_BOTH')}</span>
               )}
               {tokenApprovalStatus.baseStatus === ApprovalStatus.NotApproved && (
                 <button
@@ -332,7 +332,7 @@ export function RightPanel ({
               )}
               {tokenApprovalStatus.baseStatus === ApprovalStatus.Pending && (
                 <div className="flex-center position-relative py-2">
-                  <span className="px-1">{tokenApprovalStatus.baseSymbolUpper}</span> {t('approval_change_pending')}
+                  <span className="px-1">{tokenApprovalStatus.baseSymbolUpper}</span> {t('APPROVAL_CHANGE_PENDING')}
                   <div className="px-2 ico-spinner spinner fs15"></div>
                 </div>
               )}
@@ -347,7 +347,7 @@ export function RightPanel ({
               )}
               {tokenApprovalStatus.quoteStatus === ApprovalStatus.Pending && (
                 <div className="flex-center position-relative py-2">
-                  <span className="px-1">{tokenApprovalStatus.quoteSymbolUpper}</span> {t('approval_change_pending')}
+                  <span className="px-1">{tokenApprovalStatus.quoteSymbolUpper}</span> {t('APPROVAL_CHANGE_PENDING')}
                   <div className="px-2 ico-spinner spinner fs15"></div>
                 </div>
               )}

@@ -93,7 +93,7 @@ function BridgeHistory ({ networkAssetIDs, onSelectTx }: BridgeHistoryProps) {
       dispatch({
         type: 'PATCH',
         patch: {
-          error: t('Failed to load more history: {{err}}', { err: String(e) }),
+          error: t('FAILED_TO_LOAD_MORE_HISTORY_ERR', { err: String(e) }),
           historyLoading: false
         }
       })

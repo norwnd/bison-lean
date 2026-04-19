@@ -800,7 +800,7 @@ export default function MarketsPage () {
       if (!currentXc.authed && !currentXc.viewOnly) return null
       const auth = currentXc.auth
       if (auth && (auth.effectiveTier ?? 0) < 1) {
-        return t('create_account_to_trade')
+        return t('CREATE_ACCOUNT_TO_TRADE')
       }
     }
 
@@ -822,13 +822,13 @@ export default function MarketsPage () {
     const bStatus = checkApproval(selected.baseID, baseAsset)
     const qStatus = checkApproval(selected.quoteID, quoteAsset)
     if (bStatus !== ApprovalStatus.Approved && qStatus === ApprovalStatus.Approved) {
-      return t('approval_required_sell')
+      return t('APPROVAL_REQUIRED_SELL')
     }
     if (bStatus === ApprovalStatus.Approved && qStatus !== ApprovalStatus.Approved) {
-      return t('approval_required_buy')
+      return t('APPROVAL_REQUIRED_BUY')
     }
     if (bStatus !== ApprovalStatus.Approved && qStatus !== ApprovalStatus.Approved) {
-      return t('approval_required_both')
+      return t('APPROVAL_REQUIRED_BOTH')
     }
 
     return null

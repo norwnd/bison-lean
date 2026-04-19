@@ -73,7 +73,7 @@ export function ChartPanel ({
           )}
           {candleLoading && !chartErrMsg && (
             <Wave
-              message={t('waiting for candlesticks')}
+              message={t('WAITING_FOR_CANDLESTICKS')}
               backgroundColor={true}
             />
           )}

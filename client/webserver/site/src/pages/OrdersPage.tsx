@@ -508,7 +508,7 @@ export default function OrdersPage () {
               </button>
             )}
             <button className="btn btn-secondary btn-sm" onClick={exportOrders}>
-              {t('Export Orders')}
+              {t('EXPORT_ORDERS')}
             </button>
             <button
               className="btn btn-outline-danger btn-sm"
@@ -523,7 +523,7 @@ export default function OrdersPage () {
                 setShowDeleteForm(true)
               }}
             >
-              {t('Delete Archived Records')}
+              {t('DELETE_ARCHIVED_RECORDS')}
             </button>
           </div>
         </div>
@@ -556,7 +556,7 @@ export default function OrdersPage () {
 
         {!loading && orders.length === 0 && (
           <div className="text-center py-4 text-secondary">
-            {t('No orders')}
+            {t('NO_ORDERS')}
           </div>
         )}
       </div>
@@ -564,7 +564,7 @@ export default function OrdersPage () {
       {/* Delete archived records modal */}
       <FormOverlay bare show={showDeleteForm} onClose={() => setShowDeleteForm(false)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 340 }}>
-          <div className="fs18 mb-3">{t('Delete Archived Records')}</div>
+          <div className="fs18 mb-3">{t('DELETE_ARCHIVED_RECORDS')}</div>
 
           <label className="d-block fs14 mb-2">
             <input
@@ -573,7 +573,7 @@ export default function OrdersPage () {
               checked={deleteUseDateCutoff}
               onChange={e => setDeleteUseDateCutoff(e.target.checked)}
             />
-            {t('Older than date')}
+            {t('OLDER_THAN_DATE')}
           </label>
           {deleteUseDateCutoff && (
             <input
@@ -591,7 +591,7 @@ export default function OrdersPage () {
               checked={deleteSaveMatches}
               onChange={e => setDeleteSaveMatches(e.target.checked)}
             />
-            {t('Save matches to file')}
+            {t('SAVE_MATCHES_TO_FILE')}
           </label>
           <label className="d-block fs14 mb-3">
             <input
@@ -600,7 +600,7 @@ export default function OrdersPage () {
               checked={deleteSaveOrders}
               onChange={e => setDeleteSaveOrders(e.target.checked)}
             />
-            {t('Save orders to file')}
+            {t('SAVE_ORDERS_TO_FILE')}
           </label>
 
           {/* OSP-03: dedicated success-result container, mirroring vanilla

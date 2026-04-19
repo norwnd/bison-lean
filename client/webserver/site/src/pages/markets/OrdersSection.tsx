@@ -92,11 +92,11 @@ export function OrdersSection ({
     <>
       {/* Open Orders */}
       <div className="my-1 border-top">
-        <div className="text-center demi fs20 p-1">{t('Open Orders')}</div>
+        <div className="text-center demi fs20 p-1">{t('OPEN_ORDERS')}</div>
         {/* MP-34: Unready-wallets warning */}
         {hasUnreadyOrders && (
           <div className="px-3 flex-center fs15 p-1 border-bottom text-danger">
-            {t('unready_wallets_msg')}
+            {t('UNREADY_WALLETS_MSG')}
           </div>
         )}
         {activeOrders.length === 0
@@ -122,7 +122,7 @@ export function OrdersSection ({
 
       {/* Completed Orders */}
       <div className="my-1 border-top">
-        <div className="text-center demi fs20 p-1">{t('Completed Orders')}</div>
+        <div className="text-center demi fs20 p-1">{t('COMPLETED_ORDERS')}</div>
         <div id="completedOrderHistoryDurBttnBox" className="d-flex justify-content-between px-2 pb-2">
           {COMPLETED_PERIODS.map(p => (
             <button

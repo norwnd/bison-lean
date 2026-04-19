@@ -138,7 +138,7 @@ export const DepositAddress = forwardRef<DepositAddressHandle, Props>(function D
           <img src={logoPath(first.symbol)} alt={first.symbol} width={30} height={30} />
           <span className="fs18">{first.unitInfo.conventional.unit}</span>
         </div>
-        <div className="fs15 mb-2">{t('Select network')}</div>
+        <div className="fs15 mb-2">{t('SELECT_NETWORK')}</div>
         <div className="d-flex flex-column gap-2">
           {allAssets.map(({ id, symbol, token, name }) => {
             const chainSymbol = token ? (assets[token.parentID]?.symbol ?? symbol) : symbol
@@ -177,7 +177,7 @@ export const DepositAddress = forwardRef<DepositAddressHandle, Props>(function D
       {currentAsset.token && parentAsset && (
         <div className="d-flex align-items-center gap-2 mb-2 p-2 border rounded bg-light">
           <img src={logoPath(parentAsset.symbol)} alt={parentAsset.symbol} width={20} height={20} />
-          <span className="fs14">{t('Deposits arrive on {{parentName}}', { parentName: parentAsset.name })}</span>
+          <span className="fs14">{t('DEPOSITS_ARRIVE_ON_PARENTNAME', { parentName: parentAsset.name })}</span>
         </div>
       )}
 
@@ -228,7 +228,7 @@ export const DepositAddress = forwardRef<DepositAddressHandle, Props>(function D
 
       {/* Address used warning */}
       {addrUsed && (
-        <div className="fs14 text-warning mb-2">{t('This address has been used. Consider generating a new one.')}</div>
+        <div className="fs14 text-warning mb-2">{t('THIS_ADDRESS_HAS_BEEN_USED_CONSIDER_GENERATING_A_NEW_ONE')}</div>
       )}
 
       {/* Error */}
@@ -244,7 +244,7 @@ export const DepositAddress = forwardRef<DepositAddressHandle, Props>(function D
           onClick={newDepositAddress}
           disabled={loading}
         >
-          {loading ? '...' : t('New Deposit Address')}
+          {loading ? '...' : t('NEW_DEPOSIT_ADDRESS')}
         </button>
       )}
     </div>

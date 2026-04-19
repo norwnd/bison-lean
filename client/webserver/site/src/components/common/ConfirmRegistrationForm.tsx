@@ -90,7 +90,7 @@ export function ConfirmRegistrationForm ({
 
   return (
     <div className="px-3 py-2">
-      <div className="fs20 mb-2">{t('Confirm Registration')}</div>
+      <div className="fs20 mb-2">{t('CONFIRM_REGISTRATION')}</div>
 
       <div className="fs15 mb-1">
         <strong>{t('Host')}:</strong> {exchange.host}
@@ -99,16 +99,16 @@ export function ConfirmRegistrationForm ({
       {displayInfo && (
         <>
           <div className="d-flex align-items-center gap-2 fs15 mb-1">
-            <strong>{t('Bond Asset')}:</strong>
+            <strong>{t('BOND_ASSET')}:</strong>
             <img className="micro-icon" src={logoPath(displayInfo.symbol)} alt="" />
           </div>
 
           <div className="fs15 mb-1">
-            <strong>{t('Trading Tier')}:</strong> {tier}
+            <strong>{t('TRADING_TIER')}:</strong> {tier}
           </div>
 
           <div className="fs15 mb-1">
-            <strong>{t('Bond Lock')}:</strong> {displayInfo.bondLockFormatted} {displayInfo.unit}
+            <strong>{t('BOND_LOCK')}:</strong> {displayInfo.bondLockFormatted} {displayInfo.unit}
             {displayInfo.fiatBondLock && (
               <span className="ms-1">(~${displayInfo.fiatBondLock})</span>
             )}
@@ -116,7 +116,7 @@ export function ConfirmRegistrationForm ({
 
           {displayInfo.feeReserves && (
             <div className="fs15 mb-1">
-              <strong>{t('Fee Reserves')}:</strong> {displayInfo.feeReserves} {displayInfo.unit}
+              <strong>{t('FEE_RESERVES')}:</strong> {displayInfo.feeReserves} {displayInfo.unit}
             </div>
           )}
         </>

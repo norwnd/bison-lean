@@ -400,7 +400,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
             className="btn btn-sm btn-outline-secondary"
             onClick={() => fileInputRef.current?.click()}
           >
-            {t('Select config file')}
+            {t('SELECT_CONFIG_FILE')}
           </button>
           <input
             ref={fileInputRef}
@@ -434,13 +434,13 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
         <div className="other-settings">
           {loadedElements.length > 0 && (
             <>
-              <div className="fs15 text-secondary mb-1">{t('Loaded settings')}</div>
+              <div className="fs15 text-secondary mb-1">{t('LOADED_SETTINGS')}</div>
               {loadedElements.map(renderInput)}
             </>
           )}
           {defaultedElements.length > 0 && (
             <>
-              <div className="fs15 text-secondary mb-1">{t('Default settings')}</div>
+              <div className="fs15 text-secondary mb-1">{t('DEFAULT_SETTINGS')}</div>
               {defaultedElements.map(renderInput)}
             </>
           )}

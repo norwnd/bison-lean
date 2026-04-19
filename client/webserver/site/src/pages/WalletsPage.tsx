@@ -555,7 +555,7 @@ export default function WalletsPage () {
         <div className="fill-abs d-flex flex-wrap align-items-stretch stylish-overflow">
           {!selectedAsset && (
             <div className="text-center grey py-5 p-3 col-24">
-              {t('Select an asset from the sidebar.')}
+              {t('SELECT_AN_ASSET_FROM_THE_SIDEBAR')}
             </div>
           )}
           {selectedAsset && (
@@ -849,12 +849,12 @@ function NoWalletView ({ asset, onCreate }: {
     <div className="text-center py-4">
       <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} className="mb-3" />
       <div className="fs18 mb-2">{asset.name}</div>
-      <p className="text-secondary fs14 mb-3">{t('No wallet configured for this asset.')}</p>
+      <p className="text-secondary fs14 mb-3">{t('NO_WALLET_CONFIGURED_FOR_THIS_ASSET')}</p>
       <button
         className="btn btn-primary"
         onClick={onCreate}
       >
-        {t('Create Wallet')}
+        {t('CREATE_WALLET')}
       </button>
     </div>
   )
@@ -983,7 +983,7 @@ function WalletDetail ({
 
         {bal.reservesDeficit > 0 && (
           <div className="px-2 py-1 fs14 text-warning">
-            {t('Reserves Deficit')}: {formatCoinAtom(bal.reservesDeficit, ui)}
+            {t('RESERVES_DEFICIT')}: {formatCoinAtom(bal.reservesDeficit, ui)}
           </div>
         )}
 
@@ -994,7 +994,7 @@ function WalletDetail ({
               <img src={logoPath(parentAsset.symbol)} alt={parentAsset.symbol} className="micro-icon" />
               <span>
                 {parentAsset.unitInfo.conventional.unit}{' '}
-                {t('fee balance')}: {formatCoinAtom(parentAsset.wallet.balance.available, parentAsset.unitInfo)}
+                {t('FEE_BALANCE')}: {formatCoinAtom(parentAsset.wallet.balance.available, parentAsset.unitInfo)}
               </span>
             </div>
           </div>
@@ -1007,7 +1007,7 @@ function WalletDetail ({
               <div key={label} className="fs14 grey pt-1">
                 {label}: {formatCoinAtom(cb.amt, ui)}
                 {cb.locked
-                  ? ` (${t('locked')})`
+                  ? ` (${t('LOCKED')})`
                   : ''}
               </div>
             ))}
@@ -1050,7 +1050,7 @@ function WalletDetail ({
       {/* ---- Exchange Rate ---- */}
       {fiatRate > 0 && (
         <section className="flex-stretch-column">
-          <div className="flex-center py-2 fs15 demi">{t('Exchange Rate')}</div>
+          <div className="flex-center py-2 fs15 demi">{t('EXCHANGE_RATE')}</div>
           <div className="mx-2 border-bottom"></div>
           <div className="flex-grow-1 flex-center py-2">
             {/* Single span keeps the $ and digits on the same baseline
@@ -1064,7 +1064,7 @@ function WalletDetail ({
       {/* ---- Transaction Fees ---- */}
       {wallet.feeState && (
         <section className="flex-stretch-column">
-          <div className="flex-center py-2 fs18 demi">{t('Transaction Fees')}</div>
+          <div className="flex-center py-2 fs18 demi">{t('TRANSACTION_FEES')}</div>
           <div className="mx-2 border-bottom"></div>
           <div className="d-flex">
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
@@ -1118,14 +1118,14 @@ function WalletDetail ({
       {/* ---- Transaction History link ---- */}
       <div className="flex-center p-2 pointer hoverbg border-top" onClick={() => setActiveForm('txHistory')}>
         <span className="ico-textfile me-1"></span>
-        <span className="fs18">{t('Transaction History')}</span>
+        <span className="fs18">{t('TRANSACTION_HISTORY')}</span>
       </div>
 
       {/* Sync status */}
       {!wallet.synced && wallet.syncStatus && (
         <div className="p-2 fs14 grey border-top">
-          {t('Sync progress')}: {(wallet.syncProgress * 100).toFixed(1)}%
-          {' '}({wallet.syncStatus.blocks}/{wallet.syncStatus.targetHeight} {t('blocks')})
+          {t('SYNC_PROGRESS')}: {(wallet.syncProgress * 100).toFixed(1)}%
+          {' '}({wallet.syncStatus.blocks}/{wallet.syncStatus.targetHeight} {t('BLOCKS')})
         </div>
       )}
     </div>
@@ -1201,10 +1201,10 @@ function PendingTransactions ({ txs, ui, assetID, net }: {
     <section>
       <div className="flex-center py-3 fs18">
         {txs.length === 0
-          ? <span>{t('no pending transactions')}</span>
+          ? <span>{t('NO_PENDING_TRANSACTIONS')}</span>
           : <span>
               <span>{txs.length}</span>{' '}
-              <span>{t('pending transactions')}</span>{' '}
+              <span>{t('PENDING_TRANSACTIONS')}</span>{' '}
               <span
                 className="p-1 pointer hoverbg fs11 ico-arrowdown"
                 onClick={() => setExpanded(!expanded)}
@@ -1280,7 +1280,7 @@ function MarketsSection ({ assetName, marketRows, assets }: {
     <section>
       <h4 className="m-3">{assetName} {t('Markets')}</h4>
       {marketRows.length === 0 && (
-        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('No markets')}</div>
+        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('NO_MARKETS')}</div>
       )}
       {marketRows.length > 0 && (
         <div>
@@ -1411,7 +1411,7 @@ function MixingToggle ({ assetID }: { assetID: number }) {
         <div className="w-100 d-flex align-items-stretch">
           <div className="flex-center flex-grow-1 p-2">
             <span className="ico-spinner spinner me-2"></span>
-            <span>{t('loading privacy status')}</span>
+            <span>{t('LOADING_PRIVACY_STATUS')}</span>
           </div>
         </div>
       </section>
@@ -1426,11 +1426,11 @@ function MixingToggle ({ assetID }: { assetID: number }) {
           {enabled
             ? <div className="flex-center fs20">
                 <span className="on-indicator on me-2" style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--indicator-good)', display: 'inline-block' }}></span>
-                <span>{t('Privacy active')}</span>
+                <span>{t('PRIVACY_ACTIVE')}</span>
               </div>
             : <div className="flex-center fs20">
                 <span className="on-indicator off me-2" style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--text-grey)', display: 'inline-block' }}></span>
-                <span>{t('Privacy off')}</span>
+                <span>{t('PRIVACY_OFF')}</span>
               </div>}
         </div>
         {/* WP-18: privacy info button. Click opens a modal explaining
@@ -1440,8 +1440,8 @@ function MixingToggle ({ assetID }: { assetID: number }) {
           type="button"
           className="btn flex-center p-3 border-0 border-start rounded-0 fs24 ico-info hoverbg"
           onClick={() => setShowInfo(true)}
-          aria-label={t('Privacy info')}
-          title={t('Privacy info')}
+          aria-label={t('PRIVACY_INFO')}
+          title={t('PRIVACY_INFO')}
         />
         <div className="p-2 border-start flex-center">
           <div className="form-check form-switch mb-0">
@@ -1464,11 +1464,11 @@ function MixingToggle ({ assetID }: { assetID: number }) {
       <FormOverlay bare show={showInfo} onClose={() => setShowInfo(false)}>
         <div className="bg-body border rounded p-4" style={{ maxWidth: 425 }}>
           <ul className="ps-3 mb-0">
-            <li className="mb-2">{t('privacy_intro')}</li>
-            <li className="mb-2">{t('cspp_how')}</li>
-            <li className="mb-2">{t('decred_privacy')}</li>
-            <li className="mb-2">{t('privacy_optional')}</li>
-            <li>{t('privacy_unlocked')}</li>
+            <li className="mb-2">{t('PRIVACY_INTRO')}</li>
+            <li className="mb-2">{t('CSPP_HOW')}</li>
+            <li className="mb-2">{t('DECRED_PRIVACY')}</li>
+            <li className="mb-2">{t('PRIVACY_OPTIONAL')}</li>
+            <li>{t('PRIVACY_UNLOCKED')}</li>
           </ul>
         </div>
       </FormOverlay>
@@ -1533,19 +1533,19 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
     setError('')
     setFeeErr('')
     if (!addr) {
-      setError(t('Please enter an address.'))
+      setError(t('PLEASE_ENTER_AN_ADDRESS'))
       return
     }
     const value = Math.round(parseFloat(amtStr || '0') * conv)
     if (value <= 0) {
-      setError(t('Please enter a valid amount.'))
+      setError(t('PLEASE_ENTER_A_VALID_AMOUNT'))
       return
     }
 
     // Validate address first
     const valRes = await postJSON('/api/validateaddress', { addr, assetID: asset.id })
     if (!checkResponse(valRes)) {
-      setError(t('Invalid address.'))
+      setError(t('INVALID_ADDRESS'))
       return
     }
 
@@ -1560,10 +1560,10 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
       })
       setLoading(false)
       if (!checkResponse(feeRes)) {
-        setFeeErr(feeRes.msg || t('Fee estimation failed'))
+        setFeeErr(feeRes.msg || t('FEE_ESTIMATION_FAILED'))
         // Still proceed to confirm without fee estimate
       } else if (!feeRes.validaddress) {
-        setError(t('Invalid address.'))
+        setError(t('INVALID_ADDRESS'))
         return
       } else {
         setTxFee(feeRes.txfee ?? 0)
@@ -1576,7 +1576,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
   const handleSend = useCallback(async () => {
     setError('')
     if (!password) {
-      setError(t('Password is required.'))
+      setError(t('PASSWORD_IS_REQUIRED'))
       return
     }
     const value = Math.round(parseFloat(amtStr || '0') * conv)
@@ -1591,7 +1591,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
     setLoading(false)
     setPassword('')
     if (!checkResponse(res)) {
-      setError(res.msg || t('Send failed.'))
+      setError(res.msg || t('SEND_FAILED'))
       return
     }
     onSuccess()
@@ -1602,7 +1602,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
   if (step === 'confirm') {
     return (
       <div>
-        <div className="fs18 mb-3">{t('Confirm Send')}</div>
+        <div className="fs18 mb-3">{t('CONFIRM_SEND')}</div>
         <div className="d-flex align-items-center gap-2 mb-3">
           <img src={logoPath(asset.symbol)} alt={asset.symbol} width={24} height={24} />
           <span className="fw-bold">{asset.unitInfo.conventional.unit}</span>
@@ -1621,7 +1621,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         </div>
         {txFee > 0 && (
           <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Estimated Fee')}:</span>{' '}
+            <span className="text-secondary">{t('ESTIMATED_FEE')}:</span>{' '}
             {formatCoinAtom(txFee, feeUI)}
             {feeRate > 0 && (
               <span className="text-secondary"> (${formatFiat(atomToConventional(txFee, feeUI) * feeRate)})</span>
@@ -1629,10 +1629,10 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
           </div>
         )}
         {feeErr && (
-          <div className="fs12 text-warning mb-2">{t('Fee estimate unavailable')}: {feeErr}</div>
+          <div className="fs12 text-warning mb-2">{t('FEE_ESTIMATE_UNAVAILABLE')}: {feeErr}</div>
         )}
         <div className="mb-2 fs14">
-          <span className="text-secondary">{t('Balance after send')}:</span>{' '}
+          <span className="text-secondary">{t('BALANCE_AFTER_SEND')}:</span>{' '}
           {formatCoinAtom(
             Math.max(0, wallet.balance.available - valueAtoms - (token ? 0 : txFee)),
             ui
@@ -1640,7 +1640,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
         </div>
 
         <div className="mb-3">
-          <label className="form-label fs14">{t('App Password')}</label>
+          <label className="form-label fs14">{t('APP_PASSWORD')}</label>
           <input
             type="password"
             className="form-control form-control-sm"
@@ -1689,7 +1689,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
               : ''}`}
           value={addr}
           onChange={e => { setAddr(e.target.value); validateAddr(e.target.value) }}
-          placeholder={t('Recipient address')}
+          placeholder={t('RECIPIENT_ADDRESS')}
         />
       </div>
 
@@ -1730,7 +1730,7 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
           checked={subtract}
           onChange={e => setSubtract(e.target.checked)}
         />
-        {t('Subtract fee from amount')}
+        {t('SUBTRACT_FEE_FROM_AMOUNT')}
       </label>
 
       {error && <div className="text-danger fs14 mb-2">{error}</div>}
@@ -1822,7 +1822,7 @@ function TxHistoryView ({ assetID, assets, net }: {
           <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setDetailTx(null)}>
             {t('Back')}
           </button>
-          <span className="fs18">{t('Transaction Details')}</span>
+          <span className="fs18">{t('TRANSACTION_DETAILS')}</span>
         </div>
 
         <div className="mb-2 fs14">
@@ -1873,18 +1873,18 @@ function TxHistoryView ({ assetID, assets, net }: {
         {detailTx.bondInfo && (
           <>
             <div className="mb-2 fs14">
-              <span className="text-secondary">{t('Bond ID')}:</span>{' '}
+              <span className="text-secondary">{t('BOND_ID')}:</span>{' '}
               <code className="text-break fs12">{detailTx.bondInfo.bondID}</code>
             </div>
             <div className="mb-2 fs14">
-              <span className="text-secondary">{t('Lock Time')}:</span>{' '}
+              <span className="text-secondary">{t('LOCK_TIME')}:</span>{' '}
               {new Date(detailTx.bondInfo.lockTime * 1000).toLocaleString()}
             </div>
           </>
         )}
         {url && (
           <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary mt-2">
-            {t('View in Explorer')}
+            {t('VIEW_IN_EXPLORER')}
           </a>
         )}
       </div>
@@ -1893,7 +1893,7 @@ function TxHistoryView ({ assetID, assets, net }: {
 
   return (
     <div>
-      <div className="fs18 mb-3">{t('Transaction History')}</div>
+      <div className="fs18 mb-3">{t('TRANSACTION_HISTORY')}</div>
 
       {loading && txs.length === 0 && (
         <div className="text-center py-3">
@@ -1902,7 +1902,7 @@ function TxHistoryView ({ assetID, assets, net }: {
       )}
 
       {!loading && txs.length === 0 && (
-        <div className="text-center py-3 text-secondary fs14">{t('No transactions')}</div>
+        <div className="text-center py-3 text-secondary fs14">{t('NO_TRANSACTIONS')}</div>
       )}
 
       {txs.length > 0 && (
@@ -2019,7 +2019,7 @@ function RecentOrdersView ({ assetID, assets }: {
           to={`${ROUTES.ORDERS}?assets=${assetID}`}
           className="fs14"
         >
-          {t('View All')}
+          {t('VIEW_ALL')}
         </Link>
       </div>
 
@@ -2030,7 +2030,7 @@ function RecentOrdersView ({ assetID, assets }: {
       )}
 
       {!loading && orders.length === 0 && (
-        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('No Recent Activity')}</div>
+        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('NO_RECENT_ACTIVITY')}</div>
       )}
 
       {orders.length > 0 && (
@@ -2098,7 +2098,7 @@ function RecentOrdersView ({ assetID, assets }: {
                     <Link
                       to={`/order/${ord.id}`}
                       className="ico-open fs14 plainlink"
-                      aria-label={t('View order')}
+                      aria-label={t('VIEW_ORDER')}
                     />
                   </td>
                 </tr>
@@ -2181,7 +2181,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
         return
       }
       await fetchUser()
-      setSuccess(t('Wallet locked.'))
+      setSuccess(t('WALLET_LOCKED'))
     } else {
       const res = await postJSON('/api/openwallet', { assetID: asset.id })
       setLoading(false)
@@ -2190,7 +2190,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
         return
       }
       await fetchUser()
-      setSuccess(t('Wallet unlocked.'))
+      setSuccess(t('WALLET_UNLOCKED_MSG'))
     }
   }, [asset.id, fetchUser, t, wallet.open])
 
@@ -2213,7 +2213,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
       setError(res.msg || 'Rescan failed')
       return
     }
-    setSuccess(t('Rescan started.'))
+    setSuccess(t('RESCAN_STARTED_MSG'))
   }, [asset.id, onClose, setActiveForm, setPendingForce, t])
 
   // WP-08: download wallet log file. Vanilla `downloadLogs()` (L2609)
@@ -2246,7 +2246,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
       return
     }
     await fetchUser()
-    setSuccess(t('Settings saved.'))
+    setSuccess(t('SETTINGS_SAVED'))
   }, [asset.id, config, fetchUser, t, wallet.type])
 
   return (
@@ -2265,7 +2265,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
       {!loading && (
         <>
           <div className="mb-3 fs14">
-            <span className="text-secondary">{t('Wallet Type')}:</span> {wallet.type || 'Default'}
+            <span className="text-secondary">{t('WALLET_TYPE')}:</span> {wallet.type || 'Default'}
           </div>
 
           {/* Config key-value pairs */}
@@ -2322,7 +2322,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
           {hasExtraOpts && (
             <>
               <div className="fs15 mt-3 pt-2 border-top text-secondary">
-                {t('other_actions')}
+                {t('OTHER_ACTIONS')}
               </div>
               <div className="d-flex flex-wrap gap-2 mt-2">
                 {isLogFiler && (
@@ -2330,7 +2330,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                     className="btn btn-outline-secondary btn-sm"
                     onClick={handleDownloadLogs}
                   >
-                    {t('wallet_logs')}
+                    {t('WALLET_LOGS')}
                   </button>
                 )}
                 {/* WP-16: Disallow Token button — gated on
@@ -2347,7 +2347,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                       setActiveForm('unapproveTokenTable')
                     }}
                   >
-                    {t('disallow_token')}
+                    {t('DISALLOW_TOKEN')}
                   </button>
                 )}
                 {isRestorer && (
@@ -2358,7 +2358,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                       setActiveForm('exportWalletAuth')
                     }}
                   >
-                    {t('export_wallet')}
+                    {t('EXPORT_WALLET')}
                   </button>
                 )}
                 {isPeerManager && (
@@ -2369,7 +2369,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                       setActiveForm('managePeers')
                     }}
                   >
-                    {t('manage_peers')}
+                    {t('MANAGE_PEERS')}
                   </button>
                 )}
                 {isRescanner && (
@@ -2388,7 +2388,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                       setActiveForm('recoverWallet')
                     }}
                   >
-                    {t('recover')}
+                    {t('RECOVER')}
                   </button>
                 )}
               </div>
@@ -2436,8 +2436,8 @@ function RecoverWalletConfirm ({ assetID, onClose, onForceNeeded }: {
 
   return (
     <div>
-      <div className="fs18 mb-3">{t('recover_wallet')}</div>
-      <div className="fs14 mb-3">{t('recover_warning')}</div>
+      <div className="fs18 mb-3">{t('RECOVER_WALLET')}</div>
+      <div className="fs14 mb-3">{t('RECOVER_WARNING')}</div>
       {error && <div className="text-danger fs14 mb-2">{error}</div>}
       <div className="d-flex gap-2">
         <button
@@ -2454,7 +2454,7 @@ function RecoverWalletConfirm ({ assetID, onClose, onForceNeeded }: {
           onClick={onClose}
           disabled={submitting}
         >
-          {t('cancel')}
+          {t('CANCEL')}
         </button>
       </div>
     </div>
@@ -2490,14 +2490,14 @@ function ExportWalletAuth ({ assetID, onClose, onSuccess }: {
 
   return (
     <div>
-      <div className="fs18 mb-3">{t('export_wallet')}</div>
-      <div className="fs14 mb-2">{t('pw_for_wallet_seed')}</div>
+      <div className="fs18 mb-3">{t('EXPORT_WALLET')}</div>
+      <div className="fs14 mb-2">{t('PW_FOR_WALLET_SEED')}</div>
       {/* Vanilla `wallets.tmpl` L909 uses an HTML span with a
           warning class; we render the same translation string. The
           translation key is full sentence + class markup, but
           react-i18next doesn't interpolate HTML by default so we
           render the raw text. The danger color comes from the wrapper. */}
-      <div className="fs14 text-warning mb-3">{t('export_wallet_disclaimer')}</div>
+      <div className="fs14 text-warning mb-3">{t('EXPORT_WALLET_DISCLAIMER')}</div>
       <div className="mb-3">
         <label className="form-label fs14">{t('Password')}</label>
         <input
@@ -2521,14 +2521,14 @@ function ExportWalletAuth ({ assetID, onClose, onSuccess }: {
         >
           {submitting
             ? '...'
-            : t('Show Me')}
+            : t('SHOW_ME')}
         </button>
         <button
           className="btn btn-secondary ms-auto"
           onClick={onClose}
           disabled={submitting}
         >
-          {t('cancel')}
+          {t('CANCEL')}
         </button>
       </div>
     </div>
@@ -2543,10 +2543,10 @@ function RestoreWalletInfo ({ info, onClose }: {
 
   return (
     <div>
-      <div className="fs18 mb-3">{t('export_wallet')}</div>
-      <div className="fs14 mb-2">{t('export_wallet_msg')}</div>
+      <div className="fs18 mb-3">{t('EXPORT_WALLET')}</div>
+      <div className="fs14 mb-2">{t('EXPORT_WALLET_MSG')}</div>
       <div className="fs14 text-danger mb-3">
-        <strong><u>{t('clipboard_warning')}</u></strong>
+        <strong><u>{t('CLIPBOARD_WARNING')}</u></strong>
       </div>
       <div className="mt-3 border-top pt-3">
         {info.map((wr, idx) => (
@@ -2557,7 +2557,7 @@ function RestoreWalletInfo ({ info, onClose }: {
               <span className="mono fs14 text-break flex-grow-1">{wr.seed}</span>
               <CopyButton text={wr.seed} />
             </div>
-            <div className="fs14 mt-2">{t('Instructions:')}</div>
+            <div className="fs14 mt-2">{t('INSTRUCTIONS')}</div>
             <div className="fs14 text-break" style={{ whiteSpace: 'pre-line' }}>{wr.instructions}</div>
           </div>
         ))}
@@ -2671,7 +2671,7 @@ function ManagePeers ({ assetID, onClose }: {
 
   return (
     <div className="d-flex flex-column">
-      <div className="fs18 mb-3">{t('manage_peers')}</div>
+      <div className="fs18 mb-3">{t('MANAGE_PEERS')}</div>
 
       {loading && (
         <div className="text-center py-3">
@@ -2683,9 +2683,9 @@ function ManagePeers ({ assetID, onClose }: {
         <table className="compact row-border">
           <thead className="unbold fs15">
             <tr>
-              <th>{t('address')}</th>
-              <th>{t('source')}</th>
-              <th>{t('connected')}</th>
+              <th>{t('ADDRESS')}</th>
+              <th>{t('SOURCE')}</th>
+              <th>{t('CONNECTED')}</th>
               <th>{t('Remove')}</th>
             </tr>
           </thead>
@@ -2701,8 +2701,8 @@ function ManagePeers ({ assetID, onClose }: {
                 <td>{sourceLabel(p.source)}</td>
                 <td>
                   {p.connected
-                    ? <span className="ico-check text-success" title={t('connected')}></span>
-                    : <span className="ico-cross text-danger" title={t('Not connected')}></span>}
+                    ? <span className="ico-check text-success" title={t('CONNECTED')}></span>
+                    : <span className="ico-cross text-danger" title={t('NOT_CONNECTED')}></span>}
                 </td>
                 <td>
                   {p.source === PeerSource.UserAdded && (
@@ -2725,7 +2725,7 @@ function ManagePeers ({ assetID, onClose }: {
         <input
           type="text"
           className="form-control form-control-sm flex-grow-1"
-          placeholder={t('enter_peer_address')}
+          placeholder={t('ENTER_PEER_ADDRESS')}
           value={addAddr}
           onChange={e => setAddAddr(e.target.value)}
           onKeyDown={e => {
@@ -2737,7 +2737,7 @@ function ManagePeers ({ assetID, onClose }: {
           onClick={addPeer}
           disabled={submitting || !addAddr.trim()}
         >
-          {t('add_peer')}
+          {t('ADD_PEER')}
         </button>
       </div>
 
@@ -2782,8 +2782,8 @@ function ConfirmForce ({ pending, onClose }: {
 
   return (
     <div>
-      <div className="fs20 mb-2 text-center">{t('wallet_actively_used')}</div>
-      <div className="fs14 mb-3">{t('confirm_force_message')}</div>
+      <div className="fs20 mb-2 text-center">{t('WALLET_ACTIVELY_USED')}</div>
+      <div className="fs14 mb-3">{t('CONFIRM_FORCE_MESSAGE')}</div>
       {error && <div className="text-danger fs14 mb-2">{error}</div>}
       <div className="d-flex gap-2 justify-content-end">
         <button
@@ -2791,7 +2791,7 @@ function ConfirmForce ({ pending, onClose }: {
           onClick={onClose}
           disabled={submitting}
         >
-          {t('cancel')}
+          {t('CANCEL')}
         </button>
         <button
           className="btn btn-primary btn-sm"
@@ -2800,7 +2800,7 @@ function ConfirmForce ({ pending, onClose }: {
         >
           {submitting
             ? '...'
-            : t('confirm')}
+            : t('CONFIRM')}
         </button>
       </div>
     </div>
@@ -2859,7 +2859,7 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
     <div>
       <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
         <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
-        <span>{t('disallow_token')}</span>
+        <span>{t('DISALLOW_TOKEN')}</span>
         <span className="fs14 text-muted"><AssetSymbol asset={asset} /></span>
       </div>
 
@@ -2867,8 +2867,8 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
         <table className="row-border w-100">
           <thead>
             <tr>
-              <th className="ps-3">{t('version')}</th>
-              <th>{t('used_by_dex')}</th>
+              <th className="ps-3">{t('VERSION')}</th>
+              <th>{t('USED_BY_DEX')}</th>
               <th className="pe-3 text-end">{t('Remove')}</th>
             </tr>
           </thead>
@@ -2891,7 +2891,7 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
       )}
 
       {!showTable && (
-        <div className="text-center py-3 grey">{t('no_token_allowances')}</div>
+        <div className="text-center py-3 grey">{t('NO_TOKEN_ALLOWANCES')}</div>
       )}
 
       <div className="d-flex mt-3">
@@ -2946,7 +2946,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
     ;(async () => {
       if (!parentAsset) {
         setFeeLoading(false)
-        setFeeError(t('Invalid source asset'))
+        setFeeError(t('INVALID_SOURCE_ASSET'))
         return
       }
       const res = await postJSON('/api/approvetokenfee', {
@@ -3002,16 +3002,16 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
     <div>
       <div className="fs18 mb-3 text-center d-flex align-items-center justify-content-center gap-2">
         <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
-        <span>{t('disallow_token')}</span>
+        <span>{t('DISALLOW_TOKEN')}</span>
         <span className="fs14 text-muted"><AssetSymbol asset={asset} /></span>
-        <span className="fs14 text-muted">— {t('version')} {version}</span>
+        <span className="fs14 text-muted">— {t('VERSION')} {version}</span>
       </div>
 
       {/* Success state: show tx ID with explorer link. */}
       {txID !== null && (
         <>
           <div className="fs14 word-break-all mb-2">
-            {t('token_unapproval_tx_msg')}
+            {t('TOKEN_UNAPPROVAL_TX_MSG')}
           </div>
           <div className="word-break-all mb-3">
             {txUrl
@@ -3036,7 +3036,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
       {txID === null && (
         <>
           <div className="fs14 mb-3">
-            {t('If you remove the allowance for this version of the swap contract, you will no longer be able to trade until you re-allow it.')}
+            {t('IF_YOU_REMOVE_THE_ALLOWANCE_FOR_THIS_VERSION_OF_THE_SWAP_CONTRACT_YOU_WILL_NO_LONGER_BE_ABLE_TO_TRADE_UNTIL_YOU_RE_ALLOW_IT')}
           </div>
           <div className="fs14 mb-3">
             <span className="text-muted me-1">{t('ESTIMATED_FEES')}:</span>
@@ -3053,7 +3053,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
               onClick={onClose}
               disabled={submitting}
             >
-              {t('cancel')}
+              {t('CANCEL')}
             </button>
             <button
               className="btn btn-primary btn-sm"
@@ -3186,7 +3186,7 @@ function StakingView ({ assetID, assets }: {
       setPurchaseError(res.msg || 'Purchase failed')
       return
     }
-    setPurchaseSuccess(t('Purchased {{n}} ticket(s)', { n }))
+    setPurchaseSuccess(t('PURCHASED_N_TICKET_S', { n }))
   }, [assetID, purchaseN, t])
 
   if (!ui || !wallet) return null
@@ -3220,7 +3220,7 @@ function StakingView ({ assetID, assets }: {
           <span className="pointer hoverbg p-1" onClick={() => setShowVspPicker(false)}>
             <span className="ico-arrowleft me-2"></span>
           </span>
-          <span className="fs18">{t('Select VSP')}</span>
+          <span className="fs18">{t('SELECT_VSP')}</span>
         </div>
 
         {vspLoading && (
@@ -3269,11 +3269,11 @@ function StakingView ({ assetID, assets }: {
           {/* Stats */}
           <div className="flex-stretch-column justify-content-center fs14 flex-grow-1 p-2">
             <div className="d-flex justify-content-between align-items-stretch">
-              <div className="flex-center grey">{t('Active tickets')}</div>
+              <div className="flex-center grey">{t('ACTIVE_TICKETS')}</div>
               <div className="flex-center demi">{stats.ticketCount - stats.votes - stats.revokes}</div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
-              <div className="flex-center grey">{t('Tickets bought')}</div>
+              <div className="flex-center grey">{t('TICKETS_BOUGHT')}</div>
               {/* WP-13: clickable count opens the paginated ticket
                   history modal. Mirrors vanilla `wallets.ts` L404
                   `Doc.bind(page.ticketHistory, 'click', ...)` which
@@ -3281,18 +3281,18 @@ function StakingView ({ assetID, assets }: {
               <div
                 className="flex-center demi pointer hoverbg"
                 onClick={() => setShowTicketHistory(true)}
-                title={t('Ticket History')}
+                title={t('TICKET_HISTORY')}
               >
                 <span className="ico-textfile me-1"></span>
                 <span>{stats.ticketCount}</span>
               </div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
-              <div className="flex-center grey">{t('Total rewards')}</div>
+              <div className="flex-center grey">{t('TOTAL_REWARDS')}</div>
               <div className="flex-center demi">{ui ? formatCoinAtom(stats.totalRewards, ui) : stats.totalRewards} DCR</div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
-              <div className="flex-center grey">{t('Votes cast')}</div>
+              <div className="flex-center grey">{t('VOTES_CAST')}</div>
               <div className="flex-center demi">{stats.votes}</div>
             </div>
             <div className="d-flex justify-content-between align-items-stretch">
@@ -3315,12 +3315,12 @@ function StakingView ({ assetID, assets }: {
             >
               <div className="flex-center fs18">
                 <span className="fs22 ico-check"></span>
-                <span className="ms-2 fs18">{t('Set Votes')}</span>
+                <span className="ms-2 fs18">{t('SET_VOTES')}</span>
               </div>
               <hr className="dashed my-1 w-75" />
               <div className="flex-center flex-column fs14">
-                {agendaCount > 0 && <span>{agendaCount} {t('agendas')}</span>}
-                {tspendCount > 0 && <span>{tspendCount} {t('treasury spends')}</span>}
+                {agendaCount > 0 && <span>{agendaCount} {t('AGENDAS')}</span>}
+                {tspendCount > 0 && <span>{tspendCount} {t('TREASURY_SPENDS')}</span>}
               </div>
             </div>
           )}
@@ -3328,7 +3328,7 @@ function StakingView ({ assetID, assets }: {
 
         {!stakeStatus.vsp && !stakeStatus.isRPC && (
           <div className="flex-center py-1 px-2 fs14 text-warning">
-            {t('Please select a VSP to purchase tickets.')}
+            {t('PLEASE_SELECT_A_VSP_TO_PURCHASE_TICKETS')}
           </div>
         )}
 
@@ -3348,7 +3348,7 @@ function StakingView ({ assetID, assets }: {
             />
             <button className="feature flex-grow-1 me-2" onClick={purchaseTickets} disabled={purchasing}>
               <span className="ico-ticket me-1"></span>
-              {purchasing ? '...' : t('Purchase Tickets')}
+              {purchasing ? '...' : t('PURCHASE_TICKETS')}
             </button>
           </div>
         )}
@@ -3359,13 +3359,13 @@ function StakingView ({ assetID, assets }: {
       {/* Right sidebar: Ticket Price + Vote Reward */}
       <div className="flex-stretch-column border-start">
         <div className="flex-grow-1 flex-center flex-column p-3 border-bottom">
-          <span className="fs14 demi lh1 pb-1">{t('Ticket Price')}</span>
+          <span className="fs14 demi lh1 pb-1">{t('TICKET_PRICE')}</span>
           <span className="d-flex align-items-end">
             <span className="fs18">{ui ? formatCoinAtom(stakeStatus.ticketPrice, ui) : stakeStatus.ticketPrice} DCR</span>
           </span>
         </div>
         <div className="flex-grow-1 flex-center flex-column p-3">
-          <span className="fs14 demi lh1 pb-1">{t('Vote Reward')}</span>
+          <span className="fs14 demi lh1 pb-1">{t('VOTE_REWARD')}</span>
           <span className="d-flex align-items-end">
             <span className="fs18">{ui ? formatCoinAtom(stakeStatus.votingSubsidy, ui) : stakeStatus.votingSubsidy} DCR</span>
           </span>
@@ -3528,7 +3528,7 @@ function TicketHistoryModal ({ assetID, stakeStatus, ui, onClose }: {
     <div>
       <div className="d-flex align-items-center mb-3">
         <span className="ico-ticket fs22 me-2 grey"></span>
-        <span className="fs18">{t('Ticket History')}</span>
+        <span className="fs18">{t('TICKET_HISTORY')}</span>
       </div>
 
       {showTable && (
@@ -3567,7 +3567,7 @@ function TicketHistoryModal ({ assetID, stakeStatus, ui, onClose }: {
       )}
 
       {!showTable && !loading && (
-        <div className="text-center py-3 grey">{t('No tickets to show')}</div>
+        <div className="text-center py-3 grey">{t('NO_TICKETS_TO_SHOW')}</div>
       )}
 
       {loading && (
@@ -3747,9 +3747,9 @@ function SetVotesModal ({
       </div>
 
       {/* TREASURY SPENDS */}
-      <div className="flex-center fs22 mt-3">{t('Treasury Spends')}</div>
+      <div className="flex-center fs22 mt-3">{t('TREASURY_SPENDS')}</div>
       {stakeStatus.stances.tspends.length === 0 && (
-        <div className="text-center py-2 grey">{t('no_treasury_spends_to_show')}</div>
+        <div className="text-center py-2 grey">{t('NO_TREASURY_SPENDS_TO_SHOW')}</div>
       )}
       <div className="flex-stretch-column">
         {stakeStatus.stances.tspends.map(tspend => {
@@ -3805,7 +3805,7 @@ function SetVotesModal ({
       </div>
 
       {/* TREASURY KEYS */}
-      <div className="flex-center fs22 mt-3">{t('Treasury Keys')}</div>
+      <div className="flex-center fs22 mt-3">{t('TREASURY_KEYS')}</div>
       <div className="flex-stretch-column">
         {(stakeStatus.stances.treasuryKeys ?? []).map(keyPolicy => (
           <div key={keyPolicy.key} className="d-flex justify-content-between align-items-stretch py-2 border-bottom">
@@ -3842,16 +3842,16 @@ function SetVotesModal ({
 
       {/* PROPOSALS IN-PROGRESS */}
       <div className="d-flex justify-content-between align-items-center mt-3">
-        <div className="fs22">{t('proposals')}</div>
+        <div className="fs22">{t('PROPOSALS')}</div>
         <Link
           to={ROUTES.PROPOSALS}
           className="fs15 hoverbg pointer ico-open justify-content-end"
         >
-          {' '}{t('view_all')}
+          {' '}{t('VIEW_ALL')}
         </Link>
       </div>
       {proposals.length === 0 && (
-        <div className="text-center py-2 grey">{t('no_proposals_in_progress')}</div>
+        <div className="text-center py-2 grey">{t('NO_PROPOSALS_IN_PROGRESS')}</div>
       )}
       <div className="flex-stretch-column">
         {proposals.map(proposal => (

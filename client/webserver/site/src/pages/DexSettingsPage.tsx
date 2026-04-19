@@ -289,7 +289,7 @@ export default function DexSettingsPage () {
       // DSP-03: canonical `INVALID_COMPS_VALUE` key from `en-US.json`
       // L937, mirroring vanilla `dexsettings.ts` L149
       // `intl.prep(intl.ID_INVALID_COMPS_VALUE)`. The previous
-      // `t('Invalid value')` was a non-existent key.
+      // `t('INVALID_VALUE')` was a non-existent key.
       setPenaltyCompsError(t('INVALID_COMPS_VALUE'))
       return
     }
@@ -374,7 +374,7 @@ export default function DexSettingsPage () {
     if (!checkResponse(res)) {
       setGeneralError(res.msg)
     } else {
-      setCertUpdateMsg(t('Certificate updated'))
+      setCertUpdateMsg(t('CERTIFICATE_UPDATED'))
       setTimeout(() => setCertUpdateMsg(''), 5000)
     }
     if (certFileRef.current) certFileRef.current.value = ''
@@ -393,10 +393,10 @@ export default function DexSettingsPage () {
       case ConnectionStatus.Connected:
         return { text: t('Connected'), connected: true }
       case ConnectionStatus.Disconnected:
-        if (accountDisabled) return { text: t('Account Disabled'), connected: false }
+        if (accountDisabled) return { text: t('ACCOUNT_DISABLED'), connected: false }
         return { text: t('Disconnected'), connected: false }
       case ConnectionStatus.InvalidCert:
-        return { text: `${t('Disconnected')} - ${t('Invalid Certificate')}`, connected: false }
+        return { text: `${t('Disconnected')} - ${t('INVALID_CERTIFICATE')}`, connected: false }
       default:
         return { text: t('Unknown'), connected: false }
     }
@@ -405,9 +405,9 @@ export default function DexSettingsPage () {
   if (!exchange) {
     return (
       <div className="py-3 px-3">
-        <p className="text-danger">{t('Exchange not found')}: {host}</p>
+        <p className="text-danger">{t('EXCHANGE_NOT_FOUND')}: {host}</p>
         <button className="btn btn-secondary" onClick={() => navigate(ROUTES.SETTINGS)}>
-          {t('Back to Settings')}
+          {t('BACK_TO_SETTINGS')}
         </button>
       </div>
     )
@@ -443,11 +443,11 @@ export default function DexSettingsPage () {
         <h5>{t('Reputation')}</h5>
         <div className="d-flex flex-wrap gap-4 mb-2">
           <div>
-            <span className="text-secondary fs14">{t('Target Tier')}: </span>
+            <span className="text-secondary fs14">{t('TARGET_TIER')}: </span>
             <strong>{targetTier}</strong>
           </div>
           <div>
-            <span className="text-secondary fs14">{t('Effective Tier')}: </span>
+            <span className="text-secondary fs14">{t('EFFECTIVE_TIER')}: </span>
             <strong>{effectiveTier}</strong>
           </div>
           <div>
@@ -455,7 +455,7 @@ export default function DexSettingsPage () {
             <strong>{penalties}</strong>
           </div>
           <div>
-            <span className="text-secondary fs14">{t('Bonds Pending Refund')}: </span>
+            <span className="text-secondary fs14">{t('BONDS_PENDING_REFUND')}: </span>
             <strong>{expiredBondsCount}</strong>
           </div>
         </div>
@@ -464,7 +464,7 @@ export default function DexSettingsPage () {
 
       {/* -- Tier management -- */}
       <div className="mb-4">
-        <h5>{t('Trading Tier')}</h5>
+        <h5>{t('TRADING_TIER')}</h5>
         <div className="d-flex flex-wrap gap-2 mb-2">
           {/* DSP-10: disable when account is disabled, mirroring vanilla
               `dexsettings.ts` which disables both the auto-renew toggle
@@ -474,14 +474,14 @@ export default function DexSettingsPage () {
             onClick={openTierForm}
             disabled={accountDisabled}
           >
-            {t('Change Tier')}
+            {t('CHANGE_TIER')}
           </button>
         </div>
       </div>
 
       {/* -- Bond settings -- */}
       <div className="mb-4">
-        <h5>{t('Bond Settings')}</h5>
+        <h5>{t('BOND_SETTINGS')}</h5>
         <div className="form-check mb-2">
           <input
             className="form-check-input"
@@ -492,7 +492,7 @@ export default function DexSettingsPage () {
             disabled={accountDisabled}
           />
           <label className="form-check-label" htmlFor="autoRenewToggle">
-            {t('Auto-renew bonds')}
+            {t('AUTO_RENEW_BONDS')}
           </label>
         </div>
         {renewError && (
@@ -500,7 +500,7 @@ export default function DexSettingsPage () {
         )}
 
         <div className="d-flex align-items-center gap-2 mb-2">
-          <label className="fs14">{t('Penalty compensations')}:</label>
+          <label className="fs14">{t('PENALTY_COMPENSATIONS')}:</label>
           <input
             type="number"
             className="form-control"
@@ -509,7 +509,7 @@ export default function DexSettingsPage () {
             onChange={e => setPenaltyComps(e.target.value)}
             onKeyUp={handlePenaltyCompsKeyUp}
           />
-          <span className="fs12 text-secondary">{t('Press Enter to save')}</span>
+          <span className="fs12 text-secondary">{t('PRESS_ENTER_TO_SAVE')}</span>
         </div>
         {penaltyCompsError && (
           <div className="fs14 text-danger mb-2">{penaltyCompsError}</div>
@@ -518,10 +518,10 @@ export default function DexSettingsPage () {
 
       {/* -- Account actions -- */}
       <div className="mb-4">
-        <h5>{t('Account Actions')}</h5>
+        <h5>{t('ACCOUNT_ACTIONS')}</h5>
         <div className="d-flex flex-wrap gap-2">
           <button className="btn btn-outline-secondary" onClick={exportAccount}>
-            {t('Export Account')}
+            {t('EXPORT_ACCOUNT')}
           </button>
           <button
             className="btn btn-outline-secondary"
@@ -535,11 +535,11 @@ export default function DexSettingsPage () {
             }}
           >
             {accountDisabled
-? t('Enable Account')
-: t('Disable Account')}
+? t('ENABLE_ACCOUNT')
+: t('DISABLE_ACCOUNT')}
           </button>
           <button className="btn btn-outline-secondary" onClick={() => certFileRef.current?.click()}>
-            {t('Update TLS Certificate')}
+            {t('UPDATE_TLS_CERTIFICATE')}
           </button>
           <input
             ref={certFileRef}
@@ -548,7 +548,7 @@ export default function DexSettingsPage () {
             onChange={handleCertFileChange}
           />
           <button className="btn btn-outline-secondary" onClick={() => setShowUpdateHost(true)}>
-            {t('Update DEX Host')}
+            {t('UPDATE_DEX_HOST')}
           </button>
         </div>
         {exportError && (
@@ -624,7 +624,7 @@ export default function DexSettingsPage () {
           avoid introducing new fall-through i18n keys for what is
           already universally understood. */}
       <FormOverlay show={pendingPenaltyComps !== null} onClose={cancelPenaltyCompsUpdate}>
-        <div className="fs20 mb-3">{t('Penalty compensations')}</div>
+        <div className="fs20 mb-3">{t('PENALTY_COMPENSATIONS')}</div>
         <p className="fs15">
           <strong>{appliedPenaltyComps}</strong> → <strong>{pendingPenaltyComps}</strong>
         </p>
@@ -640,9 +640,9 @@ export default function DexSettingsPage () {
 
       {/* -- Disable account confirmation overlay -- */}
       <FormOverlay show={showDisableAccount} onClose={() => setShowDisableAccount(false)}>
-        <div className="fs20 mb-3">{t('Disable Account')}</div>
+        <div className="fs20 mb-3">{t('DISABLE_ACCOUNT')}</div>
         <p className="fs15">
-          {t('Are you sure you want to disable your account on')} <strong>{host}</strong>?
+          {t('ARE_YOU_SURE_YOU_WANT_TO_DISABLE_YOUR_ACCOUNT_ON')} <strong>{host}</strong>?
         </p>
         {disableError && (
           <div className="fs15 text-danger mb-2">{disableError}</div>

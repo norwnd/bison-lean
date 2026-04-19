@@ -59,7 +59,7 @@ export const CertificatePicker = forwardRef<CertificatePickerHandle>(
         )
 : (
           <button className="btn btn-sm btn-primary" onClick={triggerFileSelect}>
-            {t('TLS Certificate')}
+            {t('TLS_CERTIFICATE')}
           </button>
         )}
       </div>

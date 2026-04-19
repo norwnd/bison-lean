@@ -217,14 +217,14 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
       {guideLink && (
         <div className="mb-2">
           <a href={guideLink} target="_blank" rel="noopener noreferrer" className="fs14">
-            {t('Wallet setup guide')}
+            {t('WALLET_SETUP_GUIDE')}
           </a>
         </div>
       )}
 
       {/* Settings header */}
       {showSettingsHeader && (
-        <div className="fs15 fw-bold mb-2">{t('Wallet Settings')}</div>
+        <div className="fs15 fw-bold mb-2">{t('WALLET_SETTINGS')}</div>
       )}
 
       {/* Wallet config sub-form */}
@@ -240,7 +240,7 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
       {/* Password input */}
       {showPasswordBox && (
         <div className="mb-2">
-          <label htmlFor="newWalletPass">{t('Wallet Password')}</label>
+          <label htmlFor="newWalletPass">{t('WALLET_PASSWORD')}</label>
           <input
             id="newWalletPass"
             type="password"

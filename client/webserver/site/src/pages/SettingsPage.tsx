@@ -377,7 +377,7 @@ export default function SettingsPage () {
       // SP-03: use canonical `NO_CODE_PROVIDED` key from `en-US.json`
       // L1155 (matches vanilla `settings.ts` L507
       // `intl.prep(intl.ID_NO_CODE_PROVIDED)`). The previous
-      // `t('No code provided')` was a non-existent key and fell
+      // `t('NO_CODE_PROVIDED')` was a non-existent key and fell
       // through to the literal English string.
       setGameCodeError(t('NO_CODE_PROVIDED'))
       return
@@ -487,7 +487,7 @@ export default function SettingsPage () {
             onChange={toggleDarkMode}
           />
           <label className="form-check-label" htmlFor="darkModeToggle">
-            {t('Dark Mode')}
+            {t('DARK_MODE')}
           </label>
         </div>
         <div className="form-check mb-2">
@@ -499,17 +499,17 @@ export default function SettingsPage () {
             onChange={togglePopups}
           />
           <label className="form-check-label" htmlFor="showPopupsToggle">
-            {t('Show popups')}
+            {t('SHOW_POPUPS')}
           </label>
         </div>
       </div>
 
       {/* -- Registered DEXes -- */}
       <div className="mb-4">
-        <h5>{t('Registered DEXes')}</h5>
+        <h5>{t('REGISTERED_DEXES')}</h5>
         {exchangeList.length === 0
 ? (
-          <p className="text-secondary">{t('No DEXes registered')}</p>
+          <p className="text-secondary">{t('NO_DEXES_REGISTERED')}</p>
         )
 : (
           <div className="mb-2">
@@ -526,14 +526,14 @@ export default function SettingsPage () {
           </div>
         )}
         <button className="btn btn-primary" onClick={() => { setRegStep('dexAddress'); setShowAddDex(true) }}>
-          {t('Add a DEX')}
+          {t('ADD_A_DEX')}
         </button>
       </div>
 
       {/* -- Fiat rate sources -- */}
       {fiatRateSources.length > 0 && (
         <div className="mb-4">
-          <h5>{t('Fiat Exchange Rate Sources')}</h5>
+          <h5>{t('FIAT_EXCHANGE_RATE_SOURCES')}</h5>
           {fiatRateSources.map((src: any) => (
             <div key={src.id} className="form-check mb-1">
               <input
@@ -557,36 +557,36 @@ export default function SettingsPage () {
         <h5>{t('Security')}</h5>
         <div className="d-flex flex-wrap gap-2">
           <button className="btn btn-outline-secondary" onClick={() => setShowChangePW(true)}>
-            {t('Change App Password')}
+            {t('CHANGE_APP_PASSWORD')}
           </button>
           <button className="btn btn-outline-secondary" onClick={() => setShowResetPW(true)}>
-            {t('Reset App Password')}
+            {t('RESET_APP_PASSWORD')}
           </button>
         </div>
       </div>
 
       {/* -- Account management -- */}
       <div className="mb-4">
-        <h5>{t('Account Management')}</h5>
+        <h5>{t('ACCOUNT_MANAGEMENT')}</h5>
         <div className="d-flex flex-wrap gap-2">
           <button className="btn btn-outline-secondary" onClick={() => { setImportFile(null); setImportError(''); setShowImportAccount(true) }}>
-            {t('Import Account')}
+            {t('IMPORT_ACCOUNT')}
           </button>
           <button className="btn btn-outline-secondary" onClick={() => { setExportSeedResult(null); setExportSeedError(''); setExportSeedPW(''); setShowExportSeed(true) }}>
-            {t('Export Seed')}
+            {t('EXPORT_SEED')}
           </button>
           <button className="btn btn-outline-secondary" onClick={exportLogs}>
-            {t('Export Logs')}
+            {t('EXPORT_LOGS')}
           </button>
         </div>
       </div>
 
       {/* -- Desktop notifications -- */}
       <div className="mb-4">
-        <h5>{t('Desktop Notifications')}</h5>
+        <h5>{t('DESKTOP_NOTIFICATIONS')}</h5>
         {ntfnPermissionBlocked
 ? (
-          <p className="text-danger fs14">{t('Browser notifications are blocked. Please enable them in your browser settings.')}</p>
+          <p className="text-danger fs14">{t('BROWSER_NOTIFICATIONS_ARE_BLOCKED_PLEASE_ENABLE_THEM_IN_YOUR_BROWSER_SETTINGS')}</p>
         )
 : (
           <>
@@ -599,7 +599,7 @@ export default function SettingsPage () {
                 onChange={toggleBrowserNtfn}
               />
               <label className="form-check-label" htmlFor="browserNtfnEnabled">
-                {t('Enable browser notifications')}
+                {t('ENABLE_BROWSER_NOTIFICATIONS')}
               </label>
             </div>
             {ntfnSettings.browserNtfnEnabled && (
@@ -626,31 +626,31 @@ export default function SettingsPage () {
 
       {/* -- Companion app -- */}
       <div className="mb-4">
-        <h5>{t('Companion App')}</h5>
+        <h5>{t('COMPANION_APP')}</h5>
         <button className="btn btn-outline-secondary" onClick={() => setShowCompanionApp(true)}>
-          {t('Companion App Settings')}
+          {t('COMPANION_APP_SETTINGS')}
         </button>
       </div>
 
       {/* -- Game code -- */}
       <div className="mb-4">
-        <h5>{t('Game Code')}</h5>
+        <h5>{t('GAME_CODE')}</h5>
         <button className="btn btn-outline-secondary" onClick={() => setShowGameCode(true)}>
-          {t('Redeem Game Code')}
+          {t('REDEEM_GAME_CODE')}
         </button>
       </div>
 
       {/* -- Order history -- */}
       <div className="mb-4">
-        <h5>{t('Order History')}</h5>
+        <h5>{t('ORDER_HISTORY')}</h5>
         <button className="btn btn-outline-secondary" onClick={() => navigate(ROUTES.ORDERS)}>
-          {t('view')}
+          {t('VIEW')}
         </button>
       </div>
 
       {/* -- Sign out -- */}
       <div className="mb-4">
-        <h5>{t('Sign Out')}</h5>
+        <h5>{t('SIGN_OUT')}</h5>
         {signOutError && (
           <div className="fs15 text-danger mb-2">{signOutError}</div>
         )}
@@ -659,7 +659,7 @@ export default function SettingsPage () {
           onClick={handleSignOut}
           disabled={signOutLoading}
         >
-          {signOutLoading ? '...' : t('Sign Out')}
+          {signOutLoading ? '...' : t('SIGN_OUT')}
         </button>
       </div>
 
@@ -713,9 +713,9 @@ export default function SettingsPage () {
 
       {/* -- Change password overlay -- */}
       <FormOverlay show={showChangePW} onClose={closeChangePW}>
-        <div className="fs20 mb-3">{t('Change App Password')}</div>
+        <div className="fs20 mb-3">{t('CHANGE_APP_PASSWORD')}</div>
         <div className="mb-2">
-          <label className="form-label">{t('Current Password')}</label>
+          <label className="form-label">{t('CURRENT_PASSWORD')}</label>
           <input
             type="password"
             className="form-control"
@@ -726,7 +726,7 @@ export default function SettingsPage () {
           />
         </div>
         <div className="mb-2">
-          <label className="form-label">{t('New Password')}</label>
+          <label className="form-label">{t('NEW_PASSWORD')}</label>
           <input
             type="password"
             className="form-control"
@@ -736,7 +736,7 @@ export default function SettingsPage () {
           />
         </div>
         <div className="mb-2">
-          <label className="form-label">{t('Confirm New Password')}</label>
+          <label className="form-label">{t('CONFIRM_NEW_PASSWORD')}</label>
           <input
             type="password"
             className="form-control"
@@ -768,7 +768,7 @@ export default function SettingsPage () {
 
       {/* -- Import account overlay -- */}
       <FormOverlay show={showImportAccount} onClose={closeImportAccount}>
-        <div className="fs20 mb-3">{t('Import Account')}</div>
+        <div className="fs20 mb-3">{t('IMPORT_ACCOUNT')}</div>
         <div className="mb-3">
           <input
             ref={accountFileRef}
@@ -820,9 +820,9 @@ export default function SettingsPage () {
         {!exportSeedResult
 ? (
           <>
-            <div className="fs20 mb-3">{t('Export Seed')}</div>
+            <div className="fs20 mb-3">{t('EXPORT_SEED')}</div>
             <div className="mb-2">
-              <label className="form-label">{t('App Password')}</label>
+              <label className="form-label">{t('APP_PASSWORD')}</label>
               <input
                 type="password"
                 className="form-control"
@@ -850,7 +850,7 @@ export default function SettingsPage () {
         )
 : (
           <>
-            <div className="fs20 mb-3">{t('Your Seed')}</div>
+            <div className="fs20 mb-3">{t('YOUR_SEED')}</div>
             {exportSeedResult.legacy && (
               <pre className="border rounded p-2 text-break user-select-all fs14">
                 {exportSeedResult.legacy}
@@ -870,11 +870,11 @@ export default function SettingsPage () {
 
       {/* -- Companion app overlay -- */}
       <FormOverlay show={showCompanionApp} onClose={closeCompanionApp}>
-        <div className="fs20 mb-3">{t('Companion App')}</div>
+        <div className="fs20 mb-3">{t('COMPANION_APP')}</div>
         {isPaired
 ? (
           <div>
-            <p className="fs15 text-success mb-2">{t('Companion app is paired')}</p>
+            <p className="fs15 text-success mb-2">{t('COMPANION_APP_IS_PAIRED')}</p>
             <button className="btn btn-outline-danger w-100" onClick={unpairCompanionApp}>
               {t('Unpair')}
             </button>
@@ -885,14 +885,14 @@ export default function SettingsPage () {
             {onionUrl !== ''
 ? (
               <div>
-                <p className="fs14 mb-2">{t('Scan the QR code with the companion app.')}</p>
+                <p className="fs14 mb-2">{t('SCAN_THE_QR_CODE_WITH_THE_COMPANION_APP')}</p>
                 <div className="text-center mb-2">
                   <img src="/generatecompanionappqrcode" alt="QR code" style={{ maxWidth: '200px' }} />
                 </div>
               </div>
             )
 : (
-              <p className="fs15 text-warning">{t('Tor is not enabled. Enable Tor to use the companion app.')}</p>
+              <p className="fs15 text-warning">{t('TOR_IS_NOT_ENABLED_ENABLE_TOR_TO_USE_THE_COMPANION_APP')}</p>
             )}
           </div>
         )}
@@ -900,7 +900,7 @@ export default function SettingsPage () {
 
       {/* -- Game code overlay -- */}
       <FormOverlay show={showGameCode} onClose={closeGameCode}>
-        <div className="fs20 mb-3">{t('Redeem Game Code')}</div>
+        <div className="fs20 mb-3">{t('REDEEM_GAME_CODE')}</div>
         <div className="mb-2">
           <label className="form-label">{t('Code')}</label>
           <input
@@ -912,7 +912,7 @@ export default function SettingsPage () {
           />
         </div>
         <div className="mb-2">
-          <label className="form-label">{t('Message (optional)')}</label>
+          <label className="form-label">{t('MESSAGE_OPTIONAL')}</label>
           <input
             type="text"
             className="form-control"
@@ -946,7 +946,7 @@ export default function SettingsPage () {
           const explorerHref = explorerURL(DCRAssetID, gameCodeSuccess.coinString, net)
           return (
             <div className="mt-3 pt-3 border-top">
-              <div className="fs15 text-success mb-2">{t('Game code redeemed')}</div>
+              <div className="fs15 text-success mb-2">{t('GAME_CODE_REDEEMED')}</div>
               <div className="fs14 mb-1">{t('Transaction')}</div>
               {explorerHref
                 ? (
@@ -980,7 +980,7 @@ export default function SettingsPage () {
         show={showForceSignOut}
         onClose={() => { if (!signOutLoading) setShowForceSignOut(false) }}
       >
-        <div className="fs20 mb-3">{t('Sign Out')}</div>
+        <div className="fs20 mb-3">{t('SIGN_OUT')}</div>
         <div className="fs15 mb-3 text-danger">{t('FORCE_SIGN_OUT_WARNING')}</div>
         <div className="d-flex gap-2">
           <button
@@ -995,7 +995,7 @@ export default function SettingsPage () {
             onClick={handleForceSignOut}
             disabled={signOutLoading}
           >
-            {signOutLoading ? '...' : t('Sign Out')}
+            {signOutLoading ? '...' : t('SIGN_OUT')}
           </button>
         </div>
       </FormOverlay>

@@ -132,14 +132,14 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
         {earlyAcceleration.wasAcceleration
 ? (
           <div className="fs15 mb-2">
-            {t('Your last acceleration was only')} {minutesPast} {t('minutes ago.')}
-            {' '}{t('Are you sure you want to accelerate again?')}
+            {t('YOUR_LAST_ACCELERATION_WAS_ONLY')} {minutesPast} {t('MINUTES_AGO')}
+            {' '}{t('ARE_YOU_SURE_YOU_WANT_TO_ACCELERATE_AGAIN')}
           </div>
         )
 : (
           <div className="fs15 mb-2">
-            {t('The swap transaction was broadcast only')} {minutesPast} {t('minutes ago.')}
-            {' '}{t('Are you sure you want to accelerate?')}
+            {t('THE_SWAP_TRANSACTION_WAS_BROADCAST_ONLY')} {minutesPast} {t('MINUTES_AGO')}
+            {' '}{t('ARE_YOU_SURE_YOU_WANT_TO_ACCELERATE')}
           </div>
         )}
         <div className="d-flex gap-2">
@@ -161,10 +161,10 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
   if (showSuccess) {
     return (
       <div className="px-3 py-2">
-        <div className="fs18 text-success mb-2">{t('Acceleration Successful')}</div>
+        <div className="fs18 text-success mb-2">{t('ACCELERATION_SUCCESSFUL')}</div>
         {txID && (
           <div className="fs14 mb-2">
-            <strong>{t('Transaction ID')}:</strong>
+            <strong>{t('TRANSACTION_ID')}:</strong>
             <div className="text-break user-select-all">{txID}</div>
           </div>
         )}
@@ -184,19 +184,19 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
   // Main configuration view.
   return (
     <div className="px-3 py-2">
-      <div className="fs20 mb-2">{t('Accelerate Order')}</div>
+      <div className="fs20 mb-2">{t('ACCELERATE_ORDER')}</div>
 
       <div className="fs14 mb-1">
-        {t('Average fee rate')}: {swapRate} {currencyUnit}
+        {t('AVERAGE_FEE_RATE')}: {swapRate} {currencyUnit}
       </div>
       <div className="fs14 mb-2">
-        {t('Current fee rate')}: {currentFeeRate} {currencyUnit}
+        {t('CURRENT_FEE_RATE')}: {currentFeeRate} {currencyUnit}
       </div>
 
       {/* Fee rate slider */}
       {suggestedRange && (
         <div className="mb-3">
-          <label className="fs14 mb-1">{t('New fee rate')}</label>
+          <label className="fs14 mb-1">{t('NEW_FEE_RATE')}</label>
           <input
             type="range"
             className="form-range"
@@ -216,8 +216,8 @@ export function AccelerateOrderForm ({ order, onSuccess }: Props) {
       {/* Fee estimate */}
       {showFeeEstimate && (
         <div className="fs14 mb-2">
-          <div>{t('Selected rate')}: {feeRateEstimate}</div>
-          <div>{t('Estimated fee')}: {feeEstimate}</div>
+          <div>{t('SELECTED_RATE')}: {feeRateEstimate}</div>
+          <div>{t('ESTIMATED_FEE')}: {feeEstimate}</div>
         </div>
       )}
 

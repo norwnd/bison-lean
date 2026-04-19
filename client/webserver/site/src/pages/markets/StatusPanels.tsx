@@ -78,15 +78,15 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
       {/* Not registered notice (viewOnly DEX). Gated on loaderMsgText per vanilla. */}
       {!loaderMsgText && statusPanel.kind === 'notRegistered' && (
         <div>
-          <div className="p-3 flex-center fs17 grey">{t('create_account_to_trade')}</div>
+          <div className="p-3 flex-center fs17 grey">{t('CREATE_ACCOUNT_TO_TRADE')}</div>
           <div className="border-top border-bottom flex-center p-2">
-            <p className="text-center fs14 p-2 m-0">{t('need_to_register_msg', { host: selected.host })}</p>
+            <p className="text-center fs14 p-2 m-0">{t('NEED_TO_REGISTER_MSG', { host: selected.host })}</p>
             <button
               type="button"
               className="text-nowrap"
               onClick={() => navigate(`/register?host=${encodeURIComponent(selected.host)}`)}
             >
-              {t('Create Account')}
+              {t('CREATE_ACCOUNT')}
             </button>
           </div>
         </div>
@@ -97,8 +97,8 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
         <div className="p-2 mt-2">
           <div className="p-0 w-100">
             <div className="d-flex flex-column justify-content-center align-items-center">
-              <p className="title">{t('posting_bonds_shortly')}</p>
-              <p>{t('bond_creation_pending_msg', { host: selected.host })}</p>
+              <p className="title">{t('POSTING_BONDS_SHORTLY')}</p>
+              <p>{t('BOND_CREATION_PENDING_MSG', { host: selected.host })}</p>
             </div>
           </div>
         </div>
@@ -110,7 +110,7 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
           <div className="p-0 w-100">
             <div className="d-flex flex-column justify-content-center align-items-center">
               <span className="title">{statusPanel.regStatusTitle}</span>
-              <p>{t('reg_status_msg', { host: selected.host })}</p>
+              <p>{t('REG_STATUS_MSG', { host: selected.host })}</p>
               <span>{statusPanel.regStatusConfs}</span>
             </div>
           </div>
@@ -120,10 +120,10 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
       {/* MP-31: Penalty-comps required to trade. */}
       {statusPanel.kind === 'penaltyCompsRequired' && (
         <div className="p-2 mt-2">
-          <div className="p-3 flex-center fs16 grey">{t('action_required_to_trade')}</div>
+          <div className="p-3 flex-center fs16 grey">{t('ACTION_REQUIRED_TO_TRADE')}</div>
           <div className="border-top border-bottom flex-center p-2">
             <p className="text-center fs14 p-2 m-0">
-              {t('set_penalty_comps', {
+              {t('SET_PENALTY_COMPS', {
                 penalties: statusPanel.penalties,
                 penaltyComps: statusPanel.penaltyComps,
               })}{' '}
@@ -131,7 +131,7 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
                 className="fs15 hoverbg subtlelink pointer"
                 onClick={() => navigate(`/dexsettings/${encodeURIComponent(selected.host)}`)}
               >
-                {t('update_penalty_comps')}
+                {t('UPDATE_PENALTY_COMPS')}
               </a>
             </p>
           </div>
@@ -141,15 +141,15 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
       {/* MP-32: Bond required -- tier 0, no target tier set. */}
       {statusPanel.kind === 'bondRequired' && (
         <div className="p-2 mt-2">
-          <div className="p-3 flex-center fs17 grey">{t('action_required_to_trade')}</div>
+          <div className="p-3 flex-center fs17 grey">{t('ACTION_REQUIRED_TO_TRADE')}</div>
           <div className="border-top border-bottom flex-center p-2">
             <p className="text-center fs16 p-2 m-0">
-              {t('acct_tier_post_bond', { tier: statusPanel.effectiveTier })}{' '}
+              {t('ACCT_TIER_POST_BOND', { tier: statusPanel.effectiveTier })}{' '}
               <a
                 className="fs16 hoverbg subtlelink pointer"
                 onClick={() => navigate(`/dexsettings/${encodeURIComponent(selected.host)}`)}
               >
-                {t('enable_bond_maintenance')}
+                {t('ENABLE_BOND_MAINTENANCE')}
               </a>
             </p>
           </div>

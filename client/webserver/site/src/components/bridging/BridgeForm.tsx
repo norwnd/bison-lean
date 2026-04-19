@@ -126,7 +126,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
     if (!sourceAsset) {
       return {
         atomic: null as number | null,
-        error: amount ? t('Invalid amount') : null
+        error: amount ? t('INVALID_AMOUNT') : null
       }
     }
     return parseConventionalToAtomic(amount, sourceAsset.unitInfo)
@@ -136,10 +136,10 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
     if (!amount) return null
     if (parsedAmount.error) return parsedAmount.error
     const atomic = parsedAmount.atomic ?? 0
-    if (atomic <= 0) return t('Amount must be greater than 0')
+    if (atomic <= 0) return t('AMOUNT_MUST_BE_GREATER_THAN_0')
     if (atomic > availableAtomic) {
       const maxStr = sourceAsset ? formatCoinAtom(availableAtomic, sourceAsset.unitInfo) : ''
-      return t('Insufficient balance (max: {{max}})', { max: maxStr })
+      return t('INSUFFICIENT_BALANCE_MAX_MAX', { max: maxStr })
     }
     // When bridging a base asset, leave room for the initiation fee.
     if (sourceAsset && !sourceAsset.token && feesAndLimits) {
@@ -148,17 +148,17 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
       if (atomic + initiationFee > availableAtomic) {
         const maxBridgeable = calculateMaxBridgeableAmount(sourceAssetID, availableAtomic, feesAndLimits, assets)
         const maxStr = formatCoinAtom(maxBridgeable, sourceAsset.unitInfo)
-        return t('Must reserve funds for fees (max bridgeable: {{max}})', { max: maxStr })
+        return t('MUST_RESERVE_FUNDS_FOR_FEES_MAX_BRIDGEABLE_MAX', { max: maxStr })
       }
     }
     if (feesAndLimits?.hasLimits && sourceAsset) {
       if (atomic < feesAndLimits.minLimit) {
         const minStr = formatCoinAtom(feesAndLimits.minLimit, sourceAsset.unitInfo)
-        return t('Amount is below minimum ({{min}})', { min: minStr })
+        return t('AMOUNT_IS_BELOW_MINIMUM_MIN', { min: minStr })
       }
       if (atomic > feesAndLimits.maxLimit) {
         const maxStr = formatCoinAtom(feesAndLimits.maxLimit, sourceAsset.unitInfo)
-        return t('Amount is above maximum ({{max}})', { max: maxStr })
+        return t('AMOUNT_IS_ABOVE_MAXIMUM_MAX', { max: maxStr })
       }
     }
     return null
@@ -179,7 +179,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         if (!fees.ok) {
           dispatch({
             type: 'PATCH',
-            patch: { error: t('Failed to load bridge info: {{err}}', { err: fees.msg ?? 'unknown error' }) }
+            patch: { error: t('FAILED_TO_LOAD_BRIDGE_INFO_ERR', { err: fees.msg ?? 'unknown error' }) }
           })
           return
         }
@@ -194,7 +194,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         if (cancelled || reqID !== loadFeesAndApprovalReq.current) return
         dispatch({
           type: 'PATCH',
-          patch: { error: t('Failed to load bridge info: {{err}}', { err: String(e) }) }
+          patch: { error: t('FAILED_TO_LOAD_BRIDGE_INFO_ERR', { err: String(e) }) }
         })
       }
     })()
@@ -245,13 +245,13 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
       } else {
         dispatch({
           type: 'PATCH',
-          patch: { error: resp.msg || t('Approval failed') }
+          patch: { error: resp.msg || t('APPROVAL_FAILED') }
         })
       }
     } catch (e) {
       dispatch({
         type: 'PATCH',
-        patch: { error: t('Approval error: {{err}}', { err: String(e) }) }
+        patch: { error: t('APPROVAL_ERROR_ERR', { err: String(e) }) }
       })
     }
     dispatch({ type: 'PATCH', patch: { submitting: false } })
@@ -259,14 +259,14 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
 
   const handleBridge = useCallback(async () => {
     if (!sourceAsset) {
-      dispatch({ type: 'PATCH', patch: { error: t('Invalid source asset') } })
+      dispatch({ type: 'PATCH', patch: { error: t('INVALID_SOURCE_ASSET') } })
       return
     }
     const { atomic, error: amtErr } = parseConventionalToAtomic(amount, sourceAsset.unitInfo)
     if (amtErr || atomic === null || atomic <= 0) {
       dispatch({
         type: 'PATCH',
-        patch: { error: amtErr || t('Invalid amount') }
+        patch: { error: amtErr || t('INVALID_AMOUNT') }
       })
       return
     }
@@ -299,13 +299,13 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
       } else {
         dispatch({
           type: 'PATCH',
-          patch: { error: resp.msg || t('Bridge failed') }
+          patch: { error: resp.msg || t('BRIDGE_FAILED') }
         })
       }
     } catch (e) {
       dispatch({
         type: 'PATCH',
-        patch: { error: t('Bridge error: {{err}}', { err: String(e) }) }
+        patch: { error: t('BRIDGE_ERROR_ERR', { err: String(e) }) }
       })
     }
     dispatch({ type: 'PATCH', patch: { submitting: false } })
@@ -380,9 +380,9 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
         {feesAndLimits?.hasLimits && sourceAsset && (
           <div
             className="d-flex align-items-center fs14 text-muted mt-2"
-            title={t('This bridge does not support bridging amounts outside of these limits.')}
+            title={t('THIS_BRIDGE_DOES_NOT_SUPPORT_BRIDGING_AMOUNTS_OUTSIDE_OF_THESE_LIMITS')}
           >
-            <span className="me-1">{t('Bridge Limits')}:</span>
+            <span className="me-1">{t('BRIDGE_LIMITS')}:</span>
             <span>
               {formatCoinAtom(feesAndLimits.minLimit, sourceAsset.unitInfo)} - {formatCoinAtom(feesAndLimits.maxLimit, sourceAsset.unitInfo)}
             </span>
@@ -425,7 +425,7 @@ function BridgeForm ({ networkAssetIDs }: BridgeFormProps) {
                   const maxStr = formatCoinAtom(maxBridgeable, sourceAsset.unitInfo)
                   return (
                     <span className="ms-2">
-                      ({t('Max bridgeable')}: {maxStr})
+                      ({t('MAX_BRIDGEABLE')}: {maxStr})
                     </span>
                   )
                 }

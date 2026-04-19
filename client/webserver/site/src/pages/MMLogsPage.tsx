@@ -366,12 +366,12 @@ export default function MMLogsPage () {
             <h5 className="card-title">{t('Performance')}</h5>
             <div className="row mb-2">
               <div className="col-sm-6">
-                <div className="text-secondary small">{t('Start Time')}</div>
+                <div className="text-secondary small">{t('START_TIME')}</div>
                 <div>{new Date(startTime * 1000).toLocaleString()}</div>
               </div>
               {endTime > 0 && (
                 <div className="col-sm-6">
-                  <div className="text-secondary small">{t('End Time')}</div>
+                  <div className="text-secondary small">{t('END_TIME')}</div>
                   <div>{new Date(endTime * 1000).toLocaleString()}</div>
                 </div>
               )}
@@ -383,7 +383,7 @@ export default function MMLogsPage () {
                   <th>{t('Asset')}</th>
                   <th>{t('Diff')}</th>
                   <th>{t('USD')}</th>
-                  <th>{t('Fiat Rate')}</th>
+                  <th>{t('FIAT_RATE')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -406,7 +406,7 @@ export default function MMLogsPage () {
               </tbody>
             </table>
             <div className="fw-bold">
-              {t('Total P/L')}: ${formatFiat(profitLoss.profit)}
+              {t('TOTAL_P_L')}: ${formatFiat(profitLoss.profit)}
             </div>
           </div>
         </div>
@@ -420,7 +420,7 @@ export default function MMLogsPage () {
             checked={filters.dexSells}
             onChange={e => setFilters(prev => ({ ...prev, dexSells: e.target.checked }))}
           />
-          {t('DEX Sells')}
+          {t('DEX_SELLS')}
         </label>
         <label className="d-flex align-items-center gap-1">
           <input
@@ -428,7 +428,7 @@ export default function MMLogsPage () {
             checked={filters.dexBuys}
             onChange={e => setFilters(prev => ({ ...prev, dexBuys: e.target.checked }))}
           />
-          {t('DEX Buys')}
+          {t('DEX_BUYS')}
         </label>
         <label className="d-flex align-items-center gap-1">
           <input
@@ -436,7 +436,7 @@ export default function MMLogsPage () {
             checked={filters.cexSells}
             onChange={e => setFilters(prev => ({ ...prev, cexSells: e.target.checked }))}
           />
-          {t('CEX Sells')}
+          {t('CEX_SELLS')}
         </label>
         <label className="d-flex align-items-center gap-1">
           <input
@@ -444,7 +444,7 @@ export default function MMLogsPage () {
             checked={filters.cexBuys}
             onChange={e => setFilters(prev => ({ ...prev, cexBuys: e.target.checked }))}
           />
-          {t('CEX Buys')}
+          {t('CEX_BUYS')}
         </label>
         <label className="d-flex align-items-center gap-1">
           <input
@@ -479,7 +479,7 @@ export default function MMLogsPage () {
             <tr>
               <th>{t('Time')}</th>
               <th>{t('Type')}</th>
-              <th>{t('Event ID')}</th>
+              <th>{t('EVENT_ID')}</th>
               {mktAssets.map(a => (
                 <th key={a.id}><AssetSymbol asset={a} /> {t('Delta')}</th>
               ))}
@@ -520,14 +520,14 @@ export default function MMLogsPage () {
             {events.length === 0 && !loading && (
               <tr>
                 <td colSpan={mktAssets.length + 5} className="text-center text-secondary py-3">
-                  {t('No events found.')}
+                  {t('NO_EVENTS_FOUND')}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
         {loading && (
-          <div className="text-center py-2 text-secondary">{t('Loading...')}</div>
+          <div className="text-center py-2 text-secondary">{t('LOADING')}</div>
         )}
       </div>
 
@@ -618,7 +618,7 @@ function BridgeFees ({ assetID, bridgeTx, assets, t }: BridgeFeesProps) {
           <tr key={id}>
             {/* Only the first row labels the section, matching vanilla
                 `Doc.setVis(i === 0, tmpl.label)`. */}
-            <td className="text-secondary">{i === 0 ? t('Bridge Fees') : ''}</td>
+            <td className="text-secondary">{i === 0 ? t('BRIDGE_FEES') : ''}</td>
             <td>{formatCoinAtom(fees[id], ui)} {unit}</td>
           </tr>
         )
@@ -646,7 +646,7 @@ function EventDetailView ({ event, assets, baseID, quoteID, lotsize, ratestep, n
   if (event.cexOrderEvent) return <CEXOrderDetail e={event.cexOrderEvent} assets={assets} baseID={baseID} quoteID={quoteID} lotsize={lotsize} ratestep={ratestep} t={t} />
   if (event.depositEvent) return <DepositDetail e={event.depositEvent} pending={event.pending} assets={assets} net={net} t={t} />
   if (event.withdrawalEvent) return <WithdrawalDetail e={event.withdrawalEvent} pending={event.pending} assets={assets} net={net} t={t} />
-  return <div className="p-3">{t('Unknown event type')}</div>
+  return <div className="p-3">{t('UNKNOWN_EVENT_TYPE')}</div>
 }
 
 // ---- DEX Order Detail ----
@@ -681,11 +681,11 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
-      <h5>{t('DEX Order Details')}</h5>
+      <h5>{t('DEX_ORDER_DETAILS')}</h5>
       <table className="table table-sm mb-3">
         <tbody>
           <tr>
-            <td className="text-secondary">{t('Order ID')}</td>
+            <td className="text-secondary">{t('ORDER_ID')}</td>
             {/* MML-01: copy button on Order ID. */}
             <td><IDCell id={e.id} /></td>
           </tr>
@@ -709,7 +709,7 @@ function DEXOrderDetail ({ e, assets, baseID, quoteID, lotsize, ratestep, net, t
           <table className="table table-sm">
             <thead>
               <tr>
-                <th>{t('TX ID')}</th>
+                <th>{t('TX_ID')}</th>
                 <th>{t('Amount')}</th>
                 <th>{t('Fees')}</th>
               </tr>
@@ -804,20 +804,20 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, lo
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
-      <h5>{t('CEX Order Details')}</h5>
+      <h5>{t('CEX_ORDER_DETAILS')}</h5>
       <table className="table table-sm">
         <tbody>
           <tr>
-            <td className="text-secondary">{t('Order ID')}</td>
+            <td className="text-secondary">{t('ORDER_ID')}</td>
             {/* MML-01: copy button on CEX Order ID. */}
             <td><IDCell id={e.id} /></td>
           </tr>
           <tr>
-            <td className="text-secondary">{t('Base Asset')}</td>
+            <td className="text-secondary">{t('BASE_ASSET')}</td>
             <td>{baseAsset?.symbol ?? '?'}</td>
           </tr>
           <tr>
-            <td className="text-secondary">{t('Quote Asset')}</td>
+            <td className="text-secondary">{t('QUOTE_ASSET')}</td>
             <td>{quoteAsset?.symbol ?? '?'}</td>
           </tr>
           {!e.market && (
@@ -835,15 +835,15 @@ function CEXOrderDetail ({ e, assets, baseID: mktBaseID, quoteID: mktQuoteID, lo
             <td>{e.sell ? t('Sell') : t('Buy')}</td>
           </tr>
           <tr>
-            <td className="text-secondary">{t('Order Type')}</td>
+            <td className="text-secondary">{t('ORDER_TYPE')}</td>
             <td>{e.market ? t('Market') : t('Limit')}</td>
           </tr>
           <tr>
-            <td className="text-secondary">{t('Base Filled')}</td>
+            <td className="text-secondary">{t('BASE_FILLED')}</td>
             <td>{baseFilledStr} {baseTicker}</td>
           </tr>
           <tr>
-            <td className="text-secondary">{t('Quote Filled')}</td>
+            <td className="text-secondary">{t('QUOTE_FILLED')}</td>
             <td>{quoteFilledStr} {quoteTicker}</td>
           </tr>
         </tbody>
@@ -887,13 +887,13 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
-      <h5>{t('Deposit Details')}</h5>
+      <h5>{t('DEPOSIT_DETAILS')}</h5>
       <table className="table table-sm">
         <tbody>
           {e.transaction && (
             <>
               <tr>
-                <td className="text-secondary">{t('TX ID')}</td>
+                <td className="text-secondary">{t('TX_ID')}</td>
                 {/* MML-01 + MML-02: copy button + explorer link on TX ID. */}
                 <td><IDCell id={e.transaction.id} href={txHref} /></td>
               </tr>
@@ -905,7 +905,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
           )}
           {e.bridgeTx && (
             <tr>
-              <td className="text-secondary">{t('Bridge TX ID')}</td>
+              <td className="text-secondary">{t('BRIDGE_TX_ID')}</td>
               {/* MML-01 + MML-02. */}
               <td><IDCell id={e.bridgeTx.id} href={bridgeHref} /></td>
             </tr>
@@ -933,7 +933,7 @@ function DepositDetail ({ e, pending, assets, net, t }: DepositDetailProps) {
           </tr>
           {!pending && (
             <tr>
-              <td className="text-secondary">{t('CEX Credit')}</td>
+              <td className="text-secondary">{t('CEX_CREDIT')}</td>
               <td>{ui ? formatCoinAtom(e.cexCredit, ui) : e.cexCredit} {unit}</td>
             </tr>
           )}
@@ -972,18 +972,18 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
 
   return (
     <div className="p-3" style={{ minWidth: 400, maxWidth: 600 }}>
-      <h5>{t('Withdrawal Details')}</h5>
+      <h5>{t('WITHDRAWAL_DETAILS')}</h5>
       <table className="table table-sm">
         <tbody>
           <tr>
-            <td className="text-secondary">{t('Withdrawal ID')}</td>
+            <td className="text-secondary">{t('WITHDRAWAL_ID')}</td>
             {/* MML-01: copy button on Withdrawal ID. */}
             <td><IDCell id={e.id} /></td>
           </tr>
           {e.transaction && (
             <>
               <tr>
-                <td className="text-secondary">{t('TX ID')}</td>
+                <td className="text-secondary">{t('TX_ID')}</td>
                 {/* MML-01 + MML-02: copy + explorer link on TX ID. */}
                 <td><IDCell id={e.transaction.id} href={txHref} /></td>
               </tr>
@@ -999,7 +999,7 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
           )}
           {e.bridgeTx && (
             <tr>
-              <td className="text-secondary">{t('Bridge TX ID')}</td>
+              <td className="text-secondary">{t('BRIDGE_TX_ID')}</td>
               <td><IDCell id={e.bridgeTx.id} href={bridgeHref} /></td>
             </tr>
           )}
@@ -1013,7 +1013,7 @@ function WithdrawalDetail ({ e, pending, assets, net, t }: WithdrawalDetailProps
             />
           )}
           <tr>
-            <td className="text-secondary">{t('CEX Debit')}</td>
+            <td className="text-secondary">{t('CEX_DEBIT')}</td>
             <td>{ui ? formatCoinAtom(e.cexDebit, ui) : e.cexDebit} {unit}</td>
           </tr>
           <tr>

@@ -80,14 +80,14 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
     <div className="px-3 py-2">
       {/* Header */}
       <div className="flex-center pt-2">
-        {!dexToUpdate && <div className="fs24">{t('Add a DEX')}</div>}
-        {dexToUpdate && <div className="fs24">{t('update dex host')}</div>}
+        {!dexToUpdate && <div className="fs24">{t('ADD_A_DEX')}</div>}
+        {dexToUpdate && <div className="fs24">{t('UPDATE_DEX_HOST')}</div>}
       </div>
 
       {/* Known exchanges list */}
       {hasKnown && (
         <>
-          <div className="fs20 mt-2 border-top">{t('Pick a server')}</div>
+          <div className="fs20 mt-2 border-top">{t('PICK_A_SERVER')}</div>
           <div className="flex-stretch-column">
             {knownExchanges.map(host => (
               <div
@@ -118,7 +118,7 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
             onChange={e => setSkipRegistration(e.target.checked)}
           />
           <label htmlFor="skipRegistration" className="ps-1">
-            {t('Skip Registration')}
+            {t('SKIP_REGISTRATION')}
           </label>
         </div>
       )}
@@ -130,7 +130,7 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
           onClick={() => setShowCustom(true)}
         >
           <span className="ico-plus fs11" />
-          <div className="ps-2">{t('add a different server')}</div>
+          <div className="ps-2">{t('ADD_A_DIFFERENT_SERVER')}</div>
         </div>
       )}
 
@@ -138,10 +138,10 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
       {showCustom && (
         <div className="mt-2 border-top">
           {hasKnown && (
-            <div className="fs20">{t('Add a custom server')}</div>
+            <div className="fs20">{t('ADD_A_CUSTOM_SERVER')}</div>
           )}
           <div className="mb-3">
-            <label htmlFor="dexAddr">{t('DEX Address')}</label>
+            <label htmlFor="dexAddr">{t('DEX_ADDRESS')}</label>
             <input
               id="dexAddr"
               type="text"
@@ -160,7 +160,7 @@ export function DEXAddressForm ({ onSuccess, dexToUpdate, knownExchanges = [] }:
 
           {needCert && (
             <div className="fs15 text-warning mb-2">
-              {t('TLS certificate required')}
+              {t('TLS_CERTIFICATE_REQUIRED')}
             </div>
           )}
 

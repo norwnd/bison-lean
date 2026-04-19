@@ -334,7 +334,7 @@ export default function OrderPage () {
   if (!order) {
     return (
       <div className="p-3">
-        <div className="text-danger">{t('Order not found')}</div>
+        <div className="text-danger">{t('ORDER_NOT_FOUND')}</div>
       </div>
     )
   }
@@ -650,44 +650,44 @@ export default function OrderPage () {
             <div className="mb-1">
               <strong>
                 {m.side === MatchSideMaker
-                  ? t('Your swap')
-                  : t('Their swap')}
+                  ? t('YOUR_SWAP')
+                  : t('THEIR_SWAP')}
                 {' '}({makerSwapAsset}):
               </strong>{' '}
-              {renderCoinLink(makerSwapCoin(m), t('pending'))}
+              {renderCoinLink(makerSwapCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.takerSwap && (
             <div className="mb-1">
               <strong>
                 {m.side === MatchSideTaker
-                  ? t('Your swap')
-                  : t('Their swap')}
+                  ? t('YOUR_SWAP')
+                  : t('THEIR_SWAP')}
                 {' '}({takerSwapAsset}):
               </strong>{' '}
-              {renderCoinLink(takerSwapCoin(m), t('pending'))}
+              {renderCoinLink(takerSwapCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.makerRedeem && (
             <div className="mb-1">
               <strong>
                 {m.side === MatchSideMaker
-                  ? t('Your redeem')
-                  : t('Their redeem')}
+                  ? t('YOUR_REDEEM')
+                  : t('THEIR_REDEEM')}
                 {' '}({makerRedeemAsset}):
               </strong>{' '}
-              {renderCoinLink(makerRedeemCoin(m), t('pending'))}
+              {renderCoinLink(makerRedeemCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.takerRedeem && (
             <div className="mb-1">
               <strong>
                 {m.side === MatchSideTaker
-                  ? t('Your redeem')
-                  : t('Their redeem')}
+                  ? t('YOUR_REDEEM')
+                  : t('THEIR_REDEEM')}
                 {' '}({takerRedeemAsset}):
               </strong>{' '}
-              {renderCoinLink(takerRedeemCoin(m), t('pending'))}
+              {renderCoinLink(takerRedeemCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.refund && (
@@ -756,7 +756,7 @@ export default function OrderPage () {
         <div className="d-flex gap-2 mb-3">
           {canCancel && (
             <button className="btn btn-outline-danger btn-sm" onClick={submitCancel}>
-              {t('Cancel Order')}
+              {t('CANCEL_ORDER_LABEL')}
             </button>
           )}
           {canAccelerate && (
@@ -764,7 +764,7 @@ export default function OrderPage () {
               className="btn btn-outline-primary btn-sm"
               onClick={() => setShowAccelerate(true)}
             >
-              {t('Accelerate Order')}
+              {t('ACCELERATE_ORDER')}
             </button>
           )}
         </div>
@@ -783,7 +783,7 @@ export default function OrderPage () {
       )}
 
       {sortedMatches.length === 0 && !loading && (
-        <div className="text-secondary fs14">{t('No matches')}</div>
+        <div className="text-secondary fs14">{t('NO_MATCHES')}</div>
       )}
 
       {/* Accelerate form overlay */}

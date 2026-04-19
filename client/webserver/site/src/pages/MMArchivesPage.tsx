@@ -42,22 +42,22 @@ export default function MMArchivesPage () {
         <button className="btn btn-secondary me-3" onClick={() => navigate(ROUTES.MM)}>
           {t('Back')}
         </button>
-        <h2 className="mb-0">{t('Archived Market Making Runs')}</h2>
+        <h2 className="mb-0">{t('ARCHIVED_MARKET_MAKING_RUNS')}</h2>
       </div>
 
       {error && <div className="text-danger mb-3">{error}</div>}
 
       <div className="mb-3">
-        <span className="me-3">{t('Total Runs')}: {runs.length}</span>
+        <span className="me-3">{t('TOTAL_RUNS')}: {runs.length}</span>
         <span>
-          {t('Total Profit')}: <span className={total.cls}>{total.text}</span>
+          {t('TOTAL_PROFIT')}: <span className={total.cls}>{total.text}</span>
         </span>
       </div>
 
       <table className="table">
         <thead>
           <tr>
-            <th>{t('Start Time')}</th>
+            <th>{t('START_TIME')}</th>
             <th>{t('Market')}</th>
             <th>{t('Profit')}</th>
             <th></th>

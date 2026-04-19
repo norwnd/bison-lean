@@ -39,7 +39,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
 
   return (
     <div className="flex-stretch-column" style={{ minWidth: '425px' }}>
-      <header>{t('Bridge Details')}</header>
+      <header>{t('BRIDGE_DETAILS')}</header>
 
       <table className="compact w-100">
         <tbody>
@@ -101,7 +101,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
 
           {/* Amount sent */}
           <tr>
-            <td className="grey">{t('Amount Sent')}</td>
+            <td className="grey">{t('AMOUNT_SENT')}</td>
             <td>
               {sourceAsset
                 ? `${formatCoinAtom(tx.amount, sourceAsset.unitInfo)} ${sourceAsset.unitInfo.conventional.unit}`
@@ -112,7 +112,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
           {/* Amount received */}
           {counterpart && counterpart.amountReceived > 0 && destAssetID !== undefined && (
             <tr>
-              <td className="grey">{t('Amount Received')}</td>
+              <td className="grey">{t('AMOUNT_RECEIVED')}</td>
               <td className="text-success">
                 {destAsset
                   ? `${formatCoinAtom(counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`
@@ -124,7 +124,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
           {/* Bridge Fee (difference between amount sent and received) */}
           {counterpart && counterpart.amountReceived > 0 && tx.amount > counterpart.amountReceived && destAsset && (
             <tr>
-              <td className="grey">{t('Bridge Fee')}</td>
+              <td className="grey">{t('BRIDGE_FEE')}</td>
               <td>
                 {`${formatCoinAtom(tx.amount - counterpart.amountReceived, destAsset.unitInfo)} ${destAsset.unitInfo.conventional.unit}`}
               </td>
@@ -136,7 +136,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
             const feeAsset = getFeeAsset(tx.sourceAssetID, assets)
             return (
               <tr>
-                <td className="grey">{t('Source Fee')}</td>
+                <td className="grey">{t('SOURCE_FEE')}</td>
                 <td>
                   {feeAsset
                     ? `${formatCoinAtom(tx.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
@@ -151,7 +151,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
             const feeAsset = getFeeAsset(destAssetID, assets)
             return (
               <tr>
-                <td className="grey">{t('Dest Fee')}</td>
+                <td className="grey">{t('DEST_FEE')}</td>
                 <td>
                   {feeAsset
                     ? `${formatCoinAtom(counterpart.fees, feeAsset.unitInfo)} ${feeAsset.unitInfo.conventional.unit}`
@@ -169,7 +169,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
 
           {/* Transaction ID */}
           <tr>
-            <td className="grey">{t('TX ID')}</td>
+            <td className="grey">{t('TX_ID')}</td>
             <td>
               <span className="d-inline-flex align-items-center gap-1">
                 <span className="mono" title={tx.id}>{trimStringWithEllipsis(tx.id, 20)}</span>
@@ -183,7 +183,7 @@ function BridgeDetails ({ tx }: BridgeDetailsProps) {
             <>
               {counterpart.ids.map((id, i) => (
                 <tr key={i}>
-                  <td className="grey">{i === 0 ? t('Dest TX') : ''}</td>
+                  <td className="grey">{i === 0 ? t('DEST_TX') : ''}</td>
                   <td>
                     <span className="d-inline-flex align-items-center gap-1">
                       <span className="mono" title={id}>{trimStringWithEllipsis(id, 20)}</span>

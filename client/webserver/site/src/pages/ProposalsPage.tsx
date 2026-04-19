@@ -26,7 +26,11 @@ interface PaginationInfo {
 }
 
 const VOTE_STATUS_OPTIONS = [
-  { key: 'all', label: 'all' },
+  { key: 'all', label: 'ALL' },
+  // NOTE: the other labels ('authorized'...'rejected') don't exist as keys
+  // in en-US.json, so t() falls back to the literal lowercase string. Matching
+  // Title Case keys ("Authorized", etc.) exist but weren't wired up; fixing
+  // that is out of scope for the CL-I18N-NAMING rename.
   { key: 'authorized', label: 'authorized' },
   { key: 'started', label: 'started' },
   { key: 'finished', label: 'finished' },
@@ -60,7 +64,7 @@ export default function ProposalsPage () {
     const resp = await getJSON(`/api/proposals${qs ? `?${qs}` : ''}`)
     setLoading(false)
     if (!resp.requestSuccessful) {
-      setError(resp.msg || t('Failed to load proposals'))
+      setError(resp.msg || t('FAILED_TO_LOAD_PROPOSALS'))
       return
     }
     setProposals(resp.proposals || [])
@@ -128,7 +132,7 @@ export default function ProposalsPage () {
           <div className="search-bar flex-grow-1">
             <input
               type="search"
-              placeholder={t('Search...')}
+              placeholder={t('SEARCH')}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
@@ -193,7 +197,7 @@ export default function ProposalsPage () {
         {loading
           ? (
           <div className="text-center my-5">
-            <span>{t('Loading...')}</span>
+            <span>{t('LOADING')}</span>
           </div>
             )
           : error
@@ -205,7 +209,7 @@ export default function ProposalsPage () {
             : proposals.length === 0
               ? (
           <div className="text-center my-5">
-            <p className="text-muted">{t('No proposals found')}</p>
+            <p className="text-muted">{t('NO_PROPOSALS_FOUND')}</p>
           </div>
                 )
               : (

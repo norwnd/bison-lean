@@ -39,9 +39,9 @@ function botType (cfg: BotConfig): string {
 
 function botTypeLabel (cfg: BotConfig, t: (k: string) => string): string {
   const bt = botType(cfg)
-  if (bt === botTypeArbMM) return t('Arb MM')
-  if (bt === botTypeBasicArb) return t('Simple Arb')
-  return t('Basic MM')
+  if (bt === botTypeArbMM) return t('ARB_MM')
+  if (bt === botTypeBasicArb) return t('SIMPLE_ARB')
+  return t('BASIC_MM')
 }
 
 interface AvailableBalances {
@@ -256,13 +256,13 @@ export default function MMPage () {
     <div className="page-view p-3 overflow-y-auto" style={{ height: '100%' }}>
       {/* Header */}
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <h2 className="mb-0">{t('Market Making')}</h2>
+        <h2 className="mb-0">{t('MARKET_MAKING')}</h2>
         <div className="d-flex gap-2">
           <button className="btn btn-outline-secondary" onClick={() => navigate(ROUTES.MM_ARCHIVES)}>
-            {t('Archived Logs')}
+            {t('ARCHIVED_LOGS')}
           </button>
           <button className="btn btn-primary" onClick={() => navigate(ROUTES.MM_SETTINGS)}>
-            {t('New Bot')}
+            {t('NEW_BOT')}
           </button>
         </div>
       </div>
@@ -274,7 +274,7 @@ export default function MMPage () {
           <tr>
             <th>{t('Exchange')}</th>
             <th>{t('Status')}</th>
-            <th>{t('Balance (USD)')}</th>
+            <th>{t('BALANCE_USD')}</th>
             <th></th>
           </tr>
         </thead>
@@ -296,11 +296,11 @@ export default function MMPage () {
                   <span>{dinfo.name}</span>
                 </td>
                 <td>
-                  {!status && <span className="text-secondary">{t('Not Configured')}</span>}
+                  {!status && <span className="text-secondary">{t('NOT_CONFIGURED')}</span>}
                   {configured && <span className="text-success">{t('Connected')}</span>}
                   {hasErr && (
                     <span className="text-danger" title={status?.connectErr}>
-                      {t('Connection Error')}
+                      {t('CONNECTION_ERROR')}
                     </span>
                   )}
                 </td>
@@ -337,7 +337,7 @@ export default function MMPage () {
                 <th>{t('Market')}</th>
                 <th>{t('Type')}</th>
                 <th>{t('Status')}</th>
-                <th>{t('P/L')}</th>
+                <th>{t('P_L')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -406,9 +406,9 @@ export default function MMPage () {
       {/* No Bots Placeholder */}
       {noBots && (
         <div className="text-center py-5 text-secondary">
-          <p className="fs18">{t('No bots configured.')}</p>
+          <p className="fs18">{t('NO_BOTS_CONFIGURED')}</p>
           <button className="btn btn-primary" onClick={() => navigate(ROUTES.MM_SETTINGS)}>
-            {t('Create Your First Bot')}
+            {t('CREATE_YOUR_FIRST_BOT')}
           </button>
         </div>
       )}
@@ -449,16 +449,16 @@ export default function MMPage () {
 
       {/* Remove Bot Confirmation Overlay */}
       <FormOverlay show={showRemoveConfirm} onClose={() => setShowRemoveConfirm(false)}>
-        <h5>{t('Remove Bot Configuration')}</h5>
+        <h5>{t('REMOVE_BOT_CONFIGURATION')}</h5>
         {removingBot && (
           <p>
-            {t('Are you sure you want to remove the bot configuration for')}{' '}
+            {t('ARE_YOU_SURE_YOU_WANT_TO_REMOVE_THE_BOT_CONFIGURATION_FOR')}{' '}
             <strong>
               {assets[removingBot.baseID]?.unitInfo?.conventional?.unit ?? '?'}
               /
               {assets[removingBot.quoteID]?.unitInfo?.conventional?.unit ?? '?'}
             </strong>
-            {' '}{t('on')} <em>{removingBot.host}</em>?
+            {' '}{t('ON')} <em>{removingBot.host}</em>?
           </p>
         )}
         {removeErr && <div className="text-danger mb-2">{removeErr}</div>}
@@ -582,15 +582,15 @@ function BotCard ({
           {/* DEX / CEX Price & Volume */}
           <div className="row mb-2">
             <div className="col-12">
-              <div className="text-secondary small">{t('DEX Price')}</div>
+              <div className="text-secondary small">{t('DEX_PRICE')}</div>
               <div>{spot && mkt ? formatRateToRateStep(dexPrice, bui, qui, mkt.ratestep) : '---'}</div>
-              <div className="text-secondary small">{t('24h Vol')}: ${spot ? formatBestWeCan(dexVol) : '---'}</div>
+              <div className="text-secondary small">{t('24H_VOL')}: ${spot ? formatBestWeCan(dexVol) : '---'}</div>
             </div>
             {bt !== botTypeBasicMM && cexName && (
               <div className="col-12">
-                <div className="text-secondary small">{t('CEX Price')}</div>
+                <div className="text-secondary small">{t('CEX_PRICE')}</div>
                 <div>{cexPrice && mkt ? formatRateToRateStep(cexPrice, bui, qui, mkt.ratestep) : '---'}</div>
-                <div className="text-secondary small">{t('24h Vol')}: ${cexVol ? formatBestWeCan(cexVol) : '---'}</div>
+                <div className="text-secondary small">{t('24H_VOL')}: ${cexVol ? formatBestWeCan(cexVol) : '---'}</div>
               </div>
             )}
           </div>
@@ -600,41 +600,41 @@ function BotCard ({
             <div className="mb-2">
               <div className="row">
                 <div className="col-12">
-                  <div className="text-secondary small">{t('Profit/Loss')}</div>
+                  <div className="text-secondary small">{t('PROFIT_LOSS')}</div>
                   <div className={formatProfit(runStats.profitLoss.profit).cls}>
                     {formatProfit(runStats.profitLoss.profit).text}
                   </div>
                 </div>
                 <div className="col-12">
-                  <div className="text-secondary small">{t('Profit Ratio')}</div>
+                  <div className="text-secondary small">{t('PROFIT_RATIO')}</div>
                   <div>{(runStats.profitLoss.profitRatio * 100).toFixed(2)}%</div>
                 </div>
               </div>
               <div className="row mt-1">
                 <div className="col-12">
-                  <div className="text-secondary small">{t('Completed Matches')}</div>
+                  <div className="text-secondary small">{t('COMPLETED_MATCHES')}</div>
                   <div>{runStats.completedMatches}</div>
                 </div>
                 <div className="col-12">
-                  <div className="text-secondary small">{t('Traded USD')}</div>
+                  <div className="text-secondary small">{t('TRADED_USD')}</div>
                   <div>${formatFiat(runStats.tradedUSD)}</div>
                 </div>
               </div>
               {(runStats.pendingDeposits > 0 || runStats.pendingWithdrawals > 0) && (
                 <div className="row mt-1">
                   <div className="col-12">
-                    <div className="text-secondary small">{t('Pending Deposits')}</div>
+                    <div className="text-secondary small">{t('PENDING_DEPOSITS')}</div>
                     <div>{runStats.pendingDeposits}</div>
                   </div>
                   <div className="col-12">
-                    <div className="text-secondary small">{t('Pending Withdrawals')}</div>
+                    <div className="text-secondary small">{t('PENDING_WITHDRAWALS')}</div>
                     <div>{runStats.pendingWithdrawals}</div>
                   </div>
                 </div>
               )}
               {/* Running bot DEX/CEX balances from runStats */}
               <div className="mt-2">
-                <div className="text-secondary small fw-bold">{t('Running Balances')}</div>
+                <div className="text-secondary small fw-bold">{t('RUNNING_BALANCES')}</div>
                 <div className="row">
                   <div className="col-12">
                     <div className="small">DEX {baseTicker}: {formatCoinAtom(sumBotBalance(runStats.dexBalances[baseID]), bui)}</div>
@@ -654,7 +654,7 @@ function BotCard ({
           {/* Idle Balances */}
           {!running && balances && (
             <div className="mb-2">
-              <div className="text-secondary small fw-bold">{t('Available Balances')}</div>
+              <div className="text-secondary small fw-bold">{t('AVAILABLE_BALANCES')}</div>
               <div className="row">
                 <div className="col-12">
                   <div className="small">DEX {baseTicker}: {formatBal(balances.dexBalances[baseID] ?? 0, bui)}</div>
@@ -686,7 +686,7 @@ function BotCard ({
                 navigate(`${ROUTES.MARKETS}?${params.toString()}`)
               }}
             >
-              {t('View Market')}
+              {t('VIEW_MARKET')}
             </button>
             <button className="btn btn-sm btn-outline-secondary" onClick={() => onReconfigure(cfg)}>
               {t('Reconfigure')}

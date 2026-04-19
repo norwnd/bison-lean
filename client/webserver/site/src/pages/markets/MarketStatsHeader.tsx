@@ -90,10 +90,10 @@ export function MarketStatsHeader ({
       </div>
 
       <div className="statgrid">
-        <span className="fs14 grey px-2 border-right border-bottom">{t('Change24')}</span>
-        <span className="fs14 grey px-2 border-right border-bottom">{t('Volume24')}</span>
-        <span className="fs14 grey px-2 border-right border-bottom">{t('High24')}</span>
-        <span className="fs14 grey ps-2 border-bottom">{t('Low24')}</span>
+        <span className="fs14 grey px-2 border-right border-bottom">{t('CHANGE24')}</span>
+        <span className="fs14 grey px-2 border-right border-bottom">{t('VOLUME24')}</span>
+        <span className="fs14 grey px-2 border-right border-bottom">{t('HIGH24')}</span>
+        <span className="fs14 grey ps-2 border-bottom">{t('LOW24')}</span>
 
         <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
           {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
