@@ -57,7 +57,12 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
   const [prepaidError, setPrepaidError] = useState('')
   const [walletReadyMap, setWalletReadyMap] = useState<Record<number, boolean>>({})
 
-  // Listen for wallet creation notes so we can mark assets as "ready".
+  // Listen for `QueuedCreationSuccess` specifically so the registration
+  // wizard can mark the corresponding bond-asset row as "ready". This is
+  // wizard-local state; it does NOT overlap with the global `createwallet`
+  // dispatch in `AppLayout` → `useMarketStore.handleWalletCreationNote`
+  // (which calls `fetchUser()`). The two handle orthogonal concerns and
+  // both run on every wallet-creation note.
   useNotifications(useMemo(() => ({
     createwallet: (note: any) => {
       const wn = note as WalletCreationNote
