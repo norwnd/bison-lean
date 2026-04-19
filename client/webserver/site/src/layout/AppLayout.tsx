@@ -62,9 +62,9 @@ export function AppLayout () {
         case 'walletstate': handleWalletStateNote(note); break
         case 'walletconfig': handleWalletStateNote(note); break
         case 'walletsync': handleWalletSyncNote(note); break
-        case 'spotprice': handleSpotPriceNote(note); break
+        case 'spots': handleSpotPriceNote(note); break
         case 'fiatrateupdate': handleRateNote(note); break
-        case 'walletcreation': handleWalletCreationNote(note); break
+        case 'createwallet': handleWalletCreationNote(note); break
         case 'conn': handleConnEventNote(note); break
         // MP-65 / MP-66 reputation refresh — vanilla (markets.ts L544-545)
         // calls `updateReputation()` from its own per-page `feepayment` and

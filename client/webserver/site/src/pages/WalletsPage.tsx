@@ -378,19 +378,17 @@ export default function WalletsPage () {
   // -----------------------------------------------------------------------
 
   // CL-ASSETS-STALE-MEMO: `balance`, `walletstate`, `walletconfig`,
-  // `walletsync`, `fiatrateupdate` are dispatched globally by
-  // `AppLayout.tsx` to `useMarketStore`, which rebuilds the affected
-  // slices of `useAuthStore` with new top-level refs (see the comment
-  // block at the top of `useMarketStore.ts` for the rationale). The
-  // `useAuthStore(s => s.assets)` / `s.fiatRatesMap` selectors below
-  // fire on those setState calls, so every `useMemo([...])` in this
-  // component re-runs with the fresh refs and the view stays in sync
-  // with no per-page receiver needed. Only the notes that don't have
-  // a `useMarketStore` equivalent are listed here.
+  // `walletsync`, `fiatrateupdate`, `createwallet` are dispatched
+  // globally by `AppLayout.tsx` to `useMarketStore`, which rebuilds
+  // the affected slices of `useAuthStore` with new top-level refs
+  // (see the comment block at the top of `useMarketStore.ts` for the
+  // rationale). The `useAuthStore(s => s.assets)` / `s.fiatRatesMap`
+  // selectors below fire on those setState calls, so every
+  // `useMemo([...])` in this component re-runs with the fresh refs
+  // and the view stays in sync with no per-page receiver needed. Only
+  // the notes that don't have a `useMarketStore` equivalent are
+  // listed here.
   const noteReceivers = useMemo(() => ({
-    createwallet: (_note: CoreNote) => {
-      fetchUser()
-    },
     // WP-02: minimal `walletnote` (custom wallet note) handler.
     // Vanilla `wallets.ts` `handleCustomWalletNote()` (L2767) switches
     // on `payload.route` to dispatch:
@@ -429,7 +427,7 @@ export default function WalletsPage () {
     bridge: (_note: CoreNote) => {
       bump()
     },
-  }), [bump, fetchUser])
+  }), [bump])
 
   useNotifications(noteReceivers)
 
