@@ -46,8 +46,14 @@ func runWithTimeout(f func() error, timeout time.Duration) error {
 // xcWallet is a wallet. Use (*Core).loadWallet to construct a xcWallet.
 type xcWallet struct {
 	asset.Wallet
-	log               dex.Logger
-	connector         *dex.ConnectionMaster
+	log dex.Logger
+	// connector is swapped on each failed Connect() so the user can retry
+	// without tripping dex.ConnectionMaster's single-use invariant (see
+	// dex/runner.go:132-134). atomic.Pointer makes the read-while-swap
+	// access in state() / Disconnect() / startWalletSyncMonitor formally
+	// race-free (writes happen inside Connect's connectMtx region, but
+	// readers don't take connectMtx). Never nil after initial Store.
+	connector         atomic.Pointer[dex.ConnectionMaster]
 	AssetID           uint32
 	Symbol            string
 	supportedVersions []uint32
@@ -272,7 +278,7 @@ func (w *xcWallet) state() *WalletState {
 	}
 
 	var tokenApprovals map[uint32]asset.ApprovalStatus
-	if w.connector.On() {
+	if w.connector.Load().On() {
 		tokenApprovals = w.ApprovalStatus()
 	}
 
@@ -285,7 +291,7 @@ func (w *xcWallet) state() *WalletState {
 		Symbol:       unbip(w.AssetID),
 		AssetID:      w.AssetID,
 		Open:         len(w.encPass) == 0 || len(w.pw) > 0,
-		Running:      w.connector.On(),
+		Running:      w.connector.Load().On(),
 		Balance:      w.balance,
 		Address:      w.address,
 		Encrypted:    len(w.encPass) > 0,
@@ -411,12 +417,12 @@ func (w *xcWallet) Connect() error {
 	// so the user can retry Connect later without panicking. Without this
 	// reset, a wallet whose first connect attempt fails would be
 	// permanently unusable until full application reload.
-	err := w.connector.ConnectOnce(context.Background())
+	err := w.connector.Load().ConnectOnce(context.Background())
 	if err != nil {
 		// ConnectOnce already called Disconnect internally on failure, but
 		// the connector is now used up. Replace it so future Connect calls
 		// can proceed.
-		w.connector = dex.NewConnectionMaster(w.Wallet)
+		w.connector.Store(dex.NewConnectionMaster(w.Wallet))
 		return fmt.Errorf("ConnectOnce error: %w", err)
 	}
 
@@ -425,10 +431,10 @@ func (w *xcWallet) Connect() error {
 		// Now that we are connected, we must Disconnect if any calls fail below
 		// since we are considering this wallet not "hookedUp".
 		if !ready {
-			w.connector.Disconnect()
+			w.connector.Load().Disconnect()
 			// Connector is now used up — replace it so future Connect
 			// calls can proceed (see comment above).
-			w.connector = dex.NewConnectionMaster(w.Wallet)
+			w.connector.Store(dex.NewConnectionMaster(w.Wallet))
 		}
 	}()
 
@@ -466,7 +472,7 @@ func (w *xcWallet) Disconnect() {
 	if w.isDisabled() {
 		return
 	}
-	w.connector.Disconnect()
+	w.connector.Load().Disconnect()
 	w.mtx.Lock()
 	w.hookedUp = false
 	w.mtx.Unlock()

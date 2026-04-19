@@ -915,7 +915,6 @@ func newTWallet(assetID uint32) (*xcWallet, *TXCWallet) {
 		supportedVersions: w.info.SupportedVersions,
 		Wallet:            w,
 		Symbol:            dex.BipIDSymbol(assetID),
-		connector:         dex.NewConnectionMaster(w),
 		AssetID:           assetID,
 		hookedUp:          true,
 		dbID:              encode.Uint32Bytes(assetID),
@@ -926,6 +925,9 @@ func newTWallet(assetID uint32) (*xcWallet, *TXCWallet) {
 		traits:            asset.DetermineWalletTraits(w),
 		broadcasting:      &broadcasting,
 	}
+	// atomic.Pointer can't be pre-populated via struct literal; Store
+	// the initial connector after construction.
+	xcWallet.connector.Store(dex.NewConnectionMaster(w))
 
 	return xcWallet, w
 }
@@ -2957,7 +2959,7 @@ func TestSend(t *testing.T) {
 	// so any subsequent xcWallet.Connect() would panic. Mint a fresh
 	// connector for the next sub-test and restore hookedUp so Send's
 	// retry path sees a connected wallet.
-	wallet.connector = dex.NewConnectionMaster(tWallet)
+	wallet.connector.Store(dex.NewConnectionMaster(tWallet))
 	wallet.hookedUp = true
 
 	// Send error

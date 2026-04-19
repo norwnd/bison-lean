@@ -3180,7 +3180,7 @@ func (c *Core) loadXCWallet(dbWallet *db.Wallet) (*xcWallet, error) {
 	wallet.Wallet = w
 	wallet.parent = parent
 	wallet.supportedVersions = w.Info().SupportedVersions
-	wallet.connector = dex.NewConnectionMaster(w)
+	wallet.connector.Store(dex.NewConnectionMaster(w))
 	wallet.traits = asset.DetermineWalletTraits(w)
 	atomic.StoreUint32(wallet.broadcasting, 1)
 	return wallet, nil
@@ -3362,7 +3362,7 @@ func (c *Core) startWalletSyncMonitor(wallet *xcWallet) {
 				if c.walletCheckAndNotify(wallet) {
 					return
 				}
-			case <-wallet.connector.Done():
+			case <-wallet.connector.Load().Done():
 				c.log.Warnf("%v wallet shut down before sync completed.", wallet.Info().Name)
 				return
 			case <-c.ctx.Done():
