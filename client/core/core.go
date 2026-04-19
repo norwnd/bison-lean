@@ -5029,11 +5029,27 @@ func (c *Core) Login(pw []byte) error {
 			c.connectMesh()
 
 			// Branch 1: resolveActiveTrades. Still gated on the
-			// walletReady barrier because resumeTrade's
-			// tracker.mtx.Lock → lockedAmounts RLock chain
-			// self-deadlocks when it has to drop into the
-			// wallet-connect-and-unlock slow path mid-lock. See
-			// Batch 6 comment for the full lock-graph analysis.
+			// walletReady barrier -- do NOT remove the <-ch loop
+			// below without first proving the lock graph has been
+			// untangled. The deadlock it prevents (originally fixed
+			// in commit ab9f7291, "login: gate per-DEX auth on its
+			// bond wallet readiness"):
+			//
+			//   resumeTrade takes tracker.mtx.Lock() then calls
+			//   lockedAmounts, which RLocks EVERY tracker --
+			//   including the one already write-locked. Go's
+			//   RWMutex is not reentrant, so without the walletReady
+			//   wait the login goroutine self-deadlocks and authDEX
+			//   never runs. Waiting here forces
+			//   connectAndUnlockResumeTrades into the
+			//   wallet.connected() fast path, which skips the
+			//   lockedAmounts cascade.
+			//
+			// Refactoring this barrier out therefore requires either
+			// (a) making resumeTrade's lock graph reentrant, or
+			// (b) breaking up lockedAmounts's global RLock, so the
+			// nested lock in connectAndUnlockResumeTrades's slow path
+			// can no longer deadlock.
 			var tradesWG sync.WaitGroup
 			tradesWG.Add(1)
 			go func() {
@@ -5739,7 +5755,7 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 	// populates that map -- decoupling those two lets the login
 	// background goroutine run auth and trade-resume as siblings
 	// instead of serially.
-	ctx, err := c.authDEXHead(dc)
+	pa, err := c.authDEXHead(dc)
 	if err != nil {
 		subject, details := c.formatDetails(TopicDexAuthError, dc.acct.host, err)
 		c.notify(newDEXAuthNote(TopicDexAuthError, subject, dc.acct.host, false, details, db.ErrorLevel))
@@ -5765,7 +5781,7 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 		if !dc.acct.authed() {
 			return
 		}
-		if err := c.authDEXTail(dc, ctx); err != nil {
+		if err := c.authDEXTail(dc, pa); err != nil {
 			c.log.Errorf("post-auth match/order reconciliation for %s failed: %v", dc.acct.host, err)
 			// Don't emit DexAuthError here -- Phase 1 already
 			// succeeded, UI already sees authed=true. Per-trade
@@ -7998,11 +8014,11 @@ type postAuthCtx struct {
 // synchronously. The Login path calls the head + tail separately so
 // the tail can be deferred until dc.trades is populated.
 func (c *Core) authDEX(dc *dexConnection) error {
-	ctx, err := c.authDEXHead(dc)
+	pa, err := c.authDEXHead(dc)
 	if err != nil {
 		return err
 	}
-	return c.authDEXTail(dc, ctx)
+	return c.authDEXTail(dc, pa)
 }
 
 // authDEXHead runs the connection-authenticating portion of authDEX:
@@ -8243,8 +8259,8 @@ func (c *Core) authDEXHead(dc *dexConnection) (*postAuthCtx, error) {
 // resolveActiveTrades has populated that map -- see
 // dc.tradesLoadedCh(). Non-login callers run it synchronously after
 // the head via the authDEX wrapper.
-func (c *Core) authDEXTail(dc *dexConnection, ctx *postAuthCtx) error {
-	result := ctx.result
+func (c *Core) authDEXTail(dc *dexConnection, pa *postAuthCtx) error {
+	result := pa.result
 	updatedAssets := make(assetMap)
 
 	// Associate the matches with known trades.
