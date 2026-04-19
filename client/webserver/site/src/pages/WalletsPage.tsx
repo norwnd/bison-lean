@@ -24,8 +24,6 @@ import { ROUTES } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
 import type {
   SupportedAsset, WalletState,
-  BalanceNote, WalletStateNote,
-  RateNote,
   WalletTransaction, TxHistoryResult, Order, UnitInfo,
   CoreNote, TicketStakingStatus, VotingServiceProvider,
   Exchange, Spot,
@@ -379,51 +377,19 @@ export default function WalletsPage () {
   // WS subscriptions
   // -----------------------------------------------------------------------
 
-  // WP-01: vanilla `wallets.ts` L464-465 routes both `walletstate` AND
-  // `walletconfig` to `handleWalletStateNote`. The two notifications
-  // carry the same `WalletStateNote` shape; `walletconfig` fires when
-  // a wallet's config (e.g. node URL, password) is updated, while
-  // `walletstate` fires for runtime state changes (sync, peers,
-  // balance metadata). Both should refresh the same local state.
-  const handleWalletStateNote = useCallback((note: CoreNote) => {
-    const n = note as WalletStateNote
-    const store = useAuthStore.getState()
-    const assetID = n.wallet.assetID
-    const asset = store.assets[assetID]
-    if (!asset) return
-    asset.wallet = n.wallet
-    store.walletMap[assetID] = n.wallet
-    bump()
-  }, [bump])
-
+  // CL-ASSETS-STALE-MEMO: `balance`, `walletstate`, `walletconfig`,
+  // `walletsync`, `fiatrateupdate` are dispatched globally by
+  // `AppLayout.tsx` to `useMarketStore`, which rebuilds the affected
+  // slices of `useAuthStore` with new top-level refs (see the comment
+  // block at the top of `useMarketStore.ts` for the rationale). The
+  // `useAuthStore(s => s.assets)` / `s.fiatRatesMap` selectors below
+  // fire on those setState calls, so every `useMemo([...])` in this
+  // component re-runs with the fresh refs and the view stays in sync
+  // with no per-page receiver needed. Only the notes that don't have
+  // a `useMarketStore` equivalent are listed here.
   const noteReceivers = useMemo(() => ({
-    balance: (note: CoreNote) => {
-      const n = note as BalanceNote
-      const store = useAuthStore.getState()
-      const asset = store.assets[n.assetID]
-      if (!asset) return
-      asset.wallet.balance = n.balance
-      store.walletMap[n.assetID] = asset.wallet
-      bump()
-    },
-    walletstate: handleWalletStateNote,
-    // WP-01: same handler as `walletstate`. Mirrors vanilla
-    // `wallets.ts` L464-465.
-    walletconfig: handleWalletStateNote,
-    walletsync: (_note: CoreNote) => {
-      bump()
-    },
-    fiatrateupdate: (note: CoreNote) => {
-      const n = note as RateNote
-      const store = useAuthStore.getState()
-      Object.assign(store.fiatRatesMap, n.fiatRates)
-      bump()
-    },
     createwallet: (_note: CoreNote) => {
       fetchUser()
-    },
-    transaction: (_note: CoreNote) => {
-      bump()
     },
     // WP-02: minimal `walletnote` (custom wallet note) handler.
     // Vanilla `wallets.ts` `handleCustomWalletNote()` (L2767) switches
@@ -463,7 +429,7 @@ export default function WalletsPage () {
     bridge: (_note: CoreNote) => {
       bump()
     },
-  }), [bump, fetchUser, handleWalletStateNote])
+  }), [bump, fetchUser])
 
   useNotifications(noteReceivers)
 
@@ -549,10 +515,11 @@ export default function WalletsPage () {
             // has a wallet mid-connect (user hasn't disabled it, but its
             // `Running` flag is false). Post-login this is the
             // transient boot window between `walletstate` notes.
-            // Computed inline (not on `TickerGroup`) because `walletstate`
-            // notes mutate `asset.wallet` in place + `bump()` — the
-            // `useMemo([assets])` for `tickerGroups` wouldn't re-run, so
-            // only inline reads see the fresh `running` bool.
+            // Computed inline rather than on the `TickerGroup` aggregate
+            // just to keep `buildTickerGroups` untouched in this pass;
+            // since CL-ASSETS-STALE-MEMO `tickerGroups` re-runs on
+            // every `walletstate` setState, promoting this into the
+            // aggregate is a safe follow-up refactor.
             const connectingAsset = g.assetIDs.find(id => walletConnecting(assets[id]?.wallet))
             return (
               <div
@@ -938,9 +905,10 @@ function WalletDetail ({
             <div className="fs24 ms-2 demi lh1">{asset.name}</div>
             {/* LI-ASYNC Batch 9: transient indicator while the selected
                 wallet is mid-connect (`!disabled && !running`). The
-                `wallet` prop is replaced whole-object by the
-                `walletstate` handler's `asset.wallet = n.wallet`, so the
-                re-render sees the fresh `running` bool. */}
+                `wallet` prop flips because `useMarketStore.handleWalletStateNote`
+                publishes a new `assets[id]` ref on every `walletstate`
+                note (see CL-ASSETS-STALE-MEMO), so the parent re-renders
+                with the fresh `running` bool. */}
             {walletConnecting(wallet) && (
               <span
                 className="ico-spinner spinner fs14 ms-2"
