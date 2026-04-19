@@ -107,8 +107,20 @@ var (
 	tSwapFeesPaid       uint64 = 500
 	tRedemptionFeesPaid uint64 = 350
 	tLogger                    = dex.StdOutLogger("TCORE", dex.LevelInfo)
-	tMaxFeeRate         uint64 = 10
-	tWalletInfo                = &asset.WalletInfo{
+	// tMaxFeeRate is the "server-side max fee rate" value the test
+	// rig uses when constructing synthetic match-route payloads
+	// (FeeRateBase / FeeRateSwap / FeeRateQuote on msgjson.Match) and
+	// for assertions against wallet refund-fee suggestions. It
+	// happens to equal tUTXOAssetA.MaxFeeRate (10) — tUTXOAssetB.
+	// MaxFeeRate is 2 and tACCTAsset.MaxFeeRate is 20, so
+	// tMaxFeeRate isn't a universal cap, just a convenient match for
+	// the DCR-side tests that dominate the trade paths.
+	//
+	// See also tradeTestFeeRate (near the trade tests) for the
+	// wallet-provided rate on the client side; the two are kept
+	// equal by default — see that comment for the why.
+	tMaxFeeRate uint64 = 10
+	tWalletInfo        = &asset.WalletInfo{
 		SupportedVersions: []uint32{0},
 		UnitInfo: dex.UnitInfo{
 			Conventional: dex.Denomination{
@@ -3283,11 +3295,21 @@ func TestValidateTradeRateWarningFlow(t *testing.T) {
 	}
 }
 
-// tradeTestFeeRate is the wallet-provided fee rate used by the
-// `trade()` helper (and related tests) to avoid the DEX `fee_rate`
-// WS route, which the test rig doesn't stub. It equals tMaxFeeRate so
-// the match-route FeeRateBase > MaxFeeRate checks still fire at
-// tMaxFeeRate + 1.
+// tradeTestFeeRate is the wallet-provided fee rate returned by the
+// TFeeRater shim installed by newTradingTWallet. Trade-path tests
+// need Core.feeSuggestionAny / feeSuggestionSwapAny to return a
+// non-zero rate locally so the "fee_rate" WS route (not stubbed by
+// the test rig) stays off the critical path.
+//
+// It equals tMaxFeeRate by design: keeping the two in lock-step
+// ensures the match-route FeeRateBase > MaxFeeRate checks fire at
+// tMaxFeeRate + 1 without the trade-rate path tripping a different
+// validation first. A test that specifically wants to exercise
+// "wallet rate diverges from server max" should keep a raw
+// &TFeeRater{...} literal at a local rate (see the newTradingTWallet
+// godoc) rather than retuning tradeTestFeeRate globally — changing
+// the constant would ripple through every newTradingTWallet call
+// site.
 var tradeTestFeeRate = tMaxFeeRate
 
 // TestPrepareTradeRequestErrorCloser is a regression guard for the
