@@ -1,106 +1,22 @@
 // This code is available on the terms of the project LICENSE.md file,
 // also available online at https://blueoakcouncil.org/license/1.0.0.
 
+// Package intl is a minimal shim left over from the Go-side translator
+// worksheet pipeline (removed in CL-WORKSHEET-KILL). Only the Translation
+// struct remains — `client/core/locale_ntfn.go` uses it as the field type
+// for the per-topic subject/template strings it registers with
+// `golang.org/x/text/message` at startup.
+//
+// The Version and Notes fields are no longer read anywhere; they stay on
+// the struct to avoid touching the ~360 struct literals in locale_ntfn.go
+// as drive-by in this cleanup. Pruning them is a follow-up.
 package intl
 
-const defaultLanguage = "en-US"
-
-// Trasnlation is a versioned localized string. Notes added to the english
-// translation will be presented to human translators.
+// Translation is a versioned localized string. Version and Notes are dead
+// fields retained until the locale_ntfn.go literals are updated (see
+// package-level comment).
 type Translation struct {
 	Version int
 	T       string
 	Notes   string // english only
-}
-
-var translations = map[string] /* lang */ map[string] /* caller ID */ map[string] /* translation ID */ *Translation{}
-
-// Registrar is used for registering translations for a specific language and
-// caller context.
-type Registrar struct {
-	callerID string
-	lang     string
-	m        map[string]*Translation
-}
-
-// NewRegistrar constructs a Registrar.
-func NewRegistrar(callerID string, lang string, preAlloc int) *Registrar {
-	callers, found := translations[lang]
-	if !found {
-		callers = make(map[string]map[string]*Translation)
-		translations[lang] = callers
-	}
-	m := make(map[string]*Translation, preAlloc)
-	callers[callerID] = m
-	return &Registrar{
-		callerID: callerID,
-		lang:     lang,
-		m:        m,
-	}
-}
-
-// Register registers a translation.
-func (r *Registrar) Register(translationID string, t *Translation) {
-	r.m[translationID] = t
-}
-
-// TranslationReport is a report of missing and extraneous translations.
-type TranslationReport struct {
-	Missing map[string] /* caller ID */ map[string]*Translation // English translation
-	Extras  []string                                            /* caller ID */
-}
-
-// Report generates a TranslationReport for each registered language.
-func Report() map[string] /* lang */ *TranslationReport {
-	reports := make(map[string]*TranslationReport)
-
-	for lang := range translations {
-		if lang == defaultLanguage {
-			continue
-		}
-		reports[lang] = &TranslationReport{
-			Missing: make(map[string]map[string]*Translation),
-		}
-	}
-	enUS := translations[defaultLanguage]
-	for callerID, enTranslations := range enUS {
-		for lang, callers := range translations {
-			if lang == defaultLanguage {
-				continue
-			}
-			r := reports[lang]
-			ts := callers[callerID]
-			if ts == nil {
-				ts = make(map[string]*Translation)
-			}
-			missing := r.Missing[callerID]
-			if missing == nil {
-				missing = make(map[string]*Translation)
-				r.Missing[callerID] = missing
-			}
-			for translationID, enTranslation := range enTranslations {
-				t := ts[translationID]
-				if t == nil || t.Version < enTranslation.Version {
-					missing[translationID] = enTranslation
-				}
-			}
-		}
-	}
-
-	for lang, callers := range translations {
-		if lang == defaultLanguage {
-			continue
-		}
-		r := reports[lang]
-		for callerID, ts := range callers {
-			enTranslations := enUS[callerID]
-			for translationID := range ts {
-				if enTranslations[translationID] == nil {
-					r.Extras = append(r.Extras, callerID+" -> "+translationID)
-				}
-			}
-		}
-	}
-
-	return reports
 }

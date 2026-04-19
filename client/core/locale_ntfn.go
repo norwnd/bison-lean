@@ -401,20 +401,6 @@ func init() {
 	}
 }
 
-// RegisterTranslations registers translations with the init package for
-// translator worksheet preparation.
-func RegisterTranslations() {
-	const callerID = "notifications"
-
-	for lang, m := range locales {
-		r := intl.NewRegistrar(callerID, lang, len(m)*2)
-		for topic, t := range m {
-			r.Register(string(topic)+" subject", &t.subject)
-			r.Register(string(topic)+" template", &t.template)
-		}
-	}
-}
-
 // CheckTopicLangs is used to report missing notification translations.
 func CheckTopicLangs() (missingTranslations int) {
 	for topic := range originLocale {

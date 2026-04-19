@@ -424,10 +424,12 @@ func New(cfg *Config) (*WebServer, error) {
 
 	lang := cfg.Core.Language()
 
-	langs := make([]string, 0, len(localesMap))
-	for l := range localesMap {
-		langs = append(langs, l)
-	}
+	// Only en-US is supported; the React UI loads en-US.json exclusively and
+	// the Go-side HTML-translation pipeline was removed in CL-WORKSHEET-KILL.
+	// Still serialized into /api/user.Langs (and stored in the React auth
+	// store as `langs`) to avoid a backend/frontend contract break; no
+	// component currently reads it on the frontend side.
+	langs := []string{"en-US"}
 
 	var useDEXBranding bool
 	if xCfg := cfg.Core.ExtensionModeConfig(); xCfg != nil {
