@@ -6952,12 +6952,9 @@ func (c *Core) createTradeRequest(
 	errCloser *dex.ErrorCloser,
 ) (result *tradeRequest, err error) {
 	closer := dex.NewErrorCloser()
-	defer func() {
-		if err != nil {
-			closer.Done(c.log) // clean up
-		}
-		// otherwise closer will be devoured by errCloser
-	}()
+	// Run cleanup only on error; on success, closer is devoured by the outer
+	// errCloser.
+	defer closer.DoneOnError(c.log, &err)
 
 	coinIDs := make([]order.CoinID, 0, len(coins))
 	for i := range coins {
@@ -7442,14 +7439,10 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (result *tradeReq
 	}()
 
 	// The coins selected for this order will need to be unlocked
-	// if the order does not get to the server successfully.
+	// if the order does not get to the server successfully. On success
+	// the resulting trade request keeps track of & resolves errCloser.
 	errCloser := dex.NewErrorCloser()
-	defer func() {
-		if err != nil {
-			errCloser.Done(c.log) // clean up
-		}
-		// otherwise the resulting trade request will keep track of & resolve errCloser
-	}()
+	defer errCloser.DoneOnError(c.log, &err)
 	errCloser.Add(c.returnCoinsErrCloser(fromWallet, coins))
 
 	tradeRequest, err := c.createTradeRequest(
@@ -7548,13 +7541,11 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 
 	errClosers := make([]*dex.ErrorCloser, 0, len(allCoins))
 	for _, coins := range allCoins {
+		// On error, unlock the coins for this iteration; on success,
+		// the resulting trade request keeps track of & resolves
+		// errCloser.
 		errCloser := dex.NewErrorCloser()
-		defer func() {
-			if err != nil {
-				errCloser.Done(c.log) // clean up
-			}
-			// otherwise the resulting trade request will keep track of & resolve errCloser
-		}()
+		defer errCloser.DoneOnError(c.log, &err)
 		errCloser.Add(c.returnCoinsErrCloser(fromWallet, coins))
 		errClosers = append(errClosers, errCloser)
 	}

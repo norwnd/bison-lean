@@ -78,3 +78,28 @@ func (e *ErrorCloser) Done(log Logger) {
 		}
 	}
 }
+
+// DoneOnError is a convenience that runs Done only when *err is non-nil.
+// Intended to be used with `defer` in functions that have a named error
+// return, replacing the hand-rolled idiom
+//
+//	defer func() { if err != nil { e.Done(log) } }()
+//
+// Keeping the pattern as a one-liner removes the anonymous closure, and
+// with it the risk of a future edit accidentally writing to the outer
+// `err` variable from inside the defer — the trap that caused the
+// prepareTradeRequest / prepareMultiTradeRequests regression in commit
+// bcbd6d95 (the Add callbacks there had the same shape).
+//
+// Typical usage:
+//
+//	func foo(...) (err error) {
+//	    closer := dex.NewErrorCloser()
+//	    defer closer.DoneOnError(log, &err)
+//	    ...
+//	}
+func (e *ErrorCloser) DoneOnError(log Logger, err *error) {
+	if err != nil && *err != nil {
+		e.Done(log)
+	}
+}
