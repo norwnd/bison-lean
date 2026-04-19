@@ -2,6 +2,20 @@ set -e
 
 #!/usr/bin/env bash
 
+# Pre-flight: fail fast if another bisonw instance is already holding the
+# DB lock. Without this check, bisonw sits for ~10s and then emits a
+# cryptic "database initialization error: timeout, could happen when
+# database is already being used by another process" message.
+existing_bisonw_pids=$(pgrep -f 'client/cmd/bisonw/bisonw' || true)
+if [ -n "$existing_bisonw_pids" ]; then
+    echo "ERROR: another bisonw instance is already running:" >&2
+    ps -o pid,etime,command -p $existing_bisonw_pids >&2
+    echo "" >&2
+    echo "Kill it first (e.g. 'kill $(echo $existing_bisonw_pids | awk '{print $1}')') or" >&2
+    echo "the new instance will time out waiting for the DB lock." >&2
+    exit 1
+fi
+
 ## mainnet
 #
 # pprof is available at:

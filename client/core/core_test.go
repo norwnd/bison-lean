@@ -882,6 +882,18 @@ type TXCWallet struct {
 var _ asset.Accelerator = (*TXCWallet)(nil)
 var _ asset.Withdrawer = (*TXCWallet)(nil)
 
+// newTWalletDisconnected is a convenience wrapper that returns an
+// xcWallet with hookedUp=false, so tests exercising xcWallet.Connect()
+// (or anything gated on connected()) don't short-circuit at the
+// `if w.connected() { return nil }` guard. Prefer this over
+// `newTWallet(id); wallet.hookedUp = false` when the test's whole
+// point is to drive Connect.
+func newTWalletDisconnected(assetID uint32) (*xcWallet, *TXCWallet) {
+	wallet, tw := newTWallet(assetID)
+	wallet.hookedUp = false
+	return wallet, tw
+}
+
 func newTWallet(assetID uint32) (*xcWallet, *TXCWallet) {
 	w := &TXCWallet{
 		changeCoin:       &tCoin{id: encode.RandomBytes(36)},
@@ -3019,11 +3031,7 @@ func TestXCWalletConnectRetry(t *testing.T) {
 	// the `!ready` defer is registered. The reset happens inline right
 	// before the return.
 	t.Run("retry after ConnectOnce failure", func(t *testing.T) {
-		wallet, tWallet := newTWallet(tUTXOAssetA.ID)
-		// newTWallet initializes hookedUp=true (shared fixture); clear
-		// it so xcWallet.Connect() doesn't short-circuit at the
-		// `if w.connected() { return nil }` guard.
-		wallet.hookedUp = false
+		wallet, tWallet := newTWalletDisconnected(tUTXOAssetA.ID)
 
 		// First attempt: drive ConnectOnce to an error.
 		tWallet.connectErr = tErr
@@ -3047,10 +3055,7 @@ func TestXCWalletConnectRetry(t *testing.T) {
 	// (SyncStatus) fails. The `!ready` defer runs Disconnect() on the
 	// used-up connector and THEN replaces it with a fresh instance.
 	t.Run("retry after post-connect validation failure", func(t *testing.T) {
-		wallet, tWallet := newTWallet(tUTXOAssetA.ID)
-		// See note above — clear hookedUp so Connect() doesn't
-		// short-circuit.
-		wallet.hookedUp = false
+		wallet, tWallet := newTWalletDisconnected(tUTXOAssetA.ID)
 
 		// First attempt: ConnectOnce succeeds, but the SyncStatus call
 		// that follows returns an error. This triggers the defer-path
@@ -3247,15 +3252,11 @@ func TestPrepareTradeRequestErrorCloser(t *testing.T) {
 	defer rig.shutdown()
 	tCore := rig.core
 
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet, tDcrWallet := newTWalletDisconnected(tUTXOAssetA.ID)
 	// Same TFeeRater shim as trade(): lets feeSuggestionSwapAny
 	// short-circuit on the wallet-provided rate so we don't need to
 	// stub the DEX fee_rate WS route.
 	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
-	// newTWallet() initializes hookedUp=true (shared fixture); clear
-	// it so xcWallet.Connect() doesn't short-circuit at the
-	// `if w.connected() { return nil }` guard.
-	dcrWallet.hookedUp = false
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	dcrWallet.Unlock(rig.crypter)

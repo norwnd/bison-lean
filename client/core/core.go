@@ -5887,6 +5887,22 @@ func (c *Core) feeSuggestionAny(assetID uint32, preferredConns ...*dexConnection
 }
 
 // feeSuggestionSwapAny is same as feeSuggestionAny but for swaps.
+//
+// Precedence:
+//  1. If a wallet is registered for assetID AND it is connected AND
+//     FeeRateSwap returns a non-zero rate → use the wallet rate. Always
+//     wins over the DEX-side cache so wallet settings (e.g. user's max
+//     fee) stay authoritative.
+//  2. If a wallet is registered for assetID but is NOT connected →
+//     return 0 immediately (REFUSE to fall through to DEX-side cache).
+//     The caller is expected to wait for the wallet to come online so
+//     its configuration is respected. Without this refusal a
+//     disconnected wallet's user settings could be silently bypassed.
+//  3. Otherwise (no wallet, or wallet connected with a zero rate) →
+//     fall through to cached book fee rates, then to the server's
+//     fee_rate RPC.
+//
+// See TestFeeSuggestionSwapAny for the precedence contract.
 func (c *Core) feeSuggestionSwapAny(assetID uint32, preferredConns ...*dexConnection) uint64 {
 	// See if the wallet supports fee rates.
 	w, found := c.wallet(assetID)
@@ -7175,7 +7191,16 @@ func (c *Core) activeMatchCount(dc *dexConnection) int {
 	return n
 }
 
-// tradeAttempt represents user-initiated trade attempt.
+// tradeAttempt represents user-initiated trade attempt. Used to drive
+// the Bison-specific 1-time-warning state machine in validateTradeRate
+// via Core.previouslyFailedTradeAttempt (atomic.Pointer[tradeAttempt]).
+//
+// IMPORTANT: the "no previous attempt" sentinel is a nil pointer stored
+// in the atomic — NOT a zero-value tradeAttempt. An empty
+// {market: "", rate: 0} is treated as a valid tuple and will try to
+// match the current call (rate: 0 fails up-front, so it's usually
+// harmless, but the precedent is brittle). Callers clearing the state
+// must use Store(nil), not Store(&tradeAttempt{}).
 type tradeAttempt struct {
 	market string
 	rate   uint64
@@ -7256,6 +7281,38 @@ func (c *Core) validateTradeRate(sell bool, rate uint64, market string, dc *dexC
 	}
 
 	return nil
+}
+
+// returnCoinsErrCloser returns an errCloser.Add callback that unlocks
+// funding coins and refreshes the wallet balance. Used by both
+// prepareTradeRequest and prepareMultiTradeRequests on their failure
+// paths.
+//
+// IMPORTANT: the callback uses a LOCAL error variable. Do NOT rewrite
+// it to assign to any outer named-return `err` — this callback runs
+// inside an errCloser.Done() chain triggered from a defer on the
+// failure path of the caller. Clobbering the caller's `err` there
+// would make prepareTradeRequest appear to succeed (return nil, nil),
+// and sendTradeRequest(nil) panics. See commit bcbd6d95 for history.
+func (c *Core) returnCoinsErrCloser(fromWallet *xcWallet, coins asset.Coins) func() error {
+	return func() error {
+		var localErr error
+		defer func() {
+			// Gotta update balances here (even if we couldn't return all the coins we might have
+			// returned some but not others, hence updating balances in error-case too) because
+			// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
+			// wallet balance update (e.g. blockchain tip change).
+			_, localErr = c.updateWalletBalance(fromWallet)
+			if localErr != nil {
+				c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), localErr)
+			}
+		}()
+		localErr = fromWallet.ReturnCoins(coins)
+		if localErr != nil {
+			return fmt.Errorf("unable to return %s funding coins: %v", unbip(fromWallet.AssetID), localErr)
+		}
+		return nil
+	}
 }
 
 // prepareTradeRequest prepares a trade request.
@@ -7393,29 +7450,7 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (result *tradeReq
 		}
 		// otherwise the resulting trade request will keep track of & resolve errCloser
 	}()
-	errCloser.Add(func() error {
-		// NOTE: do NOT use the outer function's named return `err` here;
-		// this callback runs inside a defer-triggered errCloser.Done()
-		// path, and assigning to `err` would clobber the error we are
-		// currently returning, causing prepareTradeRequest to appear
-		// to succeed (return nil, nil). Use a local variable instead.
-		var localErr error
-		defer func() {
-			// Gotta update balances here (even if we couldn't return all the coins we might have
-			// returned some but not others, hence updating balances in error-case too) because
-			// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
-			// wallet balance update (e.g. blockchain tip change).
-			_, localErr = c.updateWalletBalance(fromWallet)
-			if localErr != nil {
-				c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), localErr)
-			}
-		}()
-		localErr = fromWallet.ReturnCoins(coins)
-		if localErr != nil {
-			return fmt.Errorf("Unable to return %s funding coins: %v", unbip(fromWallet.AssetID), localErr)
-		}
-		return nil
-	})
+	errCloser.Add(c.returnCoinsErrCloser(fromWallet, coins))
 
 	tradeRequest, err := c.createTradeRequest(
 		wallets,
@@ -7521,29 +7556,7 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 			}
 			// otherwise the resulting trade request will keep track of & resolve errCloser
 		}()
-		errCloser.Add(func() error {
-			// NOTE: do NOT assign to the outer `err`; this callback can
-			// run inside a defer-triggered errCloser.Done() path, and
-			// clobbering `err` there would confuse the defer chain (see
-			// matching note in prepareTradeRequest). Use a local
-			// variable instead.
-			var localErr error
-			defer func() {
-				// Gotta update balances here (even if we couldn't return all the coins we might have
-				// returned some but not others, hence updating balances in error-case too) because
-				// otherwise these funds will show as locked (e.g. in UI) until some other event triggers
-				// wallet balance update (e.g. blockchain tip change).
-				_, localErr = c.updateWalletBalance(fromWallet)
-				if localErr != nil {
-					c.log.Warnf("Could not update balances for %s wallet: %v", unbip(fromWallet.AssetID), localErr)
-				}
-			}()
-			localErr = fromWallet.ReturnCoins(theseCoins)
-			if localErr != nil {
-				return fmt.Errorf("unable to return %s funding coins: %v", unbip(fromWallet.AssetID), localErr)
-			}
-			return nil
-		})
+		errCloser.Add(c.returnCoinsErrCloser(fromWallet, theseCoins))
 		errClosers = append(errClosers, errCloser)
 	}
 
