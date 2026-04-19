@@ -1,3 +1,23 @@
+// jsintl.go is a translator-worksheet backing store, NOT the runtime i18n
+// source for the web UI.
+//
+// The React frontend's live translations come from
+// `client/webserver/site/src/i18n/en-US.json`, loaded via react-i18next in
+// `client/webserver/site/src/i18n/index.ts`. Edits there take effect at
+// runtime; edits here do not.
+//
+// The `enUS` map below is consumed only by:
+//   - `client/cmd/translationsreport/main.go` (via RegisterTranslations), to
+//     generate the translator worksheet showing default English strings
+//     next to each locale's translation gaps. Keep entries UPPER_SNAKE and
+//     in sync with en-US.json keys so translators see the right defaults.
+//   - The legacy `/locale` HTTP route (see `apiLocale` in api.go), which
+//     currently has zero client callers (the React app does not fetch
+//     locale dicts from the server). Route + map are retained for possible
+//     future use or out-of-tree consumers.
+//
+// TL;DR: changing a string here does NOT change what users see in the app.
+
 package webserver
 
 import "decred.org/dcrdex/client/intl"
