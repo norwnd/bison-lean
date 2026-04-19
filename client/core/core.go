@@ -1656,16 +1656,6 @@ type Config struct {
 	MaxActiveMatches int
 }
 
-// locale is data associated with the currently selected language.
-// Only the tag is retained; notification rendering reads templates
-// directly from originLocale (the en-US catalog registered in
-// locale_ntfn.go). The struct is kept so c.intl can continue to
-// expose c.Language() to the webserver without threading a raw string
-// through every caller.
-type locale struct {
-	lang language.Tag
-}
-
 // Core is the core client application. Core manages DEX connections, wallets,
 // database access, match negotiation and more.
 type Core struct {
@@ -1679,7 +1669,13 @@ type Core struct {
 	net           dex.Network
 	lockTimeTaker time.Duration
 	lockTimeMaker time.Duration
-	intl          atomic.Value // *locale
+	// lang is the resolved locale tag (typically en-US since that is
+	// the only catalog in originLocale). Set once in New and read-only
+	// afterwards — /setlocale was removed in CL-API-LOCALE-DEAD, so no
+	// atomic is needed. Notification rendering bypasses this and reads
+	// originLocale directly; lang is retained for c.Language() which
+	// the webserver serializes into /api/user.lang.
+	lang language.Tag
 
 	extensionModeConfig *ExtensionModeConfig
 
@@ -1800,7 +1796,7 @@ func New(cfg *Config) (*Core, error) {
 			cfg.Logger.Infof("Using language %v", tag)
 		case language.No:
 			// Fallback to English instead of returning error
-			cfg.Logger.Warnf("Language %q not supported, falling back to %s", langStr, originLang)
+			cfg.Logger.Warnf("Language %q not supported, falling back to en-US", langStr)
 			return language.AmericanEnglish, nil
 		}
 		return tag, nil
@@ -1891,7 +1887,7 @@ func New(cfg *Config) (*Core, error) {
 		requestedActions: make(map[string]*asset.ActionRequiredNote),
 	}
 
-	c.intl.Store(&locale{lang: lang})
+	c.lang = lang
 
 	// Populate the initial user data. User won't include any DEX info yet, as
 	// those are retrieved when Run is called and the core connects to the DEXes.
@@ -2064,13 +2060,9 @@ func (c *Core) Ready() <-chan struct{} {
 	return c.ready
 }
 
-func (c *Core) locale() *locale {
-	return c.intl.Load().(*locale)
-}
-
 // Language is the currently configured language.
 func (c *Core) Language() string {
-	return c.locale().lang.String()
+	return c.lang.String()
 }
 
 // SetCompanionToken stores the companion app auth token in the database.

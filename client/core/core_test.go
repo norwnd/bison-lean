@@ -1633,7 +1633,7 @@ func newTestRig() *testRig {
 		crypter: crypter,
 	}
 
-	rig.core.intl.Store(&locale{lang: language.AmericanEnglish})
+	rig.core.lang = language.AmericanEnglish
 
 	rig.core.InitializeClient(tPW, nil)
 

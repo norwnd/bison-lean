@@ -5,10 +5,8 @@ type translation struct {
 	template string
 }
 
-const originLang = "en-US"
-
 // originLocale is the American English translations.
-var originLocale = map[Topic]*translation{
+var originLocale = map[Topic]translation{
 	TopicAccountRegistered: {
 		subject:  "Account registered",
 		template: "You may now trade at %s",
