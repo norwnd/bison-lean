@@ -556,7 +556,7 @@ func TestAPILogin(t *testing.T) {
 	// /api/login folds the /api/user payload into its response, so the
 	// expected body here covers both the user snapshot and the notification
 	// fields appended by apiLogin.
-	const userPayload = `"user":null,"lang":"en-US","langs":["en-US"],"inited":false,"ok":true,"onionUrl":"","mmStatus":null,"companionAppPaired":false`
+	const userPayload = `"user":null,"lang":"en-US","inited":false,"ok":true,"onionUrl":"","mmStatus":null,"companionAppPaired":false`
 	ensure(`{` + userPayload + `,"notes":null,"pokes":[]}`)
 
 	tCore.notes = []*db.Notification{{
@@ -1190,4 +1190,3 @@ func TestGetProposalTokenCtx(t *testing.T) {
 		}
 	}
 }
-

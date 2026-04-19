@@ -152,17 +152,12 @@ func (c *Core) AckNotes(ids []dex.Bytes) {
 }
 
 func (c *Core) formatDetails(topic Topic, args ...any) (translatedSubject, details string) {
-	locale := c.locale()
-	trans, found := locale.m[topic]
+	trans, found := originLocale[topic]
 	if !found {
 		c.log.Errorf("No translation found for topic %q", topic)
-		originTrans, found := originLocale[topic]
-		if !found {
-			return string(topic), "translation error"
-		}
-		return originTrans.subject.T, fmt.Sprintf(originTrans.template.T, args...)
+		return string(topic), "translation error"
 	}
-	return trans.subject.T, locale.printer.Sprintf(string(topic), args...)
+	return trans.subject, fmt.Sprintf(trans.template, args...)
 }
 
 func makeCoinIDToken(txHash string, assetID uint32) string {

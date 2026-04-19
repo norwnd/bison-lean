@@ -35,7 +35,6 @@ import (
 	"github.com/decred/dcrd/crypto/blake256"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 )
 
 var rand = mrand.New(mrand.NewPCG(0xbadc0de, 0xdeadbeef))
@@ -1634,10 +1633,7 @@ func newTestRig() *testRig {
 		crypter: crypter,
 	}
 
-	rig.core.intl.Store(&locale{
-		m:       originLocale,
-		printer: message.NewPrinter(language.AmericanEnglish),
-	})
+	rig.core.intl.Store(&locale{lang: language.AmericanEnglish})
 
 	rig.core.InitializeClient(tPW, nil)
 

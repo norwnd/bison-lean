@@ -992,7 +992,6 @@ func (s *WebServer) apiBuildInfo(w http.ResponseWriter, r *http.Request) {
 type userResponseBody struct {
 	User               *core.User `json:"user"`
 	Lang               string     `json:"lang"`
-	Langs              []string   `json:"langs"`
 	Inited             bool       `json:"inited"`
 	OK                 bool       `json:"ok"`
 	OnionUrl           string     `json:"onionUrl"`
@@ -1015,7 +1014,6 @@ func (s *WebServer) userResponse(u *core.User) *userResponseBody {
 	return &userResponseBody{
 		User:               u,
 		Lang:               s.lang,
-		Langs:              s.langs,
 		Inited:             s.core.IsInitialized(),
 		OK:                 true,
 		OnionUrl:           s.onion,

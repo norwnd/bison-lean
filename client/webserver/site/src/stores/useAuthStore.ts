@@ -27,7 +27,6 @@ interface AuthState {
   inited: boolean
   initialFetchDone: boolean
   lang: string
-  langs: string[]
   onionUrl: string
   companionAppPaired: boolean
   seedGenTime: number
@@ -73,7 +72,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
         authed: false,
         initialFetchDone: true,
         lang: resp.lang,
-        langs: resp.langs,
         onionUrl: resp.onionUrl,
         companionAppPaired: resp.companionAppPaired,
       })
@@ -97,7 +95,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
       inited: resp.inited,
       initialFetchDone: true,
       lang: resp.lang,
-      langs: resp.langs,
       onionUrl: resp.onionUrl,
       companionAppPaired: resp.companionAppPaired,
       seedGenTime: user.seedgentime,
@@ -117,7 +114,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
     inited: false,
     initialFetchDone: false,
     lang: 'en-US',
-    langs: ['en-US'],
     onionUrl: '',
     companionAppPaired: false,
     seedGenTime: 0,

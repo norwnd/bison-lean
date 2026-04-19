@@ -1339,7 +1339,6 @@ export interface UserResponse {
   msg: string
   user?: User
   lang: string
-  langs: string[]
   inited: boolean
   onionUrl: string
   mmStatus: MarketMakingStatus

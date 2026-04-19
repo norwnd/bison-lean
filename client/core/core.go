@@ -53,7 +53,6 @@ import (
 	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/decred/go-socks/socks"
 	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 )
 
 const (
@@ -1658,10 +1657,13 @@ type Config struct {
 }
 
 // locale is data associated with the currently selected language.
+// Only the tag is retained; notification rendering reads templates
+// directly from originLocale (the en-US catalog registered in
+// locale_ntfn.go). The struct is kept so c.intl can continue to
+// expose c.Language() to the webserver without threading a raw string
+// through every caller.
 type locale struct {
-	lang    language.Tag
-	m       map[Topic]*translation
-	printer *message.Printer
+	lang language.Tag
 }
 
 // Core is the core client application. Core manages DEX connections, wallets,
@@ -1784,14 +1786,11 @@ func New(cfg *Config) (*Core, error) {
 		if err != nil {
 			return language.Und, fmt.Errorf("unable to parse requested language: %w", err)
 		}
-		var langs []language.Tag
-		for locale := range locales {
-			tag, err := language.Parse(locale)
-			if err != nil {
-				return language.Und, fmt.Errorf("bad %v: %w", locale, err)
-			}
-			langs = append(langs, tag)
-		}
+		// Only en-US is supported since the multi-locale catalog was
+		// removed (see locale_ntfn.go). The matcher still runs so a
+		// user-supplied tag is normalized/validated before falling
+		// back to English.
+		langs := []language.Tag{language.AmericanEnglish}
 		matcher := language.NewMatcher(langs)
 		_, idx, conf := matcher.Match(acceptLang) // use index because tag may end up as something hyper specific like zh-Hans-u-rg-cnzzzz
 		tag := langs[idx]
@@ -1832,14 +1831,7 @@ func New(cfg *Config) (*Core, error) {
 		lang = language.AmericanEnglish
 	}
 
-	cfg.Logger.Debugf("Using locale printer for %q", lang)
-
-	translations, found := locales[lang.String()]
-	if !found {
-		cfg.Logger.Warnf("Language %q not supported, falling back to %s", lang, originLang)
-		lang = language.AmericanEnglish
-		translations = locales[originLang]
-	}
+	cfg.Logger.Debugf("Using locale %q", lang)
 
 	// Try to get the primary credentials, but ignore no-credentials error here
 	// because the client may not be initialized.
@@ -1899,11 +1891,7 @@ func New(cfg *Config) (*Core, error) {
 		requestedActions: make(map[string]*asset.ActionRequiredNote),
 	}
 
-	c.intl.Store(&locale{
-		lang:    lang,
-		m:       translations,
-		printer: message.NewPrinter(lang),
-	})
+	c.intl.Store(&locale{lang: lang})
 
 	// Populate the initial user data. User won't include any DEX info yet, as
 	// those are retrieved when Run is called and the core connects to the DEXes.
