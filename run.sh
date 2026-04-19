@@ -3,9 +3,11 @@ set -e
 #!/usr/bin/env bash
 
 # Pre-flight: fail fast if another bisonw instance is already holding the
-# DB lock. Without this check, bisonw sits for ~10s and then emits a
-# cryptic "database initialization error: timeout, could happen when
-# database is already being used by another process" message.
+# DB lock. Without this check, bisonw waits ~3s (bbolt lock timeout in
+# client/db/bolt.dbLockTimeout) and then fails. As of 2026-04-19 the
+# DB init error is also a typed bolt.ErrDBLocked with the dbPath and the
+# holder PID (via lsof), but fast-failing in the shell still beats
+# waiting 3s for a guaranteed failure.
 existing_bisonw_pids=$(pgrep -f 'client/cmd/bisonw/bisonw' || true)
 if [ -n "$existing_bisonw_pids" ]; then
     echo "ERROR: another bisonw instance is already running:" >&2

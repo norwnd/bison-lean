@@ -12,9 +12,11 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,6 +150,45 @@ var defaultOpts = Opts{
 	BackupOnShutdown: true,
 }
 
+// dbLockTimeout is how long bbolt.Open waits for the file lock before
+// giving up. Kept as a package-level constant so the run.sh pre-flight
+// comment (and any future user-facing hints) can cite the same value.
+const dbLockTimeout = 3 * time.Second
+
+// ErrDBLocked is returned by NewDB when the DB file cannot be opened
+// within dbLockTimeout because another process holds its lock. The
+// wrapped error is bbolt.ErrTimeout, so callers that want to handle the
+// timeout explicitly can still use errors.Is(err, bbolt.ErrTimeout).
+// The typed sentinel is provided so callers (especially tests and
+// higher-level startup code) can distinguish "already running" from
+// other startup failures without string-matching on the message.
+var ErrDBLocked = errors.New("database file is locked by another process")
+
+// findDBLockHolder returns the PIDs of processes holding dbPath open,
+// or nil if the information cannot be obtained (e.g. lsof not
+// installed, or the platform doesn't support it). Best-effort only —
+// intended to enrich a user-facing error message, not for any
+// programmatic decision. Capped at 2 seconds so a misbehaving lsof
+// can't stall bisonw startup further than the lock-acquire timeout
+// already did.
+func findDBLockHolder(dbPath string) []int {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lsof", "-t", "--", dbPath).Output()
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, s := range strings.Fields(string(out)) {
+		pid, err := strconv.Atoi(s)
+		if err != nil {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids
+}
+
 // BoltDB is a bbolt-based database backend for Bison Wallet. BoltDB satisfies
 // the db.DB interface defined at decred.org/dcrdex/client/db.
 type BoltDB struct {
@@ -164,10 +205,21 @@ func NewDB(dbPath string, logger dex.Logger, opts ...Opts) (dexdb.DB, error) {
 	_, err := os.Stat(dbPath)
 	isNew := os.IsNotExist(err)
 
-	db, err := bbolt.Open(dbPath, 0600, &bbolt.Options{Timeout: 3 * time.Second})
+	db, err := bbolt.Open(dbPath, 0600, &bbolt.Options{Timeout: dbLockTimeout})
 	if err != nil {
 		if errors.Is(err, bbolt.ErrTimeout) {
-			err = fmt.Errorf("%w, could happen when database is already being used by another process", err)
+			// Wrap with ErrDBLocked (callers may errors.Is against it)
+			// and attach the path + any lock-holder PIDs we can find
+			// via lsof. On success the underlying bbolt.ErrTimeout is
+			// still reachable via errors.Unwrap for callers that want
+			// to treat the timeout category specifically.
+			msg := fmt.Sprintf("%s (after %s)", dbPath, dbLockTimeout)
+			if pids := findDBLockHolder(dbPath); len(pids) > 0 {
+				msg += fmt.Sprintf("; holder PID(s): %v", pids)
+			} else {
+				msg += "; try `lsof " + dbPath + "` or `pgrep -f bisonw` to identify the holder"
+			}
+			return nil, fmt.Errorf("%w: %s (underlying: %w)", ErrDBLocked, msg, err)
 		}
 		return nil, err
 	}
