@@ -34,7 +34,6 @@ import (
 	serverdex "decred.org/dcrdex/server/dex"
 	"github.com/decred/dcrd/crypto/blake256"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"golang.org/x/text/language"
 )
 
 var rand = mrand.New(mrand.NewPCG(0xbadc0de, 0xdeadbeef))
@@ -708,9 +707,6 @@ func (tdb *TDB) Backup() error {
 
 func (tdb *TDB) AckNotification(id []byte) error { return nil }
 
-func (tdb *TDB) Language() (string, error) {
-	return "en-US", nil
-}
 func (tdb *TDB) SetCompanionToken(token string) error {
 	return nil
 }
@@ -1632,8 +1628,6 @@ func newTestRig() *testRig {
 		acct:    acct,
 		crypter: crypter,
 	}
-
-	rig.core.lang = language.AmericanEnglish
 
 	rig.core.InitializeClient(tPW, nil)
 

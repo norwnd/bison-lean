@@ -1013,7 +1013,7 @@ func (s *WebServer) userResponse(u *core.User) *userResponseBody {
 
 	return &userResponseBody{
 		User:               u,
-		Lang:               s.lang,
+		Lang:               "en-US",
 		Inited:             s.core.IsInitialized(),
 		OK:                 true,
 		OnionUrl:           s.onion,

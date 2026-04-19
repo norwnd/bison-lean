@@ -163,12 +163,9 @@ type Config struct {
 	NoWeb      bool   `long:"noweb" description:"disable the web server."`
 	CPUProfile string `long:"cpuprofile" description:"File for CPU profiling."`
 	ShowVer    bool   `short:"V" long:"version" description:"Display version information and exit"`
-	Language   string `long:"lang" description:"BCP 47 tag for preferred language, e.g. en-GB, fr, zh-CN"`
 }
 
-// Web creates a configuration for the webserver. This is a Config method
-// instead of a WebConfig method because Language is an app-level setting used
-// by both core and rpcserver.
+// Web creates a configuration for the webserver.
 func (cfg *Config) Web(c *core.Core, mm *mm.MarketMaker, log dex.Logger, utc bool) *webserver.Config {
 	addr := cfg.WebAddr
 	host, _, err := net.SplitHostPort(addr)
@@ -204,15 +201,12 @@ func (cfg *Config) Web(c *core.Core, mm *mm.MarketMaker, log dex.Logger, utc boo
 		NoEmbed:         cfg.NoEmbedSite,
 		HttpProf:        cfg.HTTPProfile,
 		AppVersion:      Version,
-		Language:        cfg.Language,
 		Tor:             cfg.Tor,
 		MainLogFilePath: cfg.LogPath,
 	}
 }
 
-// Core creates a core.Core configuration. This is a Config method
-// instead of a CoreConfig method because Language is an app-level setting used
-// by both core and rpcserver.
+// Core creates a core.Core configuration.
 func (cfg *Config) Core(log dex.Logger) *core.Config {
 	return &core.Config{
 		DBPath:             cfg.DBPath,
@@ -221,7 +215,6 @@ func (cfg *Config) Core(log dex.Logger) *core.Config {
 		Onion:              cfg.Onion,
 		TorProxy:           cfg.TorProxy,
 		TorIsolation:       cfg.TorIsolation,
-		Language:           cfg.Language,
 		UnlockCoinsOnLogin: cfg.UnlockCoinsOnLogin,
 		NoAutoWalletLock:   cfg.NoAutoWalletLock,
 		NoAutoDBBackup:     cfg.NoAutoDBBackup,

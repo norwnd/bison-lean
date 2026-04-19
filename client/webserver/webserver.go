@@ -186,7 +186,6 @@ type clientCore interface {
 	TxHistory(assetID uint32, req *asset.TxHistoryRequest) (*asset.TxHistoryResponse, error)
 	FundsMixingStats(assetID uint32) (*asset.FundsMixingStats, error)
 	ConfigureFundsMixer(appPW []byte, assetID uint32, enabled bool) error
-	Language() string
 	SetCompanionToken(token string) error
 	CompanionToken() (string, error)
 	TakeAction(assetID uint32, actionID string, actionB json.RawMessage) error
@@ -265,7 +264,6 @@ type Config struct {
 	MarketMaker   MMCore     // *mm.MarketMaker
 	Addr          string
 	CustomSiteDir string
-	Language      string
 	Logger        dex.Logger
 	UTC           bool   // for stdout http request logging
 	AppVersion    string // e.g. "1.0.4-pre", "1.0.4"
@@ -296,7 +294,6 @@ type WebServer struct {
 	wsServer *websocket.Server
 	mux      *chi.Mux
 	siteDir  string
-	lang     string // immutable after New
 	core     clientCore
 	mm       MMCore
 	addr     string
@@ -421,8 +418,6 @@ func New(cfg *Config) (*WebServer, error) {
 		// httpServer.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0)
 	}
 
-	lang := cfg.Core.Language()
-
 	var useDEXBranding bool
 	if xCfg := cfg.Core.ExtensionModeConfig(); xCfg != nil {
 		useDEXBranding = xCfg.UseDEXBranding
@@ -430,7 +425,6 @@ func New(cfg *Config) (*WebServer, error) {
 
 	// Make the server here so its methods can be registered.
 	s := &WebServer{
-		lang:            lang,
 		core:            cfg.Core,
 		mm:              cfg.MarketMaker,
 		siteDir:         siteDir,

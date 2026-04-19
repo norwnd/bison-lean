@@ -52,7 +52,6 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/decred/go-socks/socks"
-	"golang.org/x/text/language"
 )
 
 const (
@@ -1626,8 +1625,6 @@ type Config struct {
 	TorProxy string
 	// TorIsolation specifies whether to enable Tor circuit isolation.
 	TorIsolation bool
-	// Language. A BCP 47 language tag. Default is en-US.
-	Language string
 
 	// NoAutoWalletLock instructs Core to skip locking the wallet on shutdown or
 	// logout. This can be helpful if the user wants the wallet to remain
@@ -1669,13 +1666,6 @@ type Core struct {
 	net           dex.Network
 	lockTimeTaker time.Duration
 	lockTimeMaker time.Duration
-	// lang is the resolved locale tag (typically en-US since that is
-	// the only catalog in originLocale). Set once in New and read-only
-	// afterwards — /setlocale was removed in CL-API-LOCALE-DEAD, so no
-	// atomic is needed. Notification rendering bypasses this and reads
-	// originLocale directly; lang is retained for c.Language() which
-	// the webserver serializes into /api/user.lang.
-	lang language.Tag
 
 	extensionModeConfig *ExtensionModeConfig
 
@@ -1777,58 +1767,6 @@ func New(cfg *Config) (*Core, error) {
 		cfg.Onion = cfg.TorProxy
 	}
 
-	parseLanguage := func(langStr string) (language.Tag, error) {
-		acceptLang, err := language.Parse(langStr)
-		if err != nil {
-			return language.Und, fmt.Errorf("unable to parse requested language: %w", err)
-		}
-		// Only en-US is supported since the multi-locale catalog was
-		// removed (see locale_ntfn.go). The matcher still runs so a
-		// user-supplied tag is normalized/validated before falling
-		// back to English.
-		langs := []language.Tag{language.AmericanEnglish}
-		matcher := language.NewMatcher(langs)
-		_, idx, conf := matcher.Match(acceptLang) // use index because tag may end up as something hyper specific like zh-Hans-u-rg-cnzzzz
-		tag := langs[idx]
-		switch conf {
-		case language.Exact:
-		case language.High, language.Low:
-			cfg.Logger.Infof("Using language %v", tag)
-		case language.No:
-			// Fallback to English instead of returning error
-			cfg.Logger.Warnf("Language %q not supported, falling back to en-US", langStr)
-			return language.AmericanEnglish, nil
-		}
-		return tag, nil
-	}
-
-	lang := language.Und
-
-	// Check for a persisted language. New values can no longer be
-	// written (the /setlocale HTTP handler was removed), but existing
-	// DBs may still have a value set by the old handler.
-	if langStr, err := boltDB.Language(); err != nil {
-		cfg.Logger.Errorf("Error loading language from database: %v", err)
-	} else if len(langStr) > 0 {
-		if lang, err = parseLanguage(langStr); err != nil {
-			cfg.Logger.Errorf("Error parsing language retrieved from database %q: %w", langStr, err)
-		}
-	}
-
-	// Fall back to the configured language (config file / CLI flag).
-	if lang.IsRoot() && cfg.Language != "" {
-		if lang, err = parseLanguage(cfg.Language); err != nil {
-			return nil, err
-		}
-	}
-
-	// Default language is English.
-	if lang.IsRoot() {
-		lang = language.AmericanEnglish
-	}
-
-	cfg.Logger.Debugf("Using locale %q", lang)
-
 	// Try to get the primary credentials, but ignore no-credentials error here
 	// because the client may not be initialized.
 	creds, err := boltDB.PrimaryCredentials()
@@ -1886,8 +1824,6 @@ func New(cfg *Config) (*Core, error) {
 		notes:            make(chan asset.WalletNotification, 128),
 		requestedActions: make(map[string]*asset.ActionRequiredNote),
 	}
-
-	c.lang = lang
 
 	// Populate the initial user data. User won't include any DEX info yet, as
 	// those are retrieved when Run is called and the core connects to the DEXes.
@@ -2058,11 +1994,6 @@ fetchers:
 // tasks and Core becomes ready for use.
 func (c *Core) Ready() <-chan struct{} {
 	return c.ready
-}
-
-// Language is the currently configured language.
-func (c *Core) Language() string {
-	return c.lang.String()
 }
 
 // SetCompanionToken stores the companion app auth token in the database.

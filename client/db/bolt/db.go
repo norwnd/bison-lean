@@ -129,7 +129,6 @@ var (
 	disabledRateSourceKey = []byte("disabledRateSources")
 	walletDisabledKey     = []byte("walletDisabled")
 	// programKey            = []byte("program") unused
-	langKey             = []byte("lang")
 	companionTokenKey   = []byte("companionToken")
 	swapAddrKey         = []byte("swapAddr")
 	counterPartyAddrKey = []byte("counterPartyAddr")
@@ -2681,21 +2680,6 @@ func (db *BoltDB) DisabledRateSources() (disabledSources []string, err error) {
 			if token != "" {
 				disabledSources = append(disabledSources, token)
 			}
-		}
-		return nil
-	})
-}
-
-// Language retrieves the persisted language. If no language has been
-// stored, an empty string is returned without an error. New values can
-// no longer be written through the client — the value is retained for
-// existing DBs where it was set by the (now-removed) /setlocale HTTP
-// handler.
-func (db *BoltDB) Language() (lang string, _ error) {
-	return lang, db.View(func(dbTx *bbolt.Tx) error {
-		bkt := dbTx.Bucket(appBucket)
-		if bkt != nil {
-			lang = string(bkt.Get(langKey))
 		}
 		return nil
 	})

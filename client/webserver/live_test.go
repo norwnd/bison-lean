@@ -1969,9 +1969,6 @@ func (c *TCore) ConfigureFundsMixer(appPW []byte, assetID uint32, enabled bool) 
 	return nil
 }
 
-func (c *TCore) Language() string {
-	return "en-US"
-}
 func (c *TCore) SetCompanionToken(token string) error { return nil }
 func (c *TCore) CompanionToken() (string, error)      { return "", nil }
 
