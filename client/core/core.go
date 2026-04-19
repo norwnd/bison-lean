@@ -1809,7 +1809,9 @@ func New(cfg *Config) (*Core, error) {
 
 	lang := language.Und
 
-	// Check if the user has set a language with SetLanguage.
+	// Check for a persisted language. New values can no longer be
+	// written (the /setlocale HTTP handler was removed), but existing
+	// DBs may still have a value set by the old handler.
 	if langStr, err := boltDB.Language(); err != nil {
 		cfg.Logger.Errorf("Error loading language from database: %v", err)
 	} else if len(langStr) > 0 {
@@ -1818,8 +1820,7 @@ func New(cfg *Config) (*Core, error) {
 		}
 	}
 
-	// If they haven't changed the language through the UI, perhaps its set in
-	// configuration.
+	// Fall back to the configured language (config file / CLI flag).
 	if lang.IsRoot() && cfg.Language != "" {
 		if lang, err = parseLanguage(cfg.Language); err != nil {
 			return nil, err
@@ -2077,33 +2078,6 @@ func (c *Core) Ready() <-chan struct{} {
 
 func (c *Core) locale() *locale {
 	return c.intl.Load().(*locale)
-}
-
-// SetLanguage sets the langauge used for notifications. The language set with
-// SetLanguage persists through restarts and will override any language set in
-// configuration.
-func (c *Core) SetLanguage(lang string) error {
-	tag, err := language.Parse(lang)
-	if err != nil {
-		return fmt.Errorf("error parsing language %q: %w", lang, err)
-	}
-
-	translations, found := locales[lang]
-	if !found {
-		c.log.Warnf("Language %q not supported, using %s", lang, originLang)
-		lang = originLang
-		tag, _ = language.Parse(originLang) // Safe to ignore error, originLang is known valid
-		translations = locales[originLang]
-	}
-	if err := c.db.SetLanguage(lang); err != nil {
-		return fmt.Errorf("error storing language: %w", err)
-	}
-	c.intl.Store(&locale{
-		lang:    tag,
-		m:       translations,
-		printer: message.NewPrinter(tag),
-	})
-	return nil
 }
 
 // Language is the currently configured language.

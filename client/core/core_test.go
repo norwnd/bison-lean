@@ -709,9 +709,6 @@ func (tdb *TDB) Backup() error {
 
 func (tdb *TDB) AckNotification(id []byte) error { return nil }
 
-func (tdb *TDB) SetLanguage(lang string) error {
-	return nil
-}
 func (tdb *TDB) Language() (string, error) {
 	return "en-US", nil
 }

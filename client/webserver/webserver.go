@@ -30,7 +30,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"decred.org/dcrdex/client/asset"
@@ -187,7 +186,6 @@ type clientCore interface {
 	TxHistory(assetID uint32, req *asset.TxHistoryRequest) (*asset.TxHistoryResponse, error)
 	FundsMixingStats(assetID uint32) (*asset.FundsMixingStats, error)
 	ConfigureFundsMixer(appPW []byte, assetID uint32, enabled bool) error
-	SetLanguage(string) error
 	Language() string
 	SetCompanionToken(token string) error
 	CompanionToken() (string, error)
@@ -298,7 +296,7 @@ type WebServer struct {
 	wsServer *websocket.Server
 	mux      *chi.Mux
 	siteDir  string
-	lang     atomic.Value // string
+	lang     string // immutable after New
 	langs    []string
 	core     clientCore
 	mm       MMCore
@@ -438,6 +436,7 @@ func New(cfg *Config) (*WebServer, error) {
 
 	// Make the server here so its methods can be registered.
 	s := &WebServer{
+		lang:            lang,
 		langs:           langs,
 		core:            cfg.Core,
 		mm:              cfg.MarketMaker,
@@ -455,7 +454,6 @@ func New(cfg *Config) (*WebServer, error) {
 		useDEXBranding:  useDEXBranding,
 		mainLogFilePath: cfg.MainLogFilePath,
 	}
-	s.lang.Store(lang)
 
 	// Restore a persisted companion token hash so the companion app
 	// stays paired across restarts. The raw token is not stored; it
@@ -536,8 +534,6 @@ func New(cfg *Config) (*WebServer, error) {
 		r.Get("/isinitialized", s.apiIsInitialized)
 		r.Post("/resetapppassword", s.apiResetAppPassword)
 		r.Get("/user", s.apiUser)
-		r.Post("/locale", s.apiLocale)
-		r.Post("/setlocale", s.apiSetLocale)
 		r.Get("/buildinfo", s.apiBuildInfo)
 
 		r.Group(func(apiInit chi.Router) {

@@ -2686,19 +2686,11 @@ func (db *BoltDB) DisabledRateSources() (disabledSources []string, err error) {
 	})
 }
 
-// SetLanguage stores the language.
-func (db *BoltDB) SetLanguage(lang string) error {
-	return db.Update(func(dbTx *bbolt.Tx) error {
-		bkt := dbTx.Bucket(appBucket)
-		if bkt == nil {
-			return fmt.Errorf("app bucket not found")
-		}
-		return bkt.Put(langKey, []byte(lang))
-	})
-}
-
-// Language retrieves the language stored with SetLanguage. If no language
-// has been stored, an empty string is returned without an error.
+// Language retrieves the persisted language. If no language has been
+// stored, an empty string is returned without an error. New values can
+// no longer be written through the client — the value is retained for
+// existing DBs where it was set by the (now-removed) /setlocale HTTP
+// handler.
 func (db *BoltDB) Language() (lang string, _ error) {
 	return lang, db.View(func(dbTx *bbolt.Tx) error {
 		bkt := dbTx.Bucket(appBucket)

@@ -976,45 +976,6 @@ func (s *WebServer) apiIsInitialized(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *WebServer) apiLocale(w http.ResponseWriter, r *http.Request) {
-	var lang string
-	if !readPost(w, r, &lang) {
-		return
-	}
-	m, found := localesMap[lang]
-	if !found {
-		s.writeAPIError(w, fmt.Errorf("no locale for language %q", lang))
-		return
-	}
-	resp := make(map[string]string)
-	for translationID, defaultTranslation := range enUS {
-		t, found := m[translationID]
-		if !found {
-			t = defaultTranslation
-		}
-		resp[translationID] = t.T
-	}
-
-	writeJSON(w, resp)
-}
-
-func (s *WebServer) apiSetLocale(w http.ResponseWriter, r *http.Request) {
-	var lang string
-	if !readPost(w, r, &lang) {
-		return
-	}
-	if err := s.core.SetLanguage(lang); err != nil {
-		s.writeAPIError(w, err)
-		return
-	}
-
-	// Get actual language after SetLanguage (in case of fallback)
-	actualLang := s.core.Language()
-	s.lang.Store(actualLang)
-
-	writeJSON(w, simpleAck())
-}
-
 // apiBuildInfo is the handler for the '/buildinfo' API request.
 func (s *WebServer) apiBuildInfo(w http.ResponseWriter, r *http.Request) {
 	resp := buildInfoResponse{
@@ -1053,7 +1014,7 @@ func (s *WebServer) userResponse(u *core.User) *userResponseBody {
 
 	return &userResponseBody{
 		User:               u,
-		Lang:               s.lang.Load().(string),
+		Lang:               s.lang,
 		Langs:              s.langs,
 		Inited:             s.core.IsInitialized(),
 		OK:                 true,

@@ -1971,11 +1971,6 @@ func (c *TCore) ConfigureFundsMixer(appPW []byte, assetID uint32, enabled bool) 
 	return nil
 }
 
-func (c *TCore) SetLanguage(lang string) error {
-	c.lang = lang
-	return nil
-}
-
 func (c *TCore) Language() string {
 	return c.lang
 }

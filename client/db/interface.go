@@ -152,9 +152,12 @@ type DB interface {
 	// SaveDisabledRateSources saves disabled fiat rate sources in the database.
 	// A source name must not contain a comma.
 	SaveDisabledRateSources(disabledSources []string) error
-	// SetLanguage stores the user's chosen language.
-	SetLanguage(lang string) error
-	// Language gets the language stored with SetLanguage.
+	// Language gets the user's persisted language, or an empty string
+	// if none was stored. New values can no longer be written through
+	// the client — the value is retained for existing DBs whose language
+	// was set by the (now-removed) /setlocale HTTP handler. The startup
+	// language cascade is: stored value → `Config.Language` → default
+	// (en-US).
 	Language() (string, error)
 	// SetCompanionToken stores the companion app auth token hash.
 	SetCompanionToken(token string) error

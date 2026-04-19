@@ -6,15 +6,16 @@
 // `client/webserver/site/src/i18n/index.ts`. Edits there take effect at
 // runtime; edits here do not.
 //
-// The `enUS` map below is consumed only by:
-//   - `client/cmd/translationsreport/main.go` (via RegisterTranslations), to
-//     generate the translator worksheet showing default English strings
-//     next to each locale's translation gaps. Keep entries UPPER_SNAKE and
-//     in sync with en-US.json keys so translators see the right defaults.
-//   - The legacy `/locale` HTTP route (see `apiLocale` in api.go), which
-//     currently has zero client callers (the React app does not fetch
-//     locale dicts from the server). Route + map are retained for possible
-//     future use or out-of-tree consumers.
+// The `enUS` map below is consumed only by
+// `client/cmd/translationsreport/main.go` (via RegisterTranslations), to
+// generate the translator worksheet showing default English strings next
+// to each locale's translation gaps. Keep entries UPPER_SNAKE and in sync
+// with en-US.json keys so translators see the right defaults.
+//
+// `localesMap` is also consumed at webserver startup to enumerate the list
+// of supported language tags returned in the `/api/user` / `/api/login`
+// response (`s.langs`), which the React frontend uses for locale-aware
+// formatting (`Intl.NumberFormat`, `toLocaleLowerCase`, etc.).
 //
 // TL;DR: changing a string here does NOT change what users see in the app.
 
