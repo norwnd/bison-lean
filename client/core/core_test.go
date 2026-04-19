@@ -6360,8 +6360,8 @@ func TestRefunds(t *testing.T) {
 
 		if _, is := tracker.accountRefunder(); is {
 			if tEthWallet.refundFeeSuggestion != tMaxFeeRate {
-				t.Fatalf("refund suggestion for account asset %v != server max fee rate %v",
-					tEthWallet.refundFeeSuggestion, tACCTAsset.MaxFeeRate)
+				t.Fatalf("refund suggestion for account asset %v != tMaxFeeRate %v",
+					tEthWallet.refundFeeSuggestion, tMaxFeeRate)
 			}
 		}
 	}
