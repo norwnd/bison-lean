@@ -468,6 +468,17 @@ func (w *xcWallet) Connect() error {
 // xcWallet.hookedUp flag to false. Will also close the wallet if it is an
 // asset.Opener and open.
 func (w *xcWallet) Disconnect() {
+	// Serialize with Connect via connectMtx. Without this, Disconnect could
+	// race with an in-flight Connect: e.g. Connect's post-ConnectOnce
+	// validation defer (on failure) calls Disconnect on the old connector
+	// and Stores a fresh one, while a concurrent Disconnect could Load()
+	// and Disconnect the new (unconnected) connector — or Disconnect the
+	// old connector twice, which is a no-op on ConnectionMaster but
+	// conceptually confused. Holding connectMtx makes the two methods
+	// atomic w.r.t. each other.
+	w.connectMtx.Lock()
+	defer w.connectMtx.Unlock()
+
 	// Disabled wallet is already disconnected.
 	if w.isDisabled() {
 		return
