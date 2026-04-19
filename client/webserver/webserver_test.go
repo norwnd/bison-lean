@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"math/rand"
 	"net"
@@ -554,16 +553,20 @@ func TestAPILogin(t *testing.T) {
 		Pass: encode.PassBytes("def"),
 	}
 	body = goodBody
-	ensure(`{"ok":true,"notes":null,"pokes":[]}`)
+	// /api/login folds the /api/user payload into its response, so the
+	// expected body here covers both the user snapshot and the notification
+	// fields appended by apiLogin.
+	const userPayload = `"user":null,"lang":"en-US","langs":["en-US"],"inited":false,"ok":true,"onionUrl":"","mmStatus":null,"companionAppPaired":false`
+	ensure(`{` + userPayload + `,"notes":null,"pokes":[]}`)
 
 	tCore.notes = []*db.Notification{{
 		TopicID: core.TopicAccountUnlockError,
 	}}
-	ensure(`{"ok":true,"notes":[{"type":"","topic":"AccountUnlockError","subject":"","details":"","severity":0,"stamp":0,"acked":false,"id":""}],"pokes":[]}`)
+	ensure(`{` + userPayload + `,"notes":[{"type":"","topic":"AccountUnlockError","subject":"","details":"","severity":0,"stamp":0,"acked":false,"id":""}],"pokes":[]}`)
 
 	tCore.notes = nil
 	tCore.notesErr = errors.New("")
-	ensure(`{"ok":true,"notes":null,"pokes":[]}`)
+	ensure(`{` + userPayload + `,"notes":null,"pokes":[]}`)
 
 	// Login error
 	tCore.loginErr = tErr
@@ -1188,52 +1191,3 @@ func TestGetProposalTokenCtx(t *testing.T) {
 	}
 }
 
-func TestMdToHTML(t *testing.T) {
-	mdToHTML := templateFuncs["mdToHTML"].(func(string) template.HTML)
-
-	t.Run("basic markdown", func(t *testing.T) {
-		got := string(mdToHTML("# Hello\n\nWorld"))
-		if !strings.Contains(got, "<h1>Hello</h1>") {
-			t.Errorf("expected h1 tag, got: %s", got)
-		}
-		if !strings.Contains(got, "<p>World</p>") {
-			t.Errorf("expected p tag, got: %s", got)
-		}
-	})
-
-	t.Run("script tag is escaped (XSS prevention)", func(t *testing.T) {
-		got := string(mdToHTML("<script>alert('xss')</script>"))
-		if strings.Contains(got, "<script>") {
-			t.Errorf("script tag should be escaped, got: %s", got)
-		}
-	})
-
-	t.Run("raw HTML is escaped", func(t *testing.T) {
-		got := string(mdToHTML(`<div onclick="alert('xss')">click me</div>`))
-		if strings.Contains(got, "onclick") {
-			t.Errorf("onclick handler should be escaped, got: %s", got)
-		}
-	})
-
-	t.Run("img onerror is escaped", func(t *testing.T) {
-		got := string(mdToHTML(`<img src=x onerror="alert('xss')">`))
-		if strings.Contains(got, "onerror") {
-			t.Errorf("onerror handler should be escaped, got: %s", got)
-		}
-	})
-
-	t.Run("empty string", func(t *testing.T) {
-		got := string(mdToHTML(""))
-		if strings.Contains(got, "text-danger") {
-			t.Error("empty string should not produce an error")
-		}
-	})
-
-	t.Run("GFM table extension works", func(t *testing.T) {
-		md := "| Header |\n| --- |\n| Cell |"
-		got := string(mdToHTML(md))
-		if !strings.Contains(got, "<table>") {
-			t.Errorf("expected table tag, got: %s", got)
-		}
-	})
-}

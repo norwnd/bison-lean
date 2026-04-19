@@ -1,27 +1,15 @@
 <a id="top"/>
 
-Bison Wallet supports translations for the browser frontend and the notification messages from the backend.
+Bison Wallet supports translations for the React frontend and the notification messages from the backend.
 
 To add a new locale, the translations must be defined in the following locations:
 
-1. HTML strings (client/webserver/locales)
-2. Notification strings (client/core/locale_ntfn.go)
-3. JavaScript strings (client/webserver/site/src/js/locales.ts)
+1. Notification strings (client/core/locale_ntfn.go)
+2. React UI strings (client/webserver/site/src/i18n/)
 
 If you decide to do the following for a different language, please see the [Contribution Guide](https://github.com/decred/dcrdex/wiki/Contribution-Guide) for help with the github workflow.
 
-# Step 1 - HTML
-
-To create or update the HTML translations, create or modify the appropriate dictionary
-in the `client/webserver/locales` directory. These dictionaries map HTML template
-keys to translations. New or modified entries should use the translation in the English
-dictionary (`var EnUS` in the file `en-us.go`) as the source text. The goal is to duplicate
-entries for all keys in the English dictionary.
-
-When creating a dictionary for a new language, use the BCP 47 language tag to construct
-the file's name. The new language's HTML strings map must then be listed in [client/webserver/locales/locales.go](https://github.com/decred/dcrdex/blob/master/client/webserver/locales/locales.go) with an appropriate language tag.
-
-# Step 2 - Notifications
+# Step 1 - Notifications
 
 To update the notification translations, add or modify the translation in the appropriate locale dictionary map (e.g `originLocale`, `ptBR`, etc) in the [`client/core/locale_ntfn.go`](https://github.com/decred/dcrdex/blob/master/client/core/locale_ntfn.go) file. These dictionaries maps notification keys to translations. New or modified entries should use the translation in the English dictionary (`var originLocale map[Topic]*translation` in the file `locale_ntfn.go`) as the source text. The goal is to duplicate entries for all keys in the English dictionary.
 
@@ -31,13 +19,21 @@ Note how in **client/core/locale_ntfn.go** there are "printf" specifiers like `%
 
 Once the translations are added to **client/core/locale_ntfn.go**, the new map is listed in the `var locales map[string]map[Topic]*translation` at the bottom of the same file.
 
-# Step 3 - JavaScript
+# Step 2 - React UI
 
-To update the JavaScript strings translation in [client/webserver/site/src/js/locales.ts](https://github.com/decred/dcrdex/blob/master/client/webserver/site/src/js/locales.ts), add or modify the translation in the appropriate language object.
+The React frontend uses [`react-i18next`](https://react.i18next.com/). The translation tables live in [`client/webserver/site/src/i18n/`](https://github.com/decred/dcrdex/tree/master/client/webserver/site/src/i18n) as JSON files — one per locale — loaded by [`index.ts`](https://github.com/decred/dcrdex/blob/master/client/webserver/site/src/i18n/index.ts).
 
-When creating a dictionary for a new language, create the language dictionary object (e.g `export const ar: Locale = { ... }`) then add strings translation corresponding to the English text in the `enUS` object at the top of the same file.  Finally, the new object should be listed in the `const localesMap` at the end of the file.
+To update the existing English strings, edit `client/webserver/site/src/i18n/en-US.json`. Keys use a `Namespace.KEY` convention (e.g. `Common.ACCEPT`, `MarketsPage.BUY`) so they can be grouped by page or feature. Interpolation placeholders use the `{{ key }}` syntax.
 
-When testing, remember to rebuild the site assets bundle with `npm ci && npm run build` and bump the cache with `./bust_caches.sh` in the **client/webserver/site** folder.
+To add a new language:
+
+1. Copy `en-US.json` to a new file named after the BCP 47 language tag — for example `pt-BR.json` — and translate every value, keeping the keys unchanged.
+2. Register the new resource bundle in `index.ts` alongside the existing `'en-US'` entry in the `resources` map.
+3. The startup language cascade (DB-persisted → `Config.Language` → `en-US`) handles selection automatically; no additional wiring is required for the server to advertise the new locale.
+
+Use `t('Namespace.KEY')` from `react-i18next`'s `useTranslation()` hook in components; avoid constructing keys dynamically unless the set is finite and documented, because static analysis tooling only catches orphan/missing keys for literal `t(...)` call sites.
+
+When testing, rebuild the site assets bundle with `npm ci && npm run build` in **client/webserver/site** — watch mode (`npm run watch`) picks up JSON changes automatically.
 
 ---
 

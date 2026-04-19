@@ -465,7 +465,6 @@ type TCore struct {
 	epochOrders []*core.BookUpdate
 	fiatSources map[string]bool
 	validAddr   bool
-	lang        string
 }
 
 // TDriver implements the interface required of all exchange wallets.
@@ -521,7 +520,6 @@ func newTCore() *TCore {
 			"Messari":     false,
 			"Coinpaprika": true,
 		},
-		lang: "en-US",
 	}
 }
 
@@ -1972,7 +1970,7 @@ func (c *TCore) ConfigureFundsMixer(appPW []byte, assetID uint32, enabled bool) 
 }
 
 func (c *TCore) Language() string {
-	return c.lang
+	return "en-US"
 }
 func (c *TCore) SetCompanionToken(token string) error { return nil }
 func (c *TCore) CompanionToken() (string, error)      { return "", nil }
