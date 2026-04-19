@@ -785,12 +785,20 @@ func (r *tReceipt) SignedRefund() dex.Bytes {
 }
 
 type TXCWallet struct {
-	swapSize            uint64
-	sendFeeSuggestion   uint64
-	sendCoin            *tCoin
-	sendErr             error
-	addrErr             error
-	signCoinErr         error
+	swapSize          uint64
+	sendFeeSuggestion uint64
+	sendCoin          *tCoin
+	sendErr           error
+	addrErr           error
+	signCoinErr       error
+	// signCoinErrAfterN, when signCoinErr is non-nil, controls which
+	// SignCoinMessage calls return the error: 0 (default) means every
+	// call errors; N>0 means the first N calls succeed and the
+	// (N+1)th onward error. signCoinCallCounter tracks the number of
+	// calls seen. Used by TestPrepareMultiTradeRequestsPerPlacementCleanup
+	// to fail createTradeRequest at a non-first placement.
+	signCoinErrAfterN   int32
+	signCoinCallCounter atomic.Int32
 	lastSwapsMtx        sync.Mutex
 	lastSwaps           []*asset.Swaps
 	lastRedeems         []*asset.RedeemForm
@@ -820,29 +828,44 @@ type TXCWallet struct {
 	fundingCoins        asset.Coins
 	fundRedeemScripts   []dex.Bytes
 	returnedCoins       asset.Coins
-	fundingCoinErr      error
-	lockErr             error
-	locked              bool
-	changeCoin          *tCoin
-	syncStatus          func() (bool, float32, error)
-	confsMtx            sync.RWMutex
-	confs               map[string]uint32
-	confsErr            map[string]error
-	preSwapForm         *asset.PreSwapForm
-	preSwap             *asset.PreSwap
-	preRedeemForm       *asset.PreRedeemForm
-	preRedeem           *asset.PreRedeem
-	ownsAddress         bool
-	ownsAddressErr      error
-	pubKeys             []dex.Bytes
-	sigs                []dex.Bytes
-	feeCoin             []byte
-	makeRegFeeTxErr     error
-	feeCoinSent         []byte
-	sendTxnErr          error
-	contractExpired     bool
-	contractLockTime    time.Time
-	accelerationParams  *struct {
+	// allReturnedCoins accumulates every ReturnCoins call in order.
+	// Unlike returnedCoins (which is overwritten on each call),
+	// this captures the full history so tests can assert that
+	// per-iteration cleanup (e.g. prepareMultiTradeRequests's
+	// per-placement errCloser defers) ran for every expected
+	// placement. Guarded by fundingMtx.
+	allReturnedCoins []asset.Coins
+	fundingCoinErr   error
+	// multiFundCoins / multiFundRedeemScripts / multiFundFees /
+	// multiFundErr are the configurable return values for
+	// FundMultiOrder. Defaults are zero-value (nil coins, no error),
+	// preserving the pre-existing stub behaviour.
+	multiFundCoins         []asset.Coins
+	multiFundRedeemScripts [][]dex.Bytes
+	multiFundFees          uint64
+	multiFundErr           error
+	lockErr                error
+	locked                 bool
+	changeCoin             *tCoin
+	syncStatus             func() (bool, float32, error)
+	confsMtx               sync.RWMutex
+	confs                  map[string]uint32
+	confsErr               map[string]error
+	preSwapForm            *asset.PreSwapForm
+	preSwap                *asset.PreSwap
+	preRedeemForm          *asset.PreRedeemForm
+	preRedeem              *asset.PreRedeem
+	ownsAddress            bool
+	ownsAddressErr         error
+	pubKeys                []dex.Bytes
+	sigs                   []dex.Bytes
+	feeCoin                []byte
+	makeRegFeeTxErr        error
+	feeCoinSent            []byte
+	sendTxnErr             error
+	contractExpired        bool
+	contractLockTime       time.Time
+	accelerationParams     *struct {
 		swapCoins                 []dex.Bytes
 		accelerationCoins         []dex.Bytes
 		changeCoin                dex.Bytes
@@ -990,6 +1013,11 @@ func (w *TXCWallet) ReturnCoins(coins asset.Coins) error {
 	w.fundingMtx.Lock()
 	defer w.fundingMtx.Unlock()
 	w.returnedCoins = coins
+	// Snapshot into the per-call history. Copy defensively so a
+	// caller mutating `coins` after the fact can't retro-edit our
+	// record.
+	snap := append(asset.Coins(nil), coins...)
+	w.allReturnedCoins = append(w.allReturnedCoins, snap)
 	coinInSlice := func(coin asset.Coin) bool {
 		for _, c := range coins {
 			if bytes.Equal(c.ID(), coin.ID()) {
@@ -1039,7 +1067,14 @@ func (w *TXCWallet) Redeem(_ context.Context, form *asset.RedeemForm) ([]dex.Byt
 }
 
 func (w *TXCWallet) SignCoinMessage(asset.Coin, dex.Bytes) (pubkeys, sigs []dex.Bytes, err error) {
-	return w.pubKeys, w.sigs, w.signCoinErr
+	n := w.signCoinCallCounter.Add(1)
+	// signCoinErrAfterN: 0 means error on every call (preserves the
+	// pre-existing fail-every-call behaviour); N>0 means the first N
+	// calls succeed and the (N+1)th onward error.
+	if w.signCoinErr != nil && (w.signCoinErrAfterN == 0 || n > w.signCoinErrAfterN) {
+		return w.pubKeys, w.sigs, w.signCoinErr
+	}
+	return w.pubKeys, w.sigs, nil
 }
 
 func (w *TXCWallet) AuditContract(coinID, contract, txData dex.Bytes, rebroadcast bool) (*asset.AuditInfo, error) {
@@ -1258,8 +1293,8 @@ func (w *TXCWallet) MaxFundingFees(_ uint32, _ uint64, _ map[string]string) uint
 	return 0
 }
 
-func (*TXCWallet) FundMultiOrder(ord *asset.MultiOrder, maxLock uint64) (coins []asset.Coins, redeemScripts [][]dex.Bytes, fundingFees uint64, err error) {
-	return nil, nil, 0, nil
+func (w *TXCWallet) FundMultiOrder(ord *asset.MultiOrder, maxLock uint64) (coins []asset.Coins, redeemScripts [][]dex.Bytes, fundingFees uint64, err error) {
+	return w.multiFundCoins, w.multiFundRedeemScripts, w.multiFundFees, w.multiFundErr
 }
 
 var _ asset.Bonder = (*TXCWallet)(nil)
@@ -3311,6 +3346,155 @@ func TestPrepareTradeRequestErrorCloser(t *testing.T) {
 	}
 	if !errors.Is(err, tErr) {
 		t.Fatalf("Trade returned error that does not wrap tErr: %v", err)
+	}
+}
+
+// TestPrepareMultiTradeRequestsPerPlacementCleanup is the regression
+// guard for the inner-loop shadow bug fixed in commit 43ff4594
+// (CL-TEST-COV-MULTITRADE-RETURNCOINS follow-up).
+//
+// prepareMultiTradeRequests registers one cleanup defer per placement
+// BEFORE entering the createTradeRequest loop:
+//
+//	for _, coins := range allCoins {
+//	    errCloser := dex.NewErrorCloser()
+//	    defer errCloser.DoneOnError(c.log, &err) // captures &err at function level
+//	    errCloser.Add(c.returnCoinsErrCloser(fromWallet, coins))
+//	    errClosers = append(errClosers, errCloser)
+//	}
+//
+// Each defer reads the function-level `err` when it fires. If the
+// subsequent inner loop uses `req, err := c.createTradeRequest(...)`
+// (note the `:=`), the inner `err` SHADOWS the outer one — so on a
+// placement failure the outer err stays nil (last written by the
+// successful FundMultiOrder call), every defer sees nil, and none of
+// the ReturnCoins callbacks fire. The funding coins for every
+// placement leak (stay locked until the next wallet-balance refresh).
+//
+// This test drives prepareMultiTradeRequests with 3 placements,
+// arranges for placement 0's createTradeRequest to succeed and
+// placement 1's to fail via a SignCoinMessage "error after N calls"
+// mock knob, and asserts that ReturnCoins was invoked once per
+// placement (3 total) — that's the only way the post-fix behaviour
+// can be observed from outside the function.
+//
+// Regression-guard validated empirically: re-introducing the `:=`
+// shadow makes this test fail with 0 ReturnCoins calls; restoring the
+// fix makes it pass with 3.
+func TestPrepareMultiTradeRequestsPerPlacementCleanup(t *testing.T) {
+	rig := newTestRig()
+	defer rig.shutdown()
+	tCore := rig.core
+
+	// Same wallet+rig shape as TestPrepareTradeRequestErrorCloser:
+	// TFeeRater shim so feeSuggestionSwapAny short-circuits on the
+	// wallet-provided rate (no need to stub the DEX fee_rate WS
+	// route); disconnected-then-Connect to satisfy connectAndUnlock
+	// without panicking on a re-Connect.
+	dcrWallet, tDcrWallet := newTWalletDisconnected(tUTXOAssetA.ID)
+	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
+	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
+	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
+	dcrWallet.Unlock(rig.crypter)
+	_ = dcrWallet.Connect()
+	defer dcrWallet.Disconnect()
+
+	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	tCore.wallets[tUTXOAssetB.ID] = btcWallet
+	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
+	btcWallet.Unlock(rig.crypter)
+
+	var lots uint64 = 10
+	qty := dcrBtcLotSize * lots
+
+	// Three placements at distinct rates. No book is installed on
+	// the rig, so validateTradeRate takes the `book == nil` short-
+	// circuit for every placement — this test doesn't care about
+	// rate validation.
+	placements := []*QtyRate{
+		{Qty: qty, Rate: dcrBtcRateStep * 1000},
+		{Qty: qty, Rate: dcrBtcRateStep * 2000},
+		{Qty: qty, Rate: dcrBtcRateStep * 3000},
+	}
+	form := &MultiTradeForm{
+		Host:       tDexHost,
+		Sell:       true,
+		Base:       tUTXOAssetA.ID,
+		Quote:      tUTXOAssetB.ID,
+		Placements: placements,
+	}
+
+	// Configure FundMultiOrder to return 3 distinct coin sets — one
+	// per placement. Each set has a single coin for simplicity, so
+	// placement i's createTradeRequest -> messageCoins makes exactly
+	// one SignCoinMessage call.
+	coinSets := []asset.Coins{
+		{&tCoin{id: encode.RandomBytes(36), val: qty * 2}},
+		{&tCoin{id: encode.RandomBytes(36), val: qty * 2}},
+		{&tCoin{id: encode.RandomBytes(36), val: qty * 2}},
+	}
+	tDcrWallet.multiFundCoins = coinSets
+	tDcrWallet.multiFundRedeemScripts = [][]dex.Bytes{{nil}, {nil}, {nil}}
+
+	// Fail at placement index 1 (the second createTradeRequest
+	// call). signCoinErrAfterN=1 means: the first SignCoinMessage
+	// call succeeds (placement 0), the second fails (placement 1)
+	// — messageCoins then returns an error, createTradeRequest
+	// returns (nil, err), the inner loop assigns it to the outer
+	// `err` and bails. Placement 2 is never reached.
+	tDcrWallet.signCoinErr = tErr
+	tDcrWallet.signCoinErrAfterN = 1
+	// Reset the counter in case setup (Unlock / Connect) happened
+	// to bump it. None of the setup paths currently call
+	// SignCoinMessage, but being explicit avoids future drift.
+	tDcrWallet.signCoinCallCounter.Store(0)
+
+	_, err := tCore.prepareMultiTradeRequests(tPW, form)
+	if err == nil {
+		t.Fatal("prepareMultiTradeRequests: expected error, got nil")
+	}
+	if !errors.Is(err, tErr) {
+		t.Fatalf("prepareMultiTradeRequests: error does not wrap tErr: %v", err)
+	}
+
+	// The regression guard: on failure, every placement's funding
+	// coins must have been passed to ReturnCoins. With the shadow
+	// bug in place, every per-iteration defer sees a stale nil
+	// outer `err` and short-circuits — no ReturnCoins call happens
+	// for any placement, and this assertion fails with len=0.
+	tDcrWallet.fundingMtx.Lock()
+	returnedCalls := append([]asset.Coins(nil), tDcrWallet.allReturnedCoins...)
+	tDcrWallet.fundingMtx.Unlock()
+
+	if len(returnedCalls) != len(placements) {
+		t.Fatalf("expected ReturnCoins called once per placement (%d); got %d calls (shadow-bug symptom: 0)",
+			len(placements), len(returnedCalls))
+	}
+
+	// Order-independent check: the set of coin IDs passed to
+	// ReturnCoins across all calls must exactly equal the set of
+	// coin IDs returned by FundMultiOrder. Defers run LIFO, so
+	// the call order is placement 2, 1, 0 — but the assertion is
+	// on the multiset, not the sequence.
+	expectedByID := map[string]struct{}{}
+	for _, cs := range coinSets {
+		for _, c := range cs {
+			expectedByID[string(c.ID())] = struct{}{}
+		}
+	}
+	for _, cs := range returnedCalls {
+		for _, c := range cs {
+			id := string(c.ID())
+			if _, ok := expectedByID[id]; !ok {
+				t.Fatalf("ReturnCoins received unexpected coin id %x", c.ID())
+			}
+			delete(expectedByID, id)
+		}
+	}
+	if len(expectedByID) != 0 {
+		t.Fatalf("ReturnCoins did not receive %d expected coin(s); missing IDs indicate some placement's cleanup was skipped",
+			len(expectedByID))
 	}
 }
 
@@ -8704,12 +8888,12 @@ func TestAccelerateOrder(t *testing.T) {
 		nilNewChangeCoin           bool
 	}{
 		{
-			name:                       "ok",
-			orderQuantity:              3 * dcrBtcLotSize,
-			orderFilled:                dcrBtcLotSize,
-			previousAccelerations:      []order.CoinID{encode.RandomBytes(32)},
-			orderStatus:                order.OrderStatusExecuted,
-			rate:                       dcrBtcRateStep * 10,
+			name:                  "ok",
+			orderQuantity:         3 * dcrBtcLotSize,
+			orderFilled:           dcrBtcLotSize,
+			previousAccelerations: []order.CoinID{encode.RandomBytes(32)},
+			orderStatus:           order.OrderStatusExecuted,
+			rate:                  dcrBtcRateStep * 10,
 			// Note: the upstream FeesForRemainingSwaps asset interface used
 			// to take a feeRate arg (mock returned n * feeRate * swapSize).
 			// The signature was simplified to drop feeRate (mock became
