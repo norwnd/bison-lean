@@ -7548,7 +7548,6 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 
 	errClosers := make([]*dex.ErrorCloser, 0, len(allCoins))
 	for _, coins := range allCoins {
-		theseCoins := coins
 		errCloser := dex.NewErrorCloser()
 		defer func() {
 			if err != nil {
@@ -7556,7 +7555,7 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 			}
 			// otherwise the resulting trade request will keep track of & resolve errCloser
 		}()
-		errCloser.Add(c.returnCoinsErrCloser(fromWallet, theseCoins))
+		errCloser.Add(c.returnCoinsErrCloser(fromWallet, coins))
 		errClosers = append(errClosers, errCloser)
 	}
 
