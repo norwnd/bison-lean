@@ -84,6 +84,20 @@ func Register(assetID uint32, driver Driver, overwrite ...bool) {
 	drivers[assetID] = driver
 }
 
+// Unregister removes the driver for assetID from the package-level
+// driver registry. Intended for test teardown so a test that registers
+// a driver during its run can leave the registry in the state the next
+// -count iteration (or a subsequent test) expects. A no-op if assetID
+// was never registered.
+//
+// Not meant for production use — production asset registration happens
+// once at process start via init() and never reverses.
+func Unregister(assetID uint32) {
+	driversMtx.Lock()
+	defer driversMtx.Unlock()
+	delete(drivers, assetID)
+}
+
 // RegisterToken should be called to register tokens. If no nets are specified
 // the token will be registered for all networks. The user must invoke
 // SetNetwork to enable net-based filtering of package function output.

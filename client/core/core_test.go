@@ -2149,6 +2149,11 @@ func TestCreateWallet(t *testing.T) {
 	tILT := &a
 	tILT.Symbol = "ilt"
 	tILT.ID, _ = dex.BipSymbolID(tILT.Symbol)
+	// This test Register's tILT below. Without unregistering on
+	// teardown the registry leaks into the next -count=N iteration,
+	// tripping the "unregistered asset" pre-condition assertion
+	// further down.
+	t.Cleanup(func() { asset.Unregister(tILT.ID) })
 
 	// Create registration form.
 	form := &WalletForm{
@@ -8296,6 +8301,11 @@ func TestReconfigureWallet(t *testing.T) {
 		},
 	}
 	const assetID uint32 = 54321
+	// This test Register's assetID below. Without unregistering on
+	// teardown the registry leaks into the next -count=N iteration,
+	// tripping the "wrong error for missing wallet definition"
+	// pre-condition assertion further down.
+	t.Cleanup(func() { asset.Unregister(assetID) })
 	xyzWallet, tXyzWallet := newTWallet(assetID)
 	newSettings := map[string]string{
 		"def": "456",
@@ -8540,6 +8550,16 @@ func TestSetWalletPassword(t *testing.T) {
 	}
 	newPW := []byte("def")
 	var assetID uint32 = 54321
+	// SetWalletPassword's internal call to asset.WalletDef requires
+	// assetID to be registered. Historically this test relied on
+	// TestReconfigureWallet's registration leaking forward via test
+	// source order — with TestReconfigureWallet now cleaning up after
+	// itself this test must register its own driver.
+	walletDef := &asset.WalletDefinition{Type: "type"}
+	winfo := *tWalletInfo
+	winfo.AvailableWallets = []*asset.WalletDefinition{walletDef}
+	asset.Register(assetID, &tDriver{winfo: &winfo}, true)
+	t.Cleanup(func() { asset.Unregister(assetID) })
 
 	// Nil password error
 	err := tCore.SetWalletPassword(tPW, assetID, nil)
