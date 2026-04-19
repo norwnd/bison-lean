@@ -3004,12 +3004,411 @@ func TestSend(t *testing.T) {
 	}
 }
 
+// TestXCWalletConnectRetry verifies that a failed first Connect() can be
+// retried without panicking. dex.ConnectionMaster is strictly single-use
+// — after its Connect/ConnectOnce is invoked, the next invocation panics
+// (dex/runner.go ~132-134). xcWallet.Connect() historically reused the
+// same ConnectionMaster across calls, so any wallet whose first connect
+// attempt failed (either ConnectOnce itself or a downstream validation)
+// was permanently stuck until the whole app was reloaded. The fix
+// (commit bcbd6d95) replaces w.connector with a fresh instance on each
+// error path inside xcWallet.Connect(). This test covers both error
+// paths directly.
+func TestXCWalletConnectRetry(t *testing.T) {
+	// Path (a): ConnectOnce itself fails, Connect returns early before
+	// the `!ready` defer is registered. The reset happens inline right
+	// before the return.
+	t.Run("retry after ConnectOnce failure", func(t *testing.T) {
+		wallet, tWallet := newTWallet(tUTXOAssetA.ID)
+		// newTWallet initializes hookedUp=true (shared fixture); clear
+		// it so xcWallet.Connect() doesn't short-circuit at the
+		// `if w.connected() { return nil }` guard.
+		wallet.hookedUp = false
+
+		// First attempt: drive ConnectOnce to an error.
+		tWallet.connectErr = tErr
+		if err := wallet.Connect(); err == nil {
+			t.Fatalf("expected error on first Connect, got nil")
+		}
+
+		// Retry: without the prod fix, this panics on the ConnectionMaster
+		// single-use guard. With the fix, w.connector was replaced with a
+		// fresh instance and the retry proceeds normally.
+		tWallet.connectErr = nil
+		if err := wallet.Connect(); err != nil {
+			t.Fatalf("retry Connect failed: %v", err)
+		}
+		if !wallet.connected() {
+			t.Fatalf("wallet reports not connected after successful retry")
+		}
+	})
+
+	// Path (b): ConnectOnce succeeds, but a post-connect validation
+	// (SyncStatus) fails. The `!ready` defer runs Disconnect() on the
+	// used-up connector and THEN replaces it with a fresh instance.
+	t.Run("retry after post-connect validation failure", func(t *testing.T) {
+		wallet, tWallet := newTWallet(tUTXOAssetA.ID)
+		// See note above — clear hookedUp so Connect() doesn't
+		// short-circuit.
+		wallet.hookedUp = false
+
+		// First attempt: ConnectOnce succeeds, but the SyncStatus call
+		// that follows returns an error. This triggers the defer-path
+		// reset (Disconnect + mint fresh connector).
+		tWallet.syncStatus = func() (synced bool, progress float32, err error) {
+			return false, 0, tErr
+		}
+		if err := wallet.Connect(); err == nil {
+			t.Fatalf("expected error on first Connect, got nil")
+		}
+
+		// Retry with SyncStatus fixed. Without the defer-path reset the
+		// second ConnectOnce would panic on the single-use guard.
+		tWallet.syncStatus = func() (synced bool, progress float32, err error) {
+			return true, 1, nil
+		}
+		if err := wallet.Connect(); err != nil {
+			t.Fatalf("retry Connect failed: %v", err)
+		}
+		if !wallet.connected() {
+			t.Fatalf("wallet reports not connected after successful retry")
+		}
+	})
+}
+
+// TestValidateTradeRateNilBook verifies the nil-book guard added to
+// Core.validateTradeRate in commit bcbd6d95. The Bison-specific
+// immediate-match warning dereferences dc.bookie(market).BestBuy()
+// / BestSell() — if the market isn't currently subscribed,
+// dc.bookie returns nil, and without the guard the next call
+// panics. The guard returns nil (skipping the advisory warning;
+// server-side validation still runs).
+func TestValidateTradeRateNilBook(t *testing.T) {
+	rig := newTestRig()
+	defer rig.shutdown()
+	tCore := rig.core
+
+	// newTestRig() leaves rig.dc.books empty, so any market name is
+	// unsubscribed — dc.bookie(mkt) returns nil. Use a synthetic
+	// market name so this test is independent of any future default
+	// book fixtures another test might add.
+	const unsubscribedMkt = "nosuchbase_nosuchquote"
+
+	// Sell side: the nil-book branch is hit before book.BestBuy() is
+	// called. Without the fix this path panics.
+	if err := tCore.validateTradeRate(true, 1e8, unsubscribedMkt, rig.dc); err != nil {
+		t.Fatalf("validateTradeRate(sell) returned error for unsubscribed market: %v", err)
+	}
+
+	// Buy side: same nil-book branch guards book.BestSell() too.
+	// Use a different rate so the 1-time-warning state set on the sell
+	// side doesn't short-circuit this call at the earlier
+	// previouslyFailedTradeAttempt check.
+	if err := tCore.validateTradeRate(false, 2e8, unsubscribedMkt, rig.dc); err != nil {
+		t.Fatalf("validateTradeRate(buy) returned error for unsubscribed market: %v", err)
+	}
+}
+
+// TestValidateTradeRateWarningFlow covers the Bison-specific 1-time-
+// warning state machine around immediate-match trades
+// (CL-TEST-COV-VALIDATE-TRADE-RATE-WARNING; commit bcbd6d95).
+//
+// validateTradeRate warns when a limit order's rate would immediately
+// match an opposite-side order in the local Bison book. The state
+// is keyed on (market, rate) and stored in
+// Core.previouslyFailedTradeAttempt (an atomic.Pointer[tradeAttempt]).
+// A trailing defer updates the state: failure stores the current
+// (market, rate); success clears to nil.
+//
+// The expected state machine:
+//
+//  1. First call with an immediate-match rate → warning returned,
+//     state stored.
+//  2. Retry at the same (market, rate) → early short-circuit returns
+//     nil, state cleared.
+//  3. Re-attempt after clear → warning fires again (state was reset,
+//     not permanently greenlit).
+//  4. Safe rate → normal validation passes, state cleared.
+//  5. State with a different market doesn't short-circuit the current
+//     call; the tuple has to match both market and rate.
+func TestValidateTradeRateWarningFlow(t *testing.T) {
+	rig := newTestRig()
+	defer rig.shutdown()
+	tCore := rig.core
+	mktID := tDcrBtcMktName
+
+	// Subscribe the market with a single sell-side order at bookRate.
+	// Buying at any rate >= bookRate immediate-matches that sell, which
+	// is the scenario the 1-time-warning guards against.
+	var bookRate = dcrBtcRateStep * 1000
+	book := newBookie(rig.dc, tUTXOAssetA.ID, tUTXOAssetB.ID, nil, tLogger)
+	rig.dc.books[mktID] = book
+	msgOrderNote := &msgjson.BookOrderNote{
+		OrderNote: msgjson.OrderNote{OrderID: encode.RandomBytes(32)},
+		TradeNote: msgjson.TradeNote{
+			Side:     msgjson.SellOrderNum,
+			Quantity: dcrBtcLotSize,
+			Time:     uint64(time.Now().Unix()),
+			Rate:     bookRate,
+		},
+	}
+	if err := book.Sync(&msgjson.OrderBook{
+		MarketID: mktID,
+		Seq:      1,
+		Epoch:    1,
+		Orders:   []*msgjson.BookOrderNote{msgOrderNote},
+	}); err != nil {
+		t.Fatalf("book sync: %v", err)
+	}
+
+	// crossRate > bookRate: buying at crossRate immediate-matches the
+	// sell. safeRate < bookRate: buying at safeRate does not.
+	var crossRate = bookRate + dcrBtcRateStep
+	var safeRate = bookRate - dcrBtcRateStep
+
+	// Start from a known-clean state (newTestRig gives us an
+	// atomic.Pointer with zero value — Load() returns nil — but
+	// setting it explicitly documents intent).
+	tCore.previouslyFailedTradeAttempt.Store(nil)
+
+	// 1) First attempt at crossRate: warning returned, state stored.
+	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err == nil {
+		t.Fatalf("expected 1-time-warning error on first attempt at crossRate=%d", crossRate)
+	}
+	prev := tCore.previouslyFailedTradeAttempt.Load()
+	if prev == nil || prev.market != mktID || prev.rate != crossRate {
+		t.Fatalf("previouslyFailedTradeAttempt = %+v, want {market:%q rate:%d}", prev, mktID, crossRate)
+	}
+
+	// 2) Retry at same (market, rate): short-circuits to nil, state
+	//    cleared.
+	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err != nil {
+		t.Fatalf("retry at same (market, rate) should succeed, got: %v", err)
+	}
+	if prev := tCore.previouslyFailedTradeAttempt.Load(); prev != nil {
+		t.Fatalf("state not cleared after successful retry: %+v", prev)
+	}
+
+	// 3) Fresh attempt at crossRate after the state cleared: warning
+	//    fires again. Confirms the retry-bypass is a one-shot, not a
+	//    permanent greenlist.
+	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err == nil {
+		t.Fatalf("expected warning to fire again after state reset")
+	}
+
+	// 4) Safe rate: normal validation passes, state cleared.
+	if err := tCore.validateTradeRate(false, safeRate, mktID, rig.dc); err != nil {
+		t.Fatalf("validateTradeRate(safeRate=%d) returned unexpected error: %v", safeRate, err)
+	}
+	if prev := tCore.previouslyFailedTradeAttempt.Load(); prev != nil {
+		t.Fatalf("state not cleared after safeRate success: %+v", prev)
+	}
+
+	// 5) Retry-bypass key is (market, rate) — a stored state under a
+	//    different market must not short-circuit the current call.
+	tCore.previouslyFailedTradeAttempt.Store(&tradeAttempt{
+		market: "other_mkt",
+		rate:   crossRate,
+	})
+	if err := tCore.validateTradeRate(false, crossRate, mktID, rig.dc); err == nil {
+		t.Fatalf("expected warning since stored-market != current-market")
+	}
+}
+
 // tradeTestFeeRate is the wallet-provided fee rate used by the
 // `trade()` helper (and related tests) to avoid the DEX `fee_rate`
 // WS route, which the test rig doesn't stub. It equals tMaxFeeRate so
 // the match-route FeeRateBase > MaxFeeRate checks still fire at
 // tMaxFeeRate + 1.
 var tradeTestFeeRate = tMaxFeeRate
+
+// TestPrepareTradeRequestErrorCloser is a regression guard for the
+// error-preservation fix at prepareTradeRequest's errCloser callback
+// (CL-TEST-COV-ERRCLOSER-ERROR-PRESERVATION; commit bcbd6d95).
+//
+// prepareTradeRequest uses a named return (result, err) and an
+// errCloser that runs in a defer when err != nil. The errCloser
+// callback unlocks funding coins and refreshes wallet balances. If
+// that callback assigned to the outer `err` (e.g. by writing `err =
+// fromWallet.ReturnCoins(coins)` or `_, err = c.updateWalletBalance(...)`),
+// a successful cleanup would clobber the original failure from
+// createTradeRequest back to nil. prepareTradeRequest would then
+// return (nil, nil), and Trade() would invoke sendTradeRequest(nil)
+// -> nil-pointer panic.
+//
+// The fix uses a local `localErr` variable inside the callback. This
+// test injects a createTradeRequest failure (via signCoinErr, which
+// bubbles up through messageCoins) and asserts that Trade() returns a
+// non-nil error that wraps the injected failure. If the fix is
+// reverted to write to the outer `err`, this test fails (panic or
+// nil-error assertion).
+func TestPrepareTradeRequestErrorCloser(t *testing.T) {
+	rig := newTestRig()
+	defer rig.shutdown()
+	tCore := rig.core
+
+	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	// Same TFeeRater shim as trade(): lets feeSuggestionSwapAny
+	// short-circuit on the wallet-provided rate so we don't need to
+	// stub the DEX fee_rate WS route.
+	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
+	// newTWallet() initializes hookedUp=true (shared fixture); clear
+	// it so xcWallet.Connect() doesn't short-circuit at the
+	// `if w.connected() { return nil }` guard.
+	dcrWallet.hookedUp = false
+	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
+	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
+	dcrWallet.Unlock(rig.crypter)
+	_ = dcrWallet.Connect() // matches trade(): avoids connector.Wait panic and keeps sync goroutines alive
+	defer dcrWallet.Disconnect()
+
+	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	tCore.wallets[tUTXOAssetB.ID] = btcWallet
+	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
+	btcWallet.Unlock(rig.crypter)
+
+	var lots uint64 = 10
+	qty := dcrBtcLotSize * lots
+	rate := dcrBtcRateStep * 1000
+	form := &TradeForm{
+		Host:    tDexHost,
+		IsLimit: true,
+		Sell:    true,
+		Base:    tUTXOAssetA.ID,
+		Quote:   tUTXOAssetB.ID,
+		Qty:     qty,
+		Rate:    rate,
+	}
+	tDcrWallet.fundingCoins = asset.Coins{&tCoin{
+		id:  encode.RandomBytes(36),
+		val: qty * 2,
+	}}
+	tDcrWallet.fundRedeemScripts = []dex.Bytes{nil}
+
+	// Pre-seed previouslyFailedTradeAttempt so validateTradeRate's
+	// 1-time-warning branch short-circuits. This lets us skip the
+	// book/Sync boilerplate that trade() uses — we only need to
+	// reach createTradeRequest's messageCoins call to trigger the
+	// errCloser path we're guarding.
+	tCore.previouslyFailedTradeAttempt.Store(&tradeAttempt{
+		market: marketName(form.Base, form.Quote),
+		rate:   form.Rate,
+	})
+
+	// Inject failure inside createTradeRequest's messageCoins call.
+	// This is what makes createTradeRequest return (nil, err) while
+	// prepareTradeRequest's errCloser callback is still pending in
+	// its defer — i.e., the scenario the localErr fix guards.
+	tDcrWallet.signCoinErr = tErr
+
+	_, err := tCore.Trade(tPW, form)
+	if err == nil {
+		t.Fatalf("Trade returned nil error; errCloser callback likely clobbered the original createTradeRequest failure")
+	}
+	if !errors.Is(err, tErr) {
+		t.Fatalf("Trade returned error that does not wrap tErr: %v", err)
+	}
+}
+
+// TestFeeSuggestionSwapAny covers the wallet-rate-precedence logic
+// introduced at Core.feeSuggestionSwapAny (CL-TEST-COV-FEE-SUGGESTION-
+// SWAP-ANY; commit bcbd6d95).
+//
+// The priority order is:
+//
+//  1. If a wallet is registered for assetID AND it is connected AND
+//     it exposes a non-zero FeeRateSwap → use the wallet rate.
+//  2. If a wallet is registered for assetID but is NOT connected →
+//     return 0 (refuse any fallback; the caller should wait for the
+//     wallet to connect so its configuration, e.g. max fee rate, is
+//     respected).
+//  3. Otherwise (no wallet, or wallet connected but no rate yet) →
+//     fall through to cached book fee rates, then to the server's
+//     fee_rate RPC.
+//
+// Regression scenarios:
+//   - Step 2 must NOT leak the DEX cache rate through when a wallet is
+//     registered but disconnected — that would ignore wallet settings.
+//   - Step 1 must take precedence over a cached DEX rate; otherwise
+//     user-configured max-fee settings could be silently overridden.
+func TestFeeSuggestionSwapAny(t *testing.T) {
+	rig := newTestRig()
+	defer rig.shutdown()
+	tCore := rig.core
+
+	const (
+		walletFeeRate = uint64(150) // chosen to be distinct from
+		dexFeeRate    = uint64(250) // dexFeeRate and 0
+	)
+
+	// Subtest 1: baseline — no wallet, no cache. Returns 0 (no panic).
+	t.Run("no wallet, no DEX cache", func(t *testing.T) {
+		if got := tCore.feeSuggestionSwapAny(tUTXOAssetA.ID); got != 0 {
+			t.Fatalf("got %d, want 0", got)
+		}
+	})
+
+	// Install a DEX-side cached rate via the bookie. feeSuggestionSwapAny
+	// iterates dc.books via dc.bestBookFeeSuggestion, which reads
+	// ob.BaseFeeRate() / QuoteFeeRate() — both set by book.Sync().
+	book := newBookie(rig.dc, tUTXOAssetA.ID, tUTXOAssetB.ID, nil, tLogger)
+	rig.dc.books[tDcrBtcMktName] = book
+	if err := book.Sync(&msgjson.OrderBook{
+		MarketID:     tDcrBtcMktName,
+		Seq:          1,
+		Epoch:        1,
+		BaseFeeRate:  dexFeeRate,
+		QuoteFeeRate: dexFeeRate,
+	}); err != nil {
+		t.Fatalf("book sync: %v", err)
+	}
+
+	// Subtest 2: no wallet but DEX has a cached rate → use cache.
+	// Exercises the step-3 fall-through path.
+	t.Run("no wallet, DEX cache available", func(t *testing.T) {
+		if got := tCore.feeSuggestionSwapAny(tUTXOAssetA.ID); got != dexFeeRate {
+			t.Fatalf("got %d, want dexFeeRate %d (fallback to DEX cache when no wallet)", got, dexFeeRate)
+		}
+	})
+
+	// Install a wallet that exposes FeeRateSwap = walletFeeRate.
+	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet.Wallet = &TFeeRater{tDcrWallet, walletFeeRate}
+	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
+
+	// Subtest 3: wallet connected + non-zero FeeRateSwap → wallet rate
+	// wins over the DEX cache. This is the PRECEDENCE guarantee that
+	// protects the user's wallet-side max-fee configuration.
+	t.Run("wallet connected, FeeRateSwap non-zero (precedence over DEX cache)", func(t *testing.T) {
+		dcrWallet.hookedUp = true
+		if got := tCore.feeSuggestionSwapAny(tUTXOAssetA.ID); got != walletFeeRate {
+			t.Fatalf("got %d, want walletFeeRate %d (wallet must take precedence over DEX cache %d)",
+				got, walletFeeRate, dexFeeRate)
+		}
+	})
+
+	// Subtest 4: wallet present but NOT connected → return 0 even
+	// though the DEX has a cached rate. This is the REFUSAL guarantee
+	// that keeps wallet settings (e.g., user's max fee rate) authoritative.
+	t.Run("wallet present but not connected (refuse DEX cache)", func(t *testing.T) {
+		dcrWallet.hookedUp = false
+		if got := tCore.feeSuggestionSwapAny(tUTXOAssetA.ID); got != 0 {
+			t.Fatalf("got %d, want 0 (disconnected wallet must not fall through to DEX cache %d)",
+				got, dexFeeRate)
+		}
+	})
+
+	// Subtest 5: wallet connected, but FeeRateSwap returns 0 (e.g., no
+	// rate cached yet in the wallet). Step-3 fall-through should apply.
+	t.Run("wallet connected, FeeRateSwap zero (falls through to DEX cache)", func(t *testing.T) {
+		dcrWallet.hookedUp = true
+		dcrWallet.Wallet = &TFeeRater{tDcrWallet, 0}
+		if got := tCore.feeSuggestionSwapAny(tUTXOAssetA.ID); got != dexFeeRate {
+			t.Fatalf("got %d, want dexFeeRate %d (wallet has no rate; must fall through)", got, dexFeeRate)
+		}
+	})
+}
 
 func trade(t *testing.T, async bool) {
 	rig := newTestRig()
