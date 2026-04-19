@@ -15,6 +15,7 @@ import type { Market, UnitInfo, MaxOrderEstimate, WalletState } from '../../stor
 import { parseConvRate, parseConvQty } from './helpers'
 import type { SelectedMarket } from './helpers'
 import { VerifyOrderForm } from './VerifyOrderForm'
+import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 
 // ---------------------------------------------------------------------------
 // OrderForm — fully independent buy/sell limit-order form
@@ -378,21 +379,11 @@ export function OrderForm ({
   }, [rateAtom, qtyAtom, bui, qui, currentMkt])
 
   // MP-13: Wallet-readiness gate. Mirrors vanilla displayMessageIfMissingWallet
-  // priority order — both missing > base missing > quote missing > base
-  // disabled/not-running > quote disabled/not-running. When set, this message
-  // is shown on the submit button and gates it disabled.
+  // priority order; see `tradePairWalletMsg` for the canonical cascade. When
+  // set, this message is shown on the submit button and gates it disabled.
   const walletMsg = useMemo(() => {
     if (!selected) return ''
-    const baseW = walletMap[selected.baseID]
-    const quoteW = walletMap[selected.quoteID]
-    const bs = shortSymbol(baseSymbol)
-    const qs = shortSymbol(quoteSymbol)
-    if (!baseW && !quoteW) return t('NO_WALLET_MSG', { asset1: bs, asset2: qs })
-    if (!baseW) return t('CREATE_ASSET_WALLET_MSG', { asset: bs })
-    if (!quoteW) return t('CREATE_ASSET_WALLET_MSG', { asset: qs })
-    if (baseW.disabled || !baseW.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: bs })
-    if (quoteW.disabled || !quoteW.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: qs })
-    return ''
+    return tradePairWalletMsg(t, walletMap[selected.baseID], walletMap[selected.quoteID], baseSymbol, quoteSymbol)
   }, [selected, walletMap, baseSymbol, quoteSymbol, t])
 
   // Submit order: step 1 — click-time validation. The button label/disabled

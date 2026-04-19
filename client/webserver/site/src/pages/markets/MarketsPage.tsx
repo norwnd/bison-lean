@@ -36,6 +36,7 @@ import { ChartPanel } from './ChartPanel'
 import { TradeForms } from './TradeForms'
 import { OrderBookPanel } from './OrderBookPanel'
 import { RightPanel } from './RightPanel'
+import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -804,14 +805,10 @@ export default function MarketsPage () {
       }
     }
 
-    // 3. Missing / disabled wallet (noWalletMsg equivalent)
-    const bw = baseAsset.wallet
-    const qw = quoteAsset.wallet
-    if (!bw && !qw) return t('NO_WALLET_MSG', { asset1: shortSymbol(baseSymbol), asset2: shortSymbol(quoteSymbol) })
-    if (!bw) return t('CREATE_ASSET_WALLET_MSG', { asset: shortSymbol(baseSymbol) })
-    if (!qw) return t('CREATE_ASSET_WALLET_MSG', { asset: shortSymbol(quoteSymbol) })
-    if (bw.disabled || !bw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: shortSymbol(baseSymbol) })
-    if (qw.disabled || !qw.running) return t('ENABLE_ASSET_WALLET_MSG', { asset: shortSymbol(quoteSymbol) })
+    // 3. Missing / disabled / connecting wallet (noWalletMsg equivalent).
+    // See `tradePairWalletMsg` for the canonical priority cascade.
+    const walletMsg = tradePairWalletMsg(t, baseAsset.wallet, quoteAsset.wallet, baseSymbol, quoteSymbol)
+    if (walletMsg) return walletMsg
 
     // 4. Token approval (tokenApprovalStatus equivalent)
     const checkApproval = (assetID: number, asset: SupportedAsset) => {

@@ -21,6 +21,7 @@ import { filled } from '../components/AccountUtils'
 import BridgingPopup from '../components/bridging/BridgingPopup'
 import { allBridgePaths } from '../components/bridging/bridgeApi'
 import { ROUTES } from '../router/routes'
+import { walletConnecting } from '../hooks/useWalletMsg'
 import type {
   SupportedAsset, WalletState,
   BalanceNote, WalletStateNote,
@@ -544,6 +545,15 @@ export default function WalletsPage () {
         <div className="flex-stretch-column border-bottom">
           {tickerGroups.map(g => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
+            // LI-ASYNC Batch 9: tiny spinner when any asset in the group
+            // has a wallet mid-connect (user hasn't disabled it, but its
+            // `Running` flag is false). Post-login this is the
+            // transient boot window between `walletstate` notes.
+            // Computed inline (not on `TickerGroup`) because `walletstate`
+            // notes mutate `asset.wallet` in place + `bump()` — the
+            // `useMemo([assets])` for `tickerGroups` wouldn't re-run, so
+            // only inline reads see the fresh `running` bool.
+            const connectingAsset = g.assetIDs.find(id => walletConnecting(assets[id]?.wallet))
             return (
               <div
                 key={g.ticker}
@@ -555,6 +565,12 @@ export default function WalletsPage () {
                   <div className="flex-center me-4 lh1">
                     <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
                     <span className="ms-1 fs22">{g.ticker}</span>
+                    {connectingAsset !== undefined && (
+                      <span
+                        className="ico-spinner spinner fs11 ms-2"
+                        title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[connectingAsset].symbol) })}
+                      />
+                    )}
                   </div>
                   <div className="d-flex flex-column align-items-end">
                     {g.hasWallet
@@ -920,6 +936,17 @@ function WalletDetail ({
           <div className="flex-center">
             <img src={logoPath(asset.symbol)} alt={asset.symbol} className="large-icon" />
             <div className="fs24 ms-2 demi lh1">{asset.name}</div>
+            {/* LI-ASYNC Batch 9: transient indicator while the selected
+                wallet is mid-connect (`!disabled && !running`). The
+                `wallet` prop is replaced whole-object by the
+                `walletstate` handler's `asset.wallet = n.wallet`, so the
+                re-render sees the fresh `running` bool. */}
+            {walletConnecting(wallet) && (
+              <span
+                className="ico-spinner spinner fs14 ms-2"
+                title={t('CONNECTING_WALLET', { asset: shortSymbol(asset.symbol) })}
+              />
+            )}
           </div>
           <div className="d-flex flex-column justify-content-end">
             <div className="d-flex align-items-end lh1">

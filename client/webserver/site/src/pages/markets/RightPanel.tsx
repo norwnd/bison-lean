@@ -22,6 +22,7 @@ import type { StatusPanelData } from './StatusPanels'
 import { TierSection } from './TierSection'
 import type { TierData } from './TierSection'
 import { OrdersSection } from './OrdersSection'
+import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 
 // ---------------------------------------------------------------------------
 // RightPanel -- orchestrator for the rightmost section. Owns the heavy
@@ -108,31 +109,20 @@ export function RightPanel ({
   // UI-AUTH: during the login-warmup window (connected but not yet
   // authed, and no terminal auth failure), `wallet.running` is `false`
   // on every wallet until each per-wallet `Connect` lands. Surfacing
-  // "Enable / Activate X wallet" in that window is misleading -- the
-  // wallet is already enabled; it just hasn't finished connecting.
-  // Suppress the whole cascade; the "Connecting to DEX server..."
-  // spinner covers the warmup state. After auth completes (or fails),
-  // the real wallet-status cascade takes over. Genuinely-missing
-  // wallets (`wallet === undefined`) also get suppressed here -- on
-  // success they surface immediately; on failure the auth error is
-  // the more urgent signal anyway.
+  // any wallet-status message in that window is misleading -- the
+  // wallets are already enabled; they just haven't finished
+  // connecting. Suppress the whole cascade; the "Connecting to DEX
+  // server..." spinner covers the warmup state. After auth completes
+  // (or fails), the real wallet-status cascade takes over -- including
+  // the transient per-wallet `CONNECTING_WALLET` branch for the
+  // post-warmup window where a subset of wallets is still coming up.
+  // Genuinely-missing wallets (`wallet === undefined`) also get
+  // suppressed here -- on success they surface immediately; on failure
+  // the auth error is the more urgent signal anyway.
   const noWalletMsg = useMemo<string>(() => {
     if (authingDex || authFailedMsg) return ''
     if (!baseAsset || !quoteAsset) return ''
-    const baseWallet = baseAsset.wallet
-    const quoteWallet = quoteAsset.wallet
-    if (!baseWallet && !quoteWallet) {
-      return t('NO_WALLET_MSG', { asset1: baseSymbol, asset2: quoteSymbol })
-    }
-    if (!baseWallet) return t('CREATE_ASSET_WALLET_MSG', { asset: baseSymbol })
-    if (!quoteWallet) return t('CREATE_ASSET_WALLET_MSG', { asset: quoteSymbol })
-    if (baseWallet.disabled || !baseWallet.running) {
-      return t('ENABLE_ASSET_WALLET_MSG', { asset: baseSymbol })
-    }
-    if (quoteWallet.disabled || !quoteWallet.running) {
-      return t('ENABLE_ASSET_WALLET_MSG', { asset: quoteSymbol })
-    }
-    return ''
+    return tradePairWalletMsg(t, baseAsset.wallet, quoteAsset.wallet, baseSymbol, quoteSymbol)
   }, [authingDex, authFailedMsg, baseAsset, quoteAsset, baseSymbol, quoteSymbol, t])
 
   // MP-34: hasUnreadyOrders
