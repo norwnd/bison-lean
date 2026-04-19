@@ -25,17 +25,17 @@ interface PaginationInfo {
   hasNext: boolean
 }
 
+// `key` is the server-side filter value (sent as ?status=<key> on /api/proposals).
+// `label` is the i18n key used for the button text — matches the Title-Case
+// entries in en-US.json ("Authorized", "Started", ...). "ALL" is UPPER_SNAKE
+// because there's no matching single-word Title-Case key.
 const VOTE_STATUS_OPTIONS = [
   { key: 'all', label: 'ALL' },
-  // NOTE: the other labels ('authorized'...'rejected') don't exist as keys
-  // in en-US.json, so t() falls back to the literal lowercase string. Matching
-  // Title Case keys ("Authorized", etc.) exist but weren't wired up; fixing
-  // that is out of scope for the CL-I18N-NAMING rename.
-  { key: 'authorized', label: 'authorized' },
-  { key: 'started', label: 'started' },
-  { key: 'finished', label: 'finished' },
-  { key: 'approved', label: 'approved' },
-  { key: 'rejected', label: 'rejected' },
+  { key: 'authorized', label: 'Authorized' },
+  { key: 'started', label: 'Started' },
+  { key: 'finished', label: 'Finished' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'rejected', label: 'Rejected' },
 ]
 
 export default function ProposalsPage () {
