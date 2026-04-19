@@ -12,9 +12,9 @@ import { formatRateAtomToRateStep, shortSymbol } from '../../hooks/useFormatters
 import { hasActiveMatches } from '../../components/AccountUtils'
 import type {
   MiniOrder, MarketOrderBook, Order,
-  OrderNote, MatchNote, SpotPriceNote, BalanceNote, EpochNote, BookUpdate,
+  OrderNote, MatchNote, EpochNote, BookUpdate,
   Candle, OrderFilter,
-  ConnEventNote, BondNote, WalletStateNote, RemainderUpdate, SupportedAsset
+  ConnEventNote, BondNote, RemainderUpdate, SupportedAsset
 } from '../../stores/types'
 import {
   OrderTypeLimit, OrderTypeMarket, StatusEpoch, StatusBooked, StatusExecuted,
@@ -455,7 +455,15 @@ export default function MarketsPage () {
   }, [snapshotActiveOrders])
 
   // -------------------------------------------------------------------------
-  // Note handlers (order, match, epoch, balance, spots, bond, walletstate)
+  // Note handlers (order, match, epoch, bondpost, conn)
+  //
+  // `balance`, `spots`, `walletstate` (and `walletconfig`, `walletsync`,
+  // `fiatrateupdate`, `createwallet`) are dispatched globally by
+  // `AppLayout.tsx` to `useMarketStore`, which rebuilds the affected slices
+  // of `useAuthStore` with new top-level refs (see the comment block at the
+  // top of `useMarketStore.ts`). MarketsPage's `useAuthStore` selectors
+  // re-fire on those setState calls, so no per-page receiver is needed for
+  // any of them.
   // -------------------------------------------------------------------------
   const noteHandlers = useMemo(() => ({
     order: (note: OrderNote) => {
@@ -562,19 +570,10 @@ export default function MarketsPage () {
         return changed ? next : prev
       })
     },
-    balance: (_note: BalanceNote) => {
-      // MP-63: covered reactively in React -- see original comments.
-    },
-    spots: (_note: SpotPriceNote) => {
-      // Spot prices updated through auth store
-    },
     bondpost: (note: BondNote) => {
       if (!selected) return
       if (note.dex !== selected.host) return
       fetchUser()
-    },
-    walletstate: (_note: WalletStateNote) => {
-      // Wallet state updated through auth store.
     },
     conn: (note: ConnEventNote) => {
       if (!selected) return
