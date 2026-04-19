@@ -955,6 +955,33 @@ func newTWallet(assetID uint32) (*xcWallet, *TXCWallet) {
 	return xcWallet, w
 }
 
+// newTradingTWallet is newTWallet + a TFeeRater shim pre-installed at
+// tradeTestFeeRate. Trade-path tests need Core.feeSuggestionAny /
+// feeSuggestionSwapAny to return a non-zero rate locally so the
+// "fee_rate" server route (not stubbed by the test rig) stays off
+// the critical path — the TFeeRater wrap short-circuits those
+// helpers on the wallet-provided rate. Use this helper wherever a
+// test was doing `newTWallet(...)` followed by
+// `wallet.Wallet = &TFeeRater{tw, tradeTestFeeRate}`.
+//
+// Tests that need a custom fee rate (zero, a test-specific constant,
+// etc.) should keep the raw `&TFeeRater{...}` literal — the helper
+// is opinionated on tradeTestFeeRate by design.
+func newTradingTWallet(assetID uint32) (*xcWallet, *TXCWallet) {
+	wallet, tw := newTWallet(assetID)
+	wallet.Wallet = &TFeeRater{TXCWallet: tw, feeRate: tradeTestFeeRate}
+	return wallet, tw
+}
+
+// newTradingTWalletDisconnected is the hookedUp=false counterpart to
+// newTradingTWallet, for tests that need to exercise xcWallet.Connect
+// (e.g. connectAndUnlock flows) without panicking on a re-Connect.
+func newTradingTWalletDisconnected(assetID uint32) (*xcWallet, *TXCWallet) {
+	wallet, tw := newTWalletDisconnected(assetID)
+	wallet.Wallet = &TFeeRater{TXCWallet: tw, feeRate: tradeTestFeeRate}
+	return wallet, tw
+}
+
 func (w *TXCWallet) Info() *asset.WalletInfo {
 	return w.info
 }
@@ -3288,19 +3315,14 @@ func TestPrepareTradeRequestErrorCloser(t *testing.T) {
 	defer rig.shutdown()
 	tCore := rig.core
 
-	dcrWallet, tDcrWallet := newTWalletDisconnected(tUTXOAssetA.ID)
-	// Same TFeeRater shim as trade(): lets feeSuggestionSwapAny
-	// short-circuit on the wallet-provided rate so we don't need to
-	// stub the DEX fee_rate WS route.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
+	dcrWallet, tDcrWallet := newTradingTWalletDisconnected(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	dcrWallet.Unlock(rig.crypter)
 	_ = dcrWallet.Connect() // matches trade(): avoids connector.Wait panic and keeps sync goroutines alive
 	defer dcrWallet.Disconnect()
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	btcWallet, _ := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
 	btcWallet.Unlock(rig.crypter)
@@ -3383,20 +3405,16 @@ func TestPrepareMultiTradeRequestsPerPlacementCleanup(t *testing.T) {
 	tCore := rig.core
 
 	// Same wallet+rig shape as TestPrepareTradeRequestErrorCloser:
-	// TFeeRater shim so feeSuggestionSwapAny short-circuits on the
-	// wallet-provided rate (no need to stub the DEX fee_rate WS
-	// route); disconnected-then-Connect to satisfy connectAndUnlock
-	// without panicking on a re-Connect.
-	dcrWallet, tDcrWallet := newTWalletDisconnected(tUTXOAssetA.ID)
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
+	// disconnected-then-Connect (via newTradingTWalletDisconnected) to
+	// satisfy connectAndUnlock without panicking on a re-Connect.
+	dcrWallet, tDcrWallet := newTradingTWalletDisconnected(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	dcrWallet.Unlock(rig.crypter)
 	_ = dcrWallet.Connect()
 	defer dcrWallet.Disconnect()
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	btcWallet, _ := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
 	btcWallet.Unlock(rig.crypter)
@@ -3597,12 +3615,7 @@ func trade(t *testing.T, async bool) {
 	rig := newTestRig()
 	defer rig.shutdown()
 	tCore := rig.core
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
-	// Wrap in TFeeRater so feeSuggestionSwapAny short-circuits on the
-	// wallet-provided rate instead of falling through to the DEX's
-	// fee_rate WS route, which the test rig doesn't serve.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
-	dcrWallet.hookedUp = false
+	dcrWallet, tDcrWallet := newTradingTWalletDisconnected(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	dcrWallet.Unlock(rig.crypter)
@@ -3610,8 +3623,7 @@ func trade(t *testing.T, async bool) {
 	defer dcrWallet.Disconnect()
 	syncTickerPeriod = 10 * time.Millisecond
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
 	btcWallet.Unlock(rig.crypter)
@@ -5384,19 +5396,15 @@ func TestTradeTracking(t *testing.T) {
 	dc := rig.dc
 	tCore := rig.core
 	tCore.loggedIn = true
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet, tDcrWallet := newTradingTWallet(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	dcrWallet.Unlock(rig.crypter)
-	// Wrap with TFeeRater so Core.feeSuggestionAny can fetch a non-zero rate
-	// locally and avoid the now-unhandled "fee_rate" server route.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.address = "12DXGkvxFjuq5btXYkwWfBZaz1rVwFgini"
 	btcWallet.Unlock(rig.crypter)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
 
 	tBtcWallet.confirmTxErr = errors.New("")
 	tDcrWallet.confirmTxErr = errors.New("")
@@ -6256,13 +6264,10 @@ func TestRefunds(t *testing.T) {
 
 	dc := rig.dc
 	tCore := rig.core
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.address = "DsVmA7aqqWeKWy461hXjytbZbgCqbB8g2dq"
 	btcWallet.Unlock(rig.crypter)
-	// Wrap with TFeeRater so Core.feeSuggestionAny can fetch a non-zero rate
-	// locally and avoid the now-unhandled "fee_rate" server route.
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
 
 	ethWallet, tEthWallet := newTAccountLocker(tACCTAsset.ID)
 	tCore.wallets[tACCTAsset.ID] = ethWallet
@@ -7930,17 +7935,13 @@ func TestHandleTradeResumptionMsg(t *testing.T) {
 	defer rig.shutdown()
 
 	tCore := rig.core
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet, _ := newTradingTWallet(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.Unlock(rig.crypter)
-	// Wrap with TFeeRater so Core.feeSuggestionAny can fetch a non-zero rate
-	// locally and avoid the now-unhandled "fee_rate" server route.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet, _ := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.Unlock(rig.crypter)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
 
 	epochLen := rig.dc.marketConfig(tDcrBtcMktName).EpochLen
 
@@ -8731,17 +8732,13 @@ func TestPreimageSync(t *testing.T) {
 	rig := newTestRig()
 	defer rig.shutdown()
 	tCore := rig.core
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet, tDcrWallet := newTradingTWallet(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
 	dcrWallet.Unlock(rig.crypter)
-	// Wrap with TFeeRater so Core.feeSuggestionAny can fetch a non-zero rate
-	// locally and avoid the now-unhandled "fee_rate" server route.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
 
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	btcWallet.Unlock(rig.crypter)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
 
 	var lots uint64 = 10
 	qty := dcrBtcLotSize * lots
@@ -10454,14 +10451,10 @@ func TestMaxSwapsRedeemsInTx(t *testing.T) {
 	dc := rig.dc
 	tCore := rig.core
 
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
+	dcrWallet, tDcrWallet := newTradingTWallet(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
-	// Wrap with TFeeRater so Core.feeSuggestionAny can fetch a non-zero rate
-	// locally and avoid the now-unhandled "fee_rate" server route.
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
 	walletSet, _, _, _ := tCore.walletSet(dc, tUTXOAssetA.ID, tUTXOAssetB.ID, true)
 
 	tDcrWallet.maxSwaps = 4
@@ -10589,15 +10582,9 @@ func TestSuspectTrades(t *testing.T) {
 	dc := rig.dc
 	tCore := rig.core
 
-	dcrWallet, tDcrWallet := newTWallet(tUTXOAssetA.ID)
-	// Wrap the underlying test wallet with TFeeRater so feeSuggestionAny
-	// returns a non-zero rate locally — the "fee_rate" server route isn't
-	// stubbed by the test rig and without this the swap would fail with
-	// "swap cannot proceed with a zero fee rate".
-	dcrWallet.Wallet = &TFeeRater{tDcrWallet, tradeTestFeeRate}
+	dcrWallet, tDcrWallet := newTradingTWallet(tUTXOAssetA.ID)
 	tCore.wallets[tUTXOAssetA.ID] = dcrWallet
-	btcWallet, tBtcWallet := newTWallet(tUTXOAssetB.ID)
-	btcWallet.Wallet = &TFeeRater{tBtcWallet, tradeTestFeeRate}
+	btcWallet, tBtcWallet := newTradingTWallet(tUTXOAssetB.ID)
 	tCore.wallets[tUTXOAssetB.ID] = btcWallet
 	walletSet, _, _, _ := tCore.walletSet(dc, tUTXOAssetA.ID, tUTXOAssetB.ID, true)
 
