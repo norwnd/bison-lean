@@ -7567,7 +7567,16 @@ func (c *Core) prepareMultiTradeRequests(pw []byte, form *MultiTradeForm) ([]*tr
 		if i == 0 {
 			fees = fundingFees
 		}
-		req, err := c.createTradeRequest(
+		// NOTE: assign to the outer `err` (declared at the top of this
+		// function) rather than using `:=` here, which would shadow it
+		// with a loop-body-scoped variable. The per-iteration
+		// errClosers[k] cleanup defers registered above capture &err at
+		// the function-body level; if this call shadowed, the outer
+		// err would stay nil on failure and those defers would skip
+		// cleanup, leaving the funding coins locked until the next
+		// wallet-balance refresh.
+		var req *tradeRequest
+		req, err = c.createTradeRequest(
 			wallets,
 			coins,
 			allRedeemScripts[i],
