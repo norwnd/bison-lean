@@ -139,15 +139,21 @@ export function RecentMatchesTable ({
           </tr>
         </thead>
         <tbody>
-          {sortedFiltered.map((m, i) => {
+          {sortedFiltered.map(m => {
             // MP-47: both price and qty use vanilla's `buycolor`/`sellcolor`
             // utility classes (utilities.scss L106-111) rather than an inline
             // style — matches markets.ts L2810 + L2812. The `!m.sell`
             // inversion on the price comes from vanilla L2808: "for match
             // (when rate-formatting) the meaning of sell is reversed".
             const sideCls = m.sell ? 'sellcolor' : 'buycolor'
+            // Composite key avoids tying React's reconciliation identity to
+            // sort order (the old `${stamp}-${i}` did). Collision would
+            // require two matches with identical (stamp, rate, qty, side)
+            // in a single epoch — vanishingly unlikely in practice. When
+            // `RecentMatch` exposes a server-assigned match id, switch to
+            // that for strict uniqueness.
             return (
-              <tr key={`${m.stamp}-${i}`}>
+              <tr key={`${m.stamp}-${m.rate}-${m.qty}-${m.sell ? 's' : 'b'}`}>
                 <td className={`text-start fs17 ${sideCls}`}>
                   {bui && qui && currentMkt
                     ? formatRateAtomToRateStep(m.rate, bui, qui, currentMkt.ratestep, !m.sell)

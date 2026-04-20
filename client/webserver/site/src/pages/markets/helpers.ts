@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { formatRateAtomToRateStep, RateEncodingFactor } from '../../hooks/useFormatters'
 import { filled } from '../../components/AccountUtils'
 import OrderBook from '../../components/OrderBook'
@@ -331,4 +331,29 @@ export function useSecondTicker (enabled: boolean = true): void {
     const id = window.setInterval(() => setTick(tk => tk + 1), 1000)
     return () => window.clearInterval(id)
   }, [enabled])
+}
+
+// useLatestRef exposes the most recent value of `value` through a ref
+// whose identity never changes. Designed for callbacks / effect closures
+// that need the freshest value without subscribing to it — putting the
+// value in a dep array would force the effect to tear down + rebuild
+// on every change, so consumers read `.current` instead.
+//
+// Timing: the sync happens in a `useEffect`, so `.current` is updated
+// AFTER the commit phase. Callers that read during render see the
+// PREVIOUS commit's value until the next commit completes. That matches
+// the needs of async consumers (WS handlers, setTimeout callbacks,
+// subscription listeners) which always fire after the current render
+// has committed.
+//
+// Ref-stabilising `currentXc` via this pattern was the mechanism behind
+// `CL-MP-RERENDER-CASCADE` (Fix B); factoring it into a hook keeps future
+// usages consistent and makes the intent ("read latest, don't re-run on
+// change") obvious at the call site.
+export function useLatestRef<T> (value: T) {
+  const ref = useRef(value)
+  useEffect(() => {
+    ref.current = value
+  }, [value])
+  return ref
 }

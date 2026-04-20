@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { getJSON, postJSON } from '../services/api'
 import { useNotificationStore } from './useNotificationStore'
-import type { User, SupportedAsset, Exchange, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
+import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
 
 // LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
 // distinguishes "request failed → show server msg" from "request ok →
@@ -21,7 +21,7 @@ export type LogoutResult =
   | { ok: true }
   | { ok: false, msg: string, code?: number }
 
-interface AuthState {
+export interface AuthState {
   user: User | null
   authed: boolean
   inited: boolean
@@ -210,3 +210,30 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
   }
 })
+
+// selectUnitInfo resolves the `UnitInfo` for an asset, preferring the
+// per-DEX asset entry (carries the protocol-accurate UnitInfo the server
+// handshake returned) and falling back to the client-side
+// `assets[id].unitInfo` (global default, populated from `/api/user`).
+// Returns null when neither source resolves.
+//
+// Co-located with the store so consumers can pass the store state
+// directly:
+//
+//   const bui = useAuthStore(s =>
+//     selected ? selectUnitInfo(s, selected.host, selected.baseID) : null
+//   )
+//
+// The value returned is ref-stable across spot and balance notes (neither
+// handler rebuilds `assets[id]` or `exchanges[host].assets[id]`), so
+// Zustand's default `Object.is` equality short-circuits downstream
+// re-renders — this is the same property that `CL-MP-RERENDER-CASCADE`
+// (Fix B) relied on to kill the spot-note cascade.
+export function selectUnitInfo (
+  s: AuthState,
+  host: string,
+  assetID: number
+): UnitInfo | null {
+  return s.exchanges[host]?.assets[assetID]?.unitInfo ??
+    s.assets[assetID]?.unitInfo ?? null
+}

@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { leftMarketDockLK, lastCandleDurationLK, lastMarketLK, fetchLocal, storeLocal } from '../../services/state'
-import { useAuthStore } from '../../stores/useAuthStore'
+import { useAuthStore, selectUnitInfo } from '../../stores/useAuthStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useWebSocketStore } from '../../stores/useWebSocketStore'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -28,6 +28,7 @@ import {
   ORDER_BOOK_SIDE_MAX, MAX_ACTIVE_ORDERS,
   CANDLE_DUR_24H, MAX_PRICE_DIVERGENCE,
   midGapRate, binOrdersByRateAndEpoch, collectMarkets, deriveWarmupState,
+  useLatestRef,
   type OrderBookDisplayRow, type SelectedMarket
 } from './helpers'
 
@@ -240,10 +241,7 @@ export default function MarketsPage () {
   // forcing the effect to re-run. Measured impact: a 9-spot-note cluster
   // dropped from ~23 MP renders + 18ms async tail to 9 renders with no
   // tail.
-  const currentXcRef = useRef(currentXc)
-  useEffect(() => {
-    currentXcRef.current = currentXc
-  }, [currentXc])
+  const currentXcRef = useLatestRef(currentXc)
   const currentMkt = useMemo(() => {
     if (!currentXc || !selected) return null
     const mktId = Object.keys(currentXc.markets).find(k => {
@@ -269,16 +267,12 @@ export default function MarketsPage () {
   // `Object.is` equality short-circuit — no MarketsPage re-render for
   // these specifically. The old `useMemo(..., [currentXc])` deps churned
   // every spot note because `currentXc` identity changed.
-  const bui = useAuthStore(s => {
-    if (!selected) return null
-    return s.exchanges[selected.host]?.assets[selected.baseID]?.unitInfo ??
-      s.assets[selected.baseID]?.unitInfo ?? null
-  })
-  const qui = useAuthStore(s => {
-    if (!selected) return null
-    return s.exchanges[selected.host]?.assets[selected.quoteID]?.unitInfo ??
-      s.assets[selected.quoteID]?.unitInfo ?? null
-  })
+  const bui = useAuthStore(s =>
+    selected ? selectUnitInfo(s, selected.host, selected.baseID) : null
+  )
+  const qui = useAuthStore(s =>
+    selected ? selectUnitInfo(s, selected.host, selected.quoteID) : null
+  )
 
   const candleDurs = currentXc?.candleDurs ?? []
   const isRegistered = currentXc
