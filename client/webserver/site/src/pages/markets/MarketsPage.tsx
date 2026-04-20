@@ -112,6 +112,14 @@ export default function MarketsPage () {
   const bookRef = useRef<OrderBook | null>(null)
   const [bookVersion, setBookVersion] = useState(0)
   const bumpBook = useCallback(() => setBookVersion(v => v + 1), [])
+  // Tracks whether the auto-fill "seed rate" has already run for the current
+  // market. The auto-fill (`fillRateFromBook`) is strictly an initial seed —
+  // mirrors vanilla `reInitOrderForms`. Without this guard, every subsequent
+  // `book` WS snapshot (reconnects, server-initiated re-sync) would re-seed
+  // the rate and clobber whatever the user has typed into the OrderForm's
+  // price input. Reset to false inside the market-subscribe effect so a
+  // market switch re-arms the seed for the new market.
+  const initialRateFilledRef = useRef(false)
 
   // -------------------------------------------------------------------------
   // Candle / chart state
@@ -254,6 +262,7 @@ export default function MarketsPage () {
     candleCacheRef.current = {}
     setCandleCacheVersion(0)
     setRecentMatches([])
+    initialRateFilledRef.current = false
     bumpBook()
 
     // 1) Subscribe WS handlers FIRST
@@ -273,13 +282,24 @@ export default function MarketsPage () {
       setRecentMatches(mktBook.book.recentMatches ?? [])
       bumpBook()
 
-      // Auto-fill initial rate into order forms (mirrors vanilla reInitOrderForms).
-      const bestBuy = book.bestBuyRateAtom()
-      const bestSell = book.bestSellRateAtom()
-      const initRate = (bestBuy && bestSell)
-        ? Math.round((bestBuy + bestSell) / 2)
-        : (bestBuy || bestSell)
-      if (initRate) fillRateFromBook(initRate)
+      // Auto-fill initial rate into order forms (mirrors vanilla
+      // reInitOrderForms). This is a one-shot seed — subsequent `book`
+      // snapshots (reconnects, server-initiated re-syncs) must NOT re-fire
+      // the auto-fill or they'd clobber whatever the user has typed into
+      // the price input. The flag is reset on market switch by the
+      // per-market reset block above. An empty book (no bids/asks) leaves
+      // the flag false so the next non-empty snapshot can still seed.
+      if (!initialRateFilledRef.current) {
+        const bestBuy = book.bestBuyRateAtom()
+        const bestSell = book.bestSellRateAtom()
+        const initRate = (bestBuy && bestSell)
+          ? Math.round((bestBuy + bestSell) / 2)
+          : (bestBuy || bestSell)
+        if (initRate) {
+          initialRateFilledRef.current = true
+          fillRateFromBook(initRate)
+        }
+      }
     }
 
     const handleBookOrder = (data: BookUpdate) => {
