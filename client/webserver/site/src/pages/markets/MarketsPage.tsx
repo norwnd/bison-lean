@@ -113,13 +113,21 @@ export default function MarketsPage () {
   const [bookVersion, setBookVersion] = useState(0)
   const bumpBook = useCallback(() => setBookVersion(v => v + 1), [])
   // Tracks whether the auto-fill "seed rate" has already run for the current
-  // market. The auto-fill (`fillRateFromBook`) is strictly an initial seed —
-  // mirrors vanilla `reInitOrderForms`. Without this guard, every subsequent
-  // `book` WS snapshot (reconnects, server-initiated re-sync) would re-seed
-  // the rate and clobber whatever the user has typed into the OrderForm's
-  // price input. Reset to false inside the market-subscribe effect so a
-  // market switch re-arms the seed for the new market.
+  // market. The auto-fill (`fillRateFromBook` call inside `handleBook`) is
+  // strictly an initial seed — mirrors vanilla `reInitOrderForms`. Without
+  // this guard, every subsequent `book` WS snapshot (reconnects,
+  // server-initiated re-sync) would re-seed the rate and clobber whatever
+  // the user has typed into the OrderForm's price input.
+  //
+  // Reset is intentionally done in a separate `[selected]`-only effect
+  // (below) rather than inside the main subscribe useEffect: that effect
+  // also re-runs on WS reconnect (`isWsConnected` in its deps), and we
+  // want a reconnect to leave the flag alone so the next book snapshot
+  // doesn't re-seed the rate. Only a real market switch re-arms the seed.
   const initialRateFilledRef = useRef(false)
+  useEffect(() => {
+    initialRateFilledRef.current = false
+  }, [selected])
 
   // -------------------------------------------------------------------------
   // Candle / chart state
@@ -256,13 +264,17 @@ export default function MarketsPage () {
   useEffect(() => {
     if (!selected) return
 
-    // Reset state for new market
+    // Reset state for new market. NOTE: `initialRateFilledRef` is reset
+    // separately in its own `[selected]`-only effect above — we don't
+    // want WS reconnect (which re-fires this effect) to clobber the flag
+    // and re-seed the user's rate input. The other resets below still
+    // run on reconnect because the server will send a fresh book / we
+    // re-subscribe to candles.
     bookRef.current = null
     setCandleData(null)
     candleCacheRef.current = {}
     setCandleCacheVersion(0)
     setRecentMatches([])
-    initialRateFilledRef.current = false
     bumpBook()
 
     // 1) Subscribe WS handlers FIRST
@@ -286,9 +298,11 @@ export default function MarketsPage () {
       // reInitOrderForms). This is a one-shot seed — subsequent `book`
       // snapshots (reconnects, server-initiated re-syncs) must NOT re-fire
       // the auto-fill or they'd clobber whatever the user has typed into
-      // the price input. The flag is reset on market switch by the
-      // per-market reset block above. An empty book (no bids/asks) leaves
-      // the flag false so the next non-empty snapshot can still seed.
+      // the price input. The flag is reset only on market switch via its
+      // dedicated `[selected]`-only effect near the ref declaration; WS
+      // reconnects re-run this outer effect but leave the flag alone. An
+      // empty book (no bids/asks) leaves the flag false so the next
+      // non-empty snapshot can still seed.
       if (!initialRateFilledRef.current) {
         const bestBuy = book.bestBuyRateAtom()
         const bestSell = book.bestSellRateAtom()
@@ -622,7 +636,13 @@ export default function MarketsPage () {
     setBookRateVersion(0)
   }, [setSearchParams])
 
-  // Fill rate from order book click (propagated to both OrderForm instances)
+  // Set the rate in both OrderForm instances. Called from two places:
+  //   1. `handleBook` inside the market-subscribe effect — auto-seeds the
+  //      rate from the book midpoint ONCE per market. Guarded by
+  //      `initialRateFilledRef` so reconnects and re-syncs don't clobber
+  //      the user's typed rate.
+  //   2. User clicks in `OrderBookPanel` — always fires (user intent to
+  //      override the current rate). Intentionally NOT gated by any flag.
   const fillRateFromBook = useCallback((msgRate: number) => {
     setBookRateAtom(msgRate)
     setBookRateVersion(v => v + 1)
