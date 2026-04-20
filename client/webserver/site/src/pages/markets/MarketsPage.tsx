@@ -39,6 +39,29 @@ import { RightPanel } from './RightPanel'
 import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 
 // ---------------------------------------------------------------------------
+// Module helpers
+// ---------------------------------------------------------------------------
+
+// CL-MP-FLASH-INVESTIGATE Fix 2: structural equality on the numeric fields
+// of a `Candle`. Used by `handleCandleUpdate` to skip no-op in-place
+// updates from `candle_update` WS messages. The server re-emits the
+// current candle for every cached duration on every epoch boundary
+// (~15s) regardless of trade activity; on idle epochs the incoming
+// candle is byte-identical to what we already have cached, and blindly
+// calling `setCandleData({ ...cache })` on those would burn a full
+// MarketsPage re-render (chart + book + forms all re-paint) every
+// epoch even though nothing changed visually.
+const candlesEqual = (a: Candle, b: Candle): boolean =>
+  a.startStamp === b.startStamp &&
+  a.endStamp === b.endStamp &&
+  a.matchVolume === b.matchVolume &&
+  a.quoteVolume === b.quoteVolume &&
+  a.highRate === b.highRate &&
+  a.lowRate === b.lowRate &&
+  a.startRate === b.startRate &&
+  a.endRate === b.endRate
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -390,8 +413,17 @@ export default function MarketsPage () {
         candles.push(candle)
       } else {
         const last = candles[candles.length - 1]
-        if (last.startStamp === candle.startStamp) candles[candles.length - 1] = candle
-        else candles.push(candle)
+        if (last.startStamp === candle.startStamp) {
+          // CL-MP-FLASH-INVESTIGATE Fix 2: skip no-op in-place updates.
+          // On idle epochs the server re-sends the same candle fields
+          // every epoch (~15s) for every cached duration; mutating the
+          // cache element and bumping state here would burn a full chart
+          // repaint every epoch for nothing.
+          if (candlesEqual(last, candle)) return
+          candles[candles.length - 1] = candle
+        } else {
+          candles.push(candle)
+        }
       }
       // MP-20: live-update the high/low fallback when the 5m cache mutates
       if (dur === '5m') setCandleCacheVersion(v => v + 1)
@@ -400,7 +432,15 @@ export default function MarketsPage () {
     }
 
     const handleEpochMatchSummary = (data: BookUpdate) => {
-      if (!data.payload?.matchSummaries) return
+      // CL-MP-FLASH-INVESTIGATE Fix 1: bail on empty arrays too, not just
+      // null. The server sends `epoch_match_summary` on every epoch
+      // boundary (every ~15s) regardless of trade activity; on an idle
+      // epoch `matchSummaries` comes through as `[]`. The old guard
+      // `!data.payload?.matchSummaries` is falsy only for null/undefined
+      // (an empty array is truthy), so every idle epoch was triggering
+      // a no-op `setRecentMatches` with a fresh array identity and
+      // forcing a MarketsPage re-render every 15s.
+      if (!data.payload?.matchSummaries?.length) return
       setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 100))
     }
 
