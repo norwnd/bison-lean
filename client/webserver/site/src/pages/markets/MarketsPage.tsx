@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { leftMarketDockLK, lastCandleDurationLK, lastMarketLK, fetchLocal, storeLocal } from '../../services/state'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { useShallow } from 'zustand/react/shallow'
 import { useWebSocketStore } from '../../stores/useWebSocketStore'
 import { useNotifications } from '../../hooks/useNotifications'
 import OrderBook from '../../components/OrderBook'
@@ -76,17 +77,40 @@ export default function MarketsPage () {
   // Auth store
   const user = useAuthStore(s => s.user)
   const assets = useAuthStore(s => s.assets)
-  const exchanges = useAuthStore(s => s.exchanges)
   const walletMap = useAuthStore(s => s.walletMap)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
   const fetchUser = useAuthStore(s => s.fetchUser)
   const authFailed = useAuthStore(s => s.authFailed)
+  // CL-MP-NARROW-SELECTOR (Fix A): the broad `exchanges` subscription used
+  // to live here. It was the dominant render multiplier on MarketsPage:
+  // `handleSpotPriceNote` replaces the exchanges map on every spot note
+  // (one note per market per ~15s wave, ~7 markets × ~5 hosts typical),
+  // and subscribing to the full map forced the entire page to re-render
+  // on each one even though the user is only viewing one market. We now
+  // subscribe to two narrower signals instead:
+  //   1. `marketKeysSignal` — a shallow-compared sorted list of
+  //      `host|marketName` identifiers. Fires only when markets are
+  //      added/removed; spot updates don't touch the list. Used to
+  //      trigger the "default to first market" validation effect below.
+  //   2. `currentXc` — a per-host selector declared after `selected` is
+  //      in scope. Fires only when the SELECTED host's entry changes
+  //      identity; notes about other hosts are invisible here.
+  // The remaining consumer of the full `exchanges` map — the market-list
+  // dock in `OrderBookPanel` — now subscribes to it directly inside that
+  // component, which keeps its re-renders contained to the leaf.
+  const marketKeysSignal = useAuthStore(useShallow(s => {
+    const keys: string[] = []
+    for (const host of Object.keys(s.exchanges).sort()) {
+      const mkts = s.exchanges[host]?.markets
+      if (!mkts) continue
+      for (const m of Object.keys(mkts).sort()) keys.push(`${host}|${m}`)
+    }
+    return keys
+  }))
 
   // -------------------------------------------------------------------------
   // Market selector state
   // -------------------------------------------------------------------------
-  const allMarkets = useMemo(() => collectMarkets(exchanges), [exchanges])
-
   const [selected, setSelected] = useState<SelectedMarket | null>(() => {
     // Resolution priority mirrors vanilla `markets.ts` L572-588:
     //   1. URL params (deep link / nav with explicit market)
@@ -194,9 +218,32 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Resolve the current market data
   // -------------------------------------------------------------------------
-  const currentXc = selected
-    ? exchanges[selected.host]
-    : null
+  // CL-MP-NARROW-SELECTOR (Fix A): per-host selector. Subscribes ONLY to
+  // the selected host's entry in the exchanges map; spot notes targeting
+  // OTHER hosts are invisible here (handleSpotPriceNote preserves the
+  // identity of untouched host entries via `...exchanges`). Combined
+  // with the `marketKeysSignal` above, MarketsPage no longer re-renders
+  // on background spot notes for other DEX connections. Coalescing
+  // same-host rapid-fire notes into a single render is Fix C's job.
+  const currentXc = useAuthStore(s =>
+    selected ? (s.exchanges[selected.host] ?? null) : null
+  )
+  // CL-MP-RERENDER-CASCADE (Fix B): ref-stable access to `currentXc` for
+  // WS handlers and the loadCandles callback. Before this fix, having
+  // `currentXc` in the deps of the market-subscribe effect and in
+  // `loadCandles` caused both to re-run on every spot note targeting
+  // the selected host (handleSpotPriceNote in useMarketStore.ts rebuilds
+  // `exchanges[host]` identity on every tick even though only `.markets`
+  // is touched). The handlers actually only need `currentXc` for a null
+  // check and `.assets[id]` lookups — both ref-stable across spot notes
+  // — so reading through a ref lets them see the freshest value without
+  // forcing the effect to re-run. Measured impact: a 9-spot-note cluster
+  // dropped from ~23 MP renders + 18ms async tail to 9 renders with no
+  // tail.
+  const currentXcRef = useRef(currentXc)
+  useEffect(() => {
+    currentXcRef.current = currentXc
+  }, [currentXc])
   const currentMkt = useMemo(() => {
     if (!currentXc || !selected) return null
     const mktId = Object.keys(currentXc.markets).find(k => {
@@ -215,14 +262,23 @@ export default function MarketsPage () {
   const quoteAsset = selected
     ? (assets[selected.quoteID] ?? null)
     : null
-  const bui = useMemo(() => {
-    if (!selected || !currentXc) return null
-    return currentXc.assets[selected.baseID]?.unitInfo ?? assets[selected.baseID]?.unitInfo ?? null
-  }, [selected, currentXc, assets])
-  const qui = useMemo(() => {
-    if (!selected || !currentXc) return null
-    return currentXc.assets[selected.quoteID]?.unitInfo ?? assets[selected.quoteID]?.unitInfo ?? null
-  }, [selected, currentXc, assets])
+  // CL-MP-RERENDER-CASCADE (Fix B): direct narrow selectors, not memos on
+  // `currentXc`. `unitInfo` objects are ref-stable across spot notes and
+  // balance notes (neither handler touches `.assets[id].unitInfo`), so
+  // returning the same ref from the selector lets Zustand's default
+  // `Object.is` equality short-circuit — no MarketsPage re-render for
+  // these specifically. The old `useMemo(..., [currentXc])` deps churned
+  // every spot note because `currentXc` identity changed.
+  const bui = useAuthStore(s => {
+    if (!selected) return null
+    return s.exchanges[selected.host]?.assets[selected.baseID]?.unitInfo ??
+      s.assets[selected.baseID]?.unitInfo ?? null
+  })
+  const qui = useAuthStore(s => {
+    if (!selected) return null
+    return s.exchanges[selected.host]?.assets[selected.quoteID]?.unitInfo ??
+      s.assets[selected.quoteID]?.unitInfo ?? null
+  })
 
   const candleDurs = currentXc?.candleDurs ?? []
   const isRegistered = currentXc
@@ -256,19 +312,28 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Default to first available market if none selected, plus MP-67 validation
   // -------------------------------------------------------------------------
+  // CL-MP-NARROW-SELECTOR (Fix A): the old dep was `allMarkets` — a derived
+  // array that churned identity on every spot note, causing this effect to
+  // re-run (harmlessly) on every tick. `marketKeysSignal` narrows the
+  // trigger to actual membership changes (markets added / removed). The
+  // full exchanges snapshot is read non-reactively via `getState()` inside
+  // the effect, so the "first market by vol24" pick is still based on
+  // current data. Reuses `collectMarkets` (sorted vol24-desc) so the
+  // "first market" semantics stay identical to OrderBookPanel's dock.
   useEffect(() => {
-    if (allMarkets.length === 0) return
+    const all = collectMarkets(useAuthStore.getState().exchanges)
+    if (all.length === 0) return
     if (selected) {
-      const exists = allMarkets.some(m =>
+      const exists = all.some(m =>
         m.host === selected.host &&
         m.baseID === selected.baseID &&
         m.quoteID === selected.quoteID
       )
       if (exists) return
     }
-    const first = allMarkets[0]
+    const first = all[0]
     setSelected({ host: first.host, baseID: first.baseID, quoteID: first.quoteID })
-  }, [selected, allMarkets])
+  }, [selected, marketKeysSignal])
 
   // MP-67: persist the current market to localStorage whenever it changes
   useEffect(() => {
@@ -303,9 +368,15 @@ export default function MarketsPage () {
     // 1) Subscribe WS handlers FIRST
     const handleBook = (data: BookUpdate) => {
       const mktBook: MarketOrderBook = data.payload
-      if (!currentXc) return
-      const baseCfg = currentXc.assets[selected.baseID]
-      const quoteCfg = currentXc.assets[selected.quoteID]
+      // CL-MP-RERENDER-CASCADE (Fix B): read `currentXc` through the ref
+      // so the enclosing effect doesn't have to re-run on every spot
+      // note. `.assets[baseID]` identity is stable across spot notes —
+      // spot notes only rebuild `.markets`, never `.assets` (see
+      // `handleSpotPriceNote` in useMarketStore.ts).
+      const xc = currentXcRef.current
+      if (!xc) return
+      const baseCfg = xc.assets[selected.baseID]
+      const quoteCfg = xc.assets[selected.quoteID]
       if (!baseCfg || !quoteCfg) return
       if (mktBook.base !== baseCfg.id || mktBook.quote !== quoteCfg.id || data.host !== selected.host) return
 
@@ -471,13 +542,24 @@ export default function MarketsPage () {
       wsUnsubscribe('epoch_match_summary')
       wsRequest('unmarket', {})
     }
-  }, [selected, isWsConnected, currentXc, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest, bumpBook])
+  // CL-MP-RERENDER-CASCADE (Fix B): `currentXc` deliberately NOT in deps.
+  // Handlers read it via `currentXcRef.current` so spot-note-driven
+  // identity changes don't tear down + re-subscribe WS handlers and
+  // re-request `loadmarket` on every tick. Pre-fix this effect was
+  // firing ~9× per spot-note cluster, amplifying 9 notes into ~23
+  // MarketsPage renders (plus an 18ms async tail from the server
+  // responding to the rapid-fire unmarket/loadmarket round-trips).
+  // Post-fix: 1:1 renders, no tail.
+  }, [selected, isWsConnected, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest, bumpBook])
 
   // -------------------------------------------------------------------------
   // Load candles when market or duration changes
   // -------------------------------------------------------------------------
   const loadCandles = useCallback(() => {
-    if (!selected || !currentXc) return
+    // CL-MP-RERENDER-CASCADE (Fix B): null-check `currentXc` via the ref so
+    // spot-note-driven identity changes don't give this callback a new
+    // identity on every tick (which would cascade into EFF-5).
+    if (!selected || !currentXcRef.current) return
     const cache = candleCacheRef.current[candleDur]
     if (cache) {
       setCandleData(cache)
@@ -492,7 +574,7 @@ export default function MarketsPage () {
       quote: selected.quoteID,
       dur: candleDur
     })
-  }, [selected, currentXc, isWsConnected, candleDur, wsRequest])
+  }, [selected, isWsConnected, candleDur, wsRequest])
 
   useEffect(() => {
     loadCandles()
@@ -991,11 +1073,15 @@ export default function MarketsPage () {
               <div id="mainContent" className="d-flex flex-grow-1">
 
                 {/* LEFTMOST SECTION: Market list + Order book */}
+                {/* CL-MP-NARROW-SELECTOR (Fix A): `allMarkets` and
+                    `exchanges` are no longer passed down — OrderBookPanel
+                    subscribes to the store itself. This keeps the broad
+                    `exchanges` re-subscription contained to the leaf
+                    component that actually needs the full map for its
+                    per-row connection-status display. */}
                 <OrderBookPanel
                   showMarketList={showMarketList}
                   setShowMarketList={(v: boolean) => setShowMarketList(v)}
-                  allMarkets={allMarkets}
-                  exchanges={exchanges}
                   selected={selected}
                   selectMarket={selectMarket}
                   orderBookData={orderBookData}

@@ -2,25 +2,29 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatRateToRateStep, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { ConnectionStatus } from '../../stores/types'
-import type { Exchange } from '../../stores/types'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useUIStore } from '../../stores/useUIStore'
 import { useMarketPageContext } from './MarketPageContext'
 import { OrderBookRow } from './OrderBookRow'
-import { type OrderBookDisplayRow, type ExchangeMarket } from './helpers'
+import { collectMarkets, type OrderBookDisplayRow } from './helpers'
 
 // ---------------------------------------------------------------------------
 // OrderBookPanel -- the leftmost section containing either the market list
 // dock (when showMarketList is true) or the order book (sell side +
 // external reference price + buy side). Reads currentMkt / bui / qui from
 // MarketPageContext. Owns the `marketSearch` state internally.
+//
+// CL-MP-NARROW-SELECTOR (Fix A): this component owns the broad `exchanges`
+// subscription. MarketsPage used to subscribe to the full map and pass it
+// + `allMarkets` down as props, which forced a MarketsPage re-render on
+// every spot note even when the user wasn't viewing the affected host.
+// Moving the subscription here keeps those re-renders contained to this
+// leaf panel (where the market-list dock actually needs the data).
 // ---------------------------------------------------------------------------
 
 export interface OrderBookPanelProps {
   showMarketList: boolean
   setShowMarketList: (next: boolean) => void
-  allMarkets: ExchangeMarket[]
-  exchanges: Record<string, Exchange>
   selected: { host: string; baseID: number; quoteID: number }
   selectMarket: (host: string, baseID: number, quoteID: number) => void
   orderBookData: { buys: OrderBookDisplayRow[]; sells: OrderBookDisplayRow[] }
@@ -33,8 +37,6 @@ export interface OrderBookPanelProps {
 export function OrderBookPanel ({
   showMarketList,
   setShowMarketList,
-  allMarkets,
-  exchanges,
   selected,
   selectMarket,
   orderBookData,
@@ -47,6 +49,12 @@ export function OrderBookPanel ({
   const { currentMkt, bui, qui } = useMarketPageContext()
   const darkMode = useUIStore(s => s.darkMode)
   const authFailed = useAuthStore(s => s.authFailed)
+  // CL-MP-NARROW-SELECTOR (Fix A): broad `exchanges` subscription lives
+  // here (moved down from MarketsPage). `allMarkets` is derived locally
+  // so MarketsPage doesn't have to keep the full map in its render
+  // closure. Re-renders from spot notes stay inside this leaf.
+  const exchanges = useAuthStore(s => s.exchanges)
+  const allMarkets = useMemo(() => collectMarkets(exchanges), [exchanges])
 
   // marketSearch state is local to this panel.
   const [marketSearch, setMarketSearch] = useState('')
