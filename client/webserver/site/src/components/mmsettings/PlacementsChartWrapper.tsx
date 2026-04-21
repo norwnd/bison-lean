@@ -30,54 +30,56 @@ const PlacementsChartWrapper: React.FC = () => {
     }
   }, [])
 
-  React.useEffect(() => {
-    if (chartInstanceRef.current && botConfig && dexMarket) {
-      const isBasicMM = !!botConfig.basicMarketMakingConfig
-      const isArbMM = !!botConfig.arbMarketMakingConfig
+  const chartConfig = React.useMemo<PlacementChartConfig | null>(() => {
+    if (!botConfig || !dexMarket) return null
+    const isBasicMM = !!botConfig.basicMarketMakingConfig
+    const isArbMM = !!botConfig.arbMarketMakingConfig
 
-      let buyPlacements: OrderPlacement[] = []
-      let sellPlacements: OrderPlacement[] = []
-      let profit = 0
+    let buyPlacements: OrderPlacement[] = []
+    let sellPlacements: OrderPlacement[] = []
+    let profit = 0
 
-      if (isBasicMM && botConfig.basicMarketMakingConfig) {
-        buyPlacements = [...botConfig.basicMarketMakingConfig.buyPlacements]
-        sellPlacements = [...botConfig.basicMarketMakingConfig.sellPlacements]
-        // For basic MM, profit comes from quick config or defaults to 0
-        profit = quickPlacements?.profitThreshold || 0
-      } else if (isArbMM && botConfig.arbMarketMakingConfig) {
-        buyPlacements = botConfig.arbMarketMakingConfig.buyPlacements.map(placement => ({
-          lots: placement.lots,
-          gapFactor: placement.multiplier
-        }))
-        sellPlacements = botConfig.arbMarketMakingConfig.sellPlacements.map(placement => ({
-          lots: placement.lots,
-          gapFactor: placement.multiplier
-        }))
-        profit = botConfig.arbMarketMakingConfig.profit || 0
+    if (isBasicMM && botConfig.basicMarketMakingConfig) {
+      buyPlacements = [...botConfig.basicMarketMakingConfig.buyPlacements]
+      sellPlacements = [...botConfig.basicMarketMakingConfig.sellPlacements]
+      profit = quickPlacements?.profitThreshold || 0
+    } else if (isArbMM && botConfig.arbMarketMakingConfig) {
+      buyPlacements = botConfig.arbMarketMakingConfig.buyPlacements.map(placement => ({
+        lots: placement.lots,
+        gapFactor: placement.multiplier
+      }))
+      sellPlacements = botConfig.arbMarketMakingConfig.sellPlacements.map(placement => ({
+        lots: placement.lots,
+        gapFactor: placement.multiplier
+      }))
+      profit = botConfig.arbMarketMakingConfig.profit || 0
+    }
+
+    buyPlacements.sort((a, b) => a.gapFactor - b.gapFactor)
+    sellPlacements.sort((a, b) => a.gapFactor - b.gapFactor)
+
+    return {
+      cexName: botConfig.cexName,
+      botType: isBasicMM ? botTypeBasicMM : isArbMM ? botTypeArbMM : botTypeBasicArb,
+      baseFiatRate: fiatRatesMap[dexMarket.baseID] || 1,
+      dict: {
+        profit,
+        buyPlacements,
+        sellPlacements
       }
-
-      buyPlacements.sort((a, b) => a.gapFactor - b.gapFactor)
-      sellPlacements.sort((a, b) => a.gapFactor - b.gapFactor)
-
-      const chartConfig: PlacementChartConfig = {
-        cexName: botConfig.cexName,
-        botType: isBasicMM ? botTypeBasicMM : isArbMM ? botTypeArbMM : botTypeBasicArb,
-        baseFiatRate: fiatRatesMap[dexMarket.baseID] || 1,
-        dict: {
-          profit,
-          buyPlacements,
-          sellPlacements
-        }
-      }
-
-      chartInstanceRef.current.setMarket(chartConfig)
     }
   }, [botConfig, dexMarket, quickPlacements, fiatRatesMap])
+
+  React.useEffect(() => {
+    if (chartInstanceRef.current && chartConfig) {
+      chartInstanceRef.current.setMarket(chartConfig)
+    }
+  }, [chartConfig])
 
   return (
     <div
       ref={chartRef}
-      className="p-1 placements-chart-wrapper"
+      className="placements-chart-wrapper"
     />
   )
 }

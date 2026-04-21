@@ -39,8 +39,8 @@ const LevelsPerSideSelector: React.FC = () => {
           value={quickPlacements.priceLevelsPerSide}
           precision={0}
           className="p-1 text-center fs16"
-          onIncrement={() => handleChange(quickPlacements.priceLevelsPerSide + 1)}
-          onDecrement={() => handleChange(Math.max(1, quickPlacements.priceLevelsPerSide - 1))}
+          onIncrement={(cur) => handleChange(cur + 1)}
+          onDecrement={(cur) => handleChange(Math.max(1, cur - 1))}
         />
       </div>
     </div>
@@ -77,17 +77,21 @@ const LotsOrUsdSelector: React.FC = () => {
     dispatch({ type: 'UPDATE_QUICK_CONFIG', payload: { field: 'lotsPerLevel', value } })
   }
 
+  // Convert whatever the NumberInput currently displays (lots in lots
+  // mode, USD in USD mode) back to lots — the underlying state is always
+  // stored as lots, regardless of display mode.
+  const lotsFromInput = (v: number): number => isLotsMode ? v : usdToLots(v)
+
   const handleChange = (value: number) => {
-    if (!isLotsMode) handleQuickConfigChange(usdToLots(value))
-    else handleQuickConfigChange(value)
+    handleQuickConfigChange(lotsFromInput(value))
   }
 
-  const handleIncrement = () => {
-    handleQuickConfigChange(quickPlacements.lotsPerLevel + 1)
+  const handleIncrement = (cur: number) => {
+    handleQuickConfigChange(lotsFromInput(cur) + 1)
   }
 
-  const handleDecrement = () => {
-    handleQuickConfigChange(Math.max(1, quickPlacements.lotsPerLevel - 1))
+  const handleDecrement = (cur: number) => {
+    handleQuickConfigChange(Math.max(1, lotsFromInput(cur) - 1))
   }
 
   return (

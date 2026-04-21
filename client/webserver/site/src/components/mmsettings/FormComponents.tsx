@@ -51,9 +51,12 @@ interface NumberInputProps {
   precision?: number;
   className?: string;
   // If onIncrement and onDecrement are provided, the component will show up
-  // and down arrows
-  onIncrement?: () => void;
-  onDecrement?: () => void;
+  // and down arrows. They receive the current parsed/clamped input value
+  // so callers compute the next value from it rather than from a
+  // closed-over (and potentially stale) prop — prevents the "type 5,
+  // click +" race where the typed value is lost.
+  onIncrement?: (current: number) => void;
+  onDecrement?: (current: number) => void;
   suffix?: string;
   disabled?: boolean;
   withSlider?: boolean;
@@ -78,6 +81,10 @@ export const NumberInput: React.FC<NumberInputProps> = ({
   const [isDragging, setIsDragging] = React.useState(false)
   const sliderRef = React.useRef<HTMLDivElement>(null)
 
+  // Sync `inputValue` when the committed `value` prop changes externally.
+  // `inputValue` is intentionally omitted from the dep array: including it
+  // would re-fire the effect on every keystroke and overwrite what the
+  // user is typing with the stale prop value.
   React.useEffect(() => {
     const formattedValue = value !== undefined ? value.toFixed(precision) : ''
     if (inputValue !== formattedValue) {
@@ -85,34 +92,48 @@ export const NumberInput: React.FC<NumberInputProps> = ({
     }
   }, [value, precision])
 
-  if (withSlider && (min === undefined || max === undefined)) {
-    console.error('The props `min` and `max` must be provided when `withSlider` is true.')
-    return null
-  }
+  // Parse the raw input string into a numeric value, clamped to [min,max]
+  // and rounded to `precision`. Returns null for empty/invalid input.
+  const parseClamped = React.useCallback((raw: string): number | null => {
+    if (raw === '') return null
+    const numericValue = parseFloat(raw)
+    if (isNaN(numericValue)) return null
+    let clampedValue = numericValue
+    if (min !== undefined) clampedValue = Math.max(min, clampedValue)
+    if (max !== undefined) clampedValue = Math.min(max, clampedValue)
+    return parseFloat(clampedValue.toFixed(precision))
+  }, [min, max, precision])
 
   const commitInputValue = React.useCallback(() => {
-    if (inputValue === '') {
-      if (value !== undefined) {
-        setInputValue(value.toFixed(precision))
-      }
-      return
-    }
-
-    const numericValue = parseFloat(inputValue)
-    if (isNaN(numericValue)) {
+    const parsed = parseClamped(inputValue)
+    if (parsed === null) {
       const formattedValue = value !== undefined ? value.toFixed(precision) : ''
       setInputValue(formattedValue)
       return
     }
-    let clampedValue = numericValue
-    if (min !== undefined) clampedValue = Math.max(min, clampedValue)
-    if (max !== undefined) clampedValue = Math.min(max, clampedValue)
-    const roundedValue = parseFloat(clampedValue.toFixed(precision))
-    setInputValue(roundedValue.toFixed(precision))
-    if (roundedValue !== value) {
-      onChange(roundedValue)
+    setInputValue(parsed.toFixed(precision))
+    if (parsed !== value) {
+      onChange(parsed)
     }
-  }, [inputValue, min, max, precision, value, onChange])
+  }, [inputValue, parseClamped, precision, value, onChange])
+
+  // Current value the arrow buttons should operate on — the user's
+  // typed-but-not-blurred input takes precedence over the last committed
+  // `value` prop, so clicking +/- after typing works on the typed value.
+  const currentValue = React.useCallback((): number => {
+    const parsed = parseClamped(inputValue)
+    return parsed !== null ? parsed : (value ?? 0)
+  }, [parseClamped, inputValue, value])
+
+  const handleIncrement = React.useCallback(() => {
+    if (disabled) return
+    onIncrement?.(currentValue())
+  }, [disabled, onIncrement, currentValue])
+
+  const handleDecrement = React.useCallback(() => {
+    if (disabled) return
+    onDecrement?.(currentValue())
+  }, [disabled, onDecrement, currentValue])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value)
@@ -175,6 +196,13 @@ export const NumberInput: React.FC<NumberInputProps> = ({
       }
     }
   }, [isDragging, handleMouseMove, handleMouseUp])
+
+  // Dev-time guard. Placed after all hooks so its short-circuit return
+  // doesn't change the hook call count across renders.
+  if (withSlider && (min === undefined || max === undefined)) {
+    console.error('The props `min` and `max` must be provided when `withSlider` is true.')
+    return null
+  }
 
   const hasArrows = onIncrement && onDecrement
 
@@ -252,11 +280,11 @@ export const NumberInput: React.FC<NumberInputProps> = ({
           <div className="d-flex flex-column align-items-stretch ms-2">
             <div
               className="flex-grow-1 flex-center px-2 hoverbg pointer user-select-none lh1 ico-arrowup"
-              onClick={disabled ? undefined : onIncrement}
+              onClick={disabled ? undefined : handleIncrement}
             />
             <div
               className="flex-grow-1 flex-center px-2 hoverbg pointer user-select-none lh1 ico-arrowdown"
-              onClick={disabled ? undefined : onDecrement}
+              onClick={disabled ? undefined : handleDecrement}
             />
           </div>
         )}
