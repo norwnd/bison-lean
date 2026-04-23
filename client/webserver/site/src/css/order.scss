@@ -1,33 +1,236 @@
-div.order-datum {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: start;
-  text-align: center;
-  font-size: 15px;
+// OrderPage.tsx styling. The project's customized Bootstrap subset
+// (see bootstrap.scss) omits utilities like `gap-*`, `rounded`, `badge`,
+// `bg-*`, and most `text-*` color classes, so we use semantic classes
+// scoped under `.order-page` rather than leaning on Bootstrap. Colors
+// and fonts come from the project's CSS variables so the page works in
+// both light and dark mode.
 
-  div:first-child {
-    font-family: $demi-sans;
-    background-color: var(--tertiary-bg);
+.order-page {
+  max-width: 1400px;
+  padding: 1.25rem;
+  height: 100%;
+  overflow-y: auto;
+
+  .order-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 1.5rem;
+    row-gap: 0.4rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1.1rem;
+    border-bottom: 1px solid var(--border-color);
   }
-}
 
-div.match-header {
-  background-color: var(--tertiary-bg);
-}
+  .market-host {
+    font-size: 20px;
+    font-family: $demi-sans;
+    line-height: 1.2;
+  }
 
-div.match-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  font-size: 14px;
-}
+  .order-id {
+    font-family: $mono;
+    font-size: 14px;
+    color: var(--text-color-secondary);
+    word-break: break-all;
+    user-select: all;
+    line-height: 1.4;
+  }
 
-.match-data-label {
-  opacity: 0.5;
-  font-family: $demi-sans;
-}
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+    column-gap: 2.75rem;
+    row-gap: 1.1rem;
+    margin-bottom: 1.55rem;
+  }
 
-#accelerateForm {
-  width: 500px;
+  .summary-cell,
+  .metric {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+
+    > .label {
+      font-family: $demi-sans;
+      font-size: 13px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-color-secondary);
+      margin-bottom: 6px;
+      line-height: 1;
+    }
+
+    > .value {
+      font-size: 19px;
+      line-height: 1.2;
+    }
+  }
+
+  .metric > .value {
+    font-size: 18px;
+  }
+
+  .action-bar {
+    display: flex;
+    margin-bottom: 1.25rem;
+
+    > button {
+      padding: 0.33rem 0.66rem;
+      font-size: 18px;
+      border-radius: 7px;
+    }
+
+    > button + button {
+      margin-left: 0.66rem;
+    }
+  }
+
+  .cancel-error {
+    color: var(--text-danger);
+    font-size: 18px;
+    margin-bottom: 1.25rem;
+  }
+
+  .matches-section {
+    margin-top: 0.65rem;
+  }
+
+  .matches-heading {
+    font-size: 20px;
+    font-family: $demi-sans;
+    margin: 0 0 0.95rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .no-matches {
+    color: var(--text-color-secondary);
+    font-size: 18px;
+  }
+
+  .match-card {
+    display: block;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 0.95rem;
+    background-color: var(--section-bg);
+    font-size: 18px;
+  }
+
+  .match-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    column-gap: 1.25rem;
+    row-gap: 0.3rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .match-id {
+    font-family: $mono;
+    font-size: 15px;
+    word-break: break-all;
+    user-select: all;
+    line-height: 1.45;
+  }
+
+  .match-time {
+    font-size: 15px;
+    color: var(--text-color-secondary);
+    margin-top: 3px;
+  }
+
+  .match-side-badge {
+    font-size: 13px;
+    font-family: $demi-sans;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    background-color: var(--tertiary-bg);
+    color: var(--text-color);
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  .match-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+    column-gap: 2.2rem;
+    row-gap: 0.65rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .flow-row {
+    display: flex;
+    column-gap: 3.15rem;
+    row-gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.95rem;
+  }
+
+  .amount-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .confirmation-msg {
+    font-size: 17px;
+    color: var(--text-color-secondary);
+    margin-bottom: 0.65rem;
+    font-style: italic;
+  }
+
+  .match-steps {
+    font-size: 17px;
+    line-height: 1.55;
+  }
+
+  .match-step {
+    margin-bottom: 0.15rem;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .match-step-label {
+    margin-right: 0.33rem;
+  }
+
+  .match-coin-link {
+    word-break: break-all;
+    user-select: all;
+  }
+
+  .pending-placeholder {
+    color: var(--text-color-secondary);
+    font-style: italic;
+  }
+
+  .refund-pending {
+    color: var(--text-color-secondary);
+  }
+
+  .refund-imminent {
+    color: var(--text-warning);
+  }
+
+  .cancel-portion {
+    font-size: 17px;
+    color: var(--text-color-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  &.loading-box,
+  &.not-found-box {
+    padding: 1rem;
+    text-align: center;
+  }
 }

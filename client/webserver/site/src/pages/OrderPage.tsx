@@ -18,7 +18,7 @@ import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
 import { FormOverlay } from '../components/common/FormOverlay'
 import type {
   Order, Match, Coin, OrderNote, MatchNote,
-  UnitInfo, Exchange
+  UnitInfo
 } from '../stores/types'
 import {
   OrderTypeLimit, OrderTypeMarket, OrderTypeCancel,
@@ -195,6 +195,22 @@ function matchStatusString (m: Match, t: (k: string, opts?: Record<string, strin
 }
 
 // ---------------------------------------------------------------------------
+// TimeAgo
+// ---------------------------------------------------------------------------
+
+// Self-ticking "X ago" span. Kept as its own component so the tick
+// interval only re-renders the tiny timestamp text instead of the
+// whole OrderPage every 10 seconds.
+function TimeAgo ({ ms }: { ms: number }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setTick(n => n + 1), 10000)
+    return () => clearInterval(interval)
+  }, [])
+  return <>{ageSince(ms)}</>
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -203,7 +219,6 @@ export default function OrderPage () {
   const { oid } = useParams<{ oid: string }>()
 
   const assets = useAuthStore(s => s.assets)
-  const exchanges = useAuthStore(s => s.exchanges)
   const walletMap = useAuthStore(s => s.walletMap)
   const user = useAuthStore(s => s.user)
   const net = user?.net ?? 0
@@ -213,16 +228,22 @@ export default function OrderPage () {
   const [cancelError, setCancelError] = useState('')
   const [showAccelerate, setShowAccelerate] = useState(false)
 
-  // Tick counter to refresh "X ago" timestamps every 10 seconds.
-  const [, setTick] = useState(0)
+  // Narrow store subscriptions to just the per-order fields we need for
+  // formatting. Subscribing to the whole `exchanges` object would cause
+  // re-renders on every spot-price WS update (handleSpotPriceNote replaces
+  // the exchanges object immutably). These selectors return stable values
+  // across spot updates: xc.assets is preserved by the spread, and
+  // lotsize/ratestep are primitives that don't change.
+  const xcAssets = useAuthStore(s => order ? s.exchanges[order.host]?.assets : undefined)
+  const lotsize = useAuthStore(s => order ? s.exchanges[order.host]?.markets?.[order.market]?.lotsize : undefined)
+  const ratestep = useAuthStore(s => order ? s.exchanges[order.host]?.markets?.[order.market]?.ratestep : undefined)
 
-  useEffect(() => {
-    const interval = setInterval(() => setTick(n => n + 1), 10000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Try to find the order among active orders in exchanges.
+  // Try to find the order among active orders in exchanges. Uses
+  // getState() so this callback's identity doesn't change on every
+  // exchanges update, which would re-trigger the initial-load effect
+  // and flash the loading spinner.
   const findActiveOrder = useCallback((): Order | undefined => {
+    const { exchanges } = useAuthStore.getState()
     for (const xc of Object.values(exchanges)) {
       for (const mkt of Object.values(xc.markets)) {
         for (const o of (mkt.orders ?? [])) {
@@ -234,7 +255,7 @@ export default function OrderPage () {
       }
     }
     return undefined
-  }, [exchanges, oid])
+  }, [oid])
 
   // Fetch order from API.
   const fetchOrder = useCallback(async (): Promise<Order | null> => {
@@ -325,43 +346,41 @@ export default function OrderPage () {
 
   if (loading) {
     return (
-      <div className="p-3 text-center">
-        <span className="spinner-border spinner-border-sm" />
+      <div className="order-page loading-box">
+        <span className="ico-spinner spinner" />
       </div>
     )
   }
 
   if (!order) {
     return (
-      <div className="p-3">
+      <div className="order-page not-found-box">
         <div className="text-danger">{t('ORDER_NOT_FOUND')}</div>
       </div>
     )
   }
 
-  const xc: Exchange | undefined = exchanges[order.host]
-  const allAssets: Record<number, { unitInfo: UnitInfo }> = { ...assets, ...(xc?.assets ?? {}) }
+  const allAssets: Record<number, { unitInfo: UnitInfo }> = { ...assets, ...(xcAssets ?? {}) }
   const baseUnitInfo: UnitInfo | undefined = allAssets[order.baseID]?.unitInfo
   const quoteUnitInfo: UnitInfo | undefined = allAssets[order.quoteID]?.unitInfo
   const bUnit = baseUnitInfo?.conventional.unit ?? ''
   const qUnit = quoteUnitInfo?.conventional.unit ?? ''
-  // Market is used to format rates/qtys with lot-size and rate-step
-  // precision. For historical orders whose exchange/market is no longer
-  // configured, the helpers fall back to `formatCoinValueAtom`.
-  const mkt = xc?.markets?.[order.market]
+  // lotsize/ratestep are used to format rates/qtys at market precision.
+  // For historical orders whose exchange/market is no longer configured,
+  // the helpers fall back to `formatCoinValueAtom`.
   const fmtBase = (atoms: number): string => {
     if (!baseUnitInfo) return '-'
-    if (mkt) return formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, mkt.lotsize)
+    if (lotsize != null) return formatCoinAtomToLotSizeBaseCurrency(atoms, baseUnitInfo, lotsize)
     return formatCoinAtom(atoms, baseUnitInfo)
   }
   const fmtQuote = (atoms: number): string => {
     if (!quoteUnitInfo) return '-'
-    if (baseUnitInfo && mkt) return formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, mkt.lotsize, mkt.ratestep)
+    if (baseUnitInfo && lotsize != null && ratestep != null) return formatCoinAtomToLotSizeQuoteCurrency(atoms, baseUnitInfo, quoteUnitInfo, lotsize, ratestep)
     return formatCoinAtom(atoms, quoteUnitInfo)
   }
   const fmtRate = (rateConv: number): string =>
-    baseUnitInfo && quoteUnitInfo && mkt
-      ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, mkt.ratestep)
+    baseUnitInfo && quoteUnitInfo && ratestep != null
+      ? formatRateToRateStep(rateConv, baseUnitInfo, quoteUnitInfo, ratestep)
       : '-'
 
   const canCancel = isCancellable(order)
@@ -384,6 +403,8 @@ export default function OrderPage () {
   const typeStr = `${typeString(order, t)} ${sellBuyString(order, t)}`
 
   let rateStr: string
+  let rateUnit: string | null = null
+  const rateUnitLabel = `${shortSymbol(bUnit)}/${shortSymbol(qUnit)}`
   if (order.type === OrderTypeMarket) {
     if (!order.matches?.length) {
       rateStr = t('MARKET_ORDER')
@@ -393,9 +414,11 @@ export default function OrderPage () {
       rateStr = order.matches.length > 1
         ? `~ ${fmtRate(convRate)}`
         : fmtRate(convRate)
+      rateUnit = rateUnitLabel
     }
   } else {
     rateStr = fmtRate(conventionalRate(order.baseID, order.quoteID, order.rate, allAssets))
+    rateUnit = rateUnitLabel
   }
 
   const sortedMatches = [...(order.matches ?? [])].sort((a, b) => a.stamp - b.stamp)
@@ -406,29 +429,25 @@ export default function OrderPage () {
 
   const renderCoinLink = (coin: Coin | undefined, pendingText: string) => {
     if (!coin) {
-      return <span className="text-secondary">{pendingText}</span>
+      return <span className="pending-placeholder">{pendingText}</span>
     }
     const parts = formatCoinID(coin.stringID)
     const href = explorerURL(coin.assetID, coin.stringID, net)
+    const inner = parts.map((p, i) => (
+      <span key={i}>
+        {p}
+        {i < parts.length - 1 && <br />}
+      </span>
+    ))
     return href
       ? (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-break">
-          {parts.map((p, i) => (
-            <span key={i}>
-              {p}
-              {i < parts.length - 1 && <br />}
-            </span>
-          ))}
+        <a href={href} target="_blank" rel="noopener noreferrer" className="match-coin-link">
+          {inner}
         </a>
       )
       : (
-        <span className="text-break">
-          {parts.map((p, i) => (
-            <span key={i}>
-              {p}
-              {i < parts.length - 1 && <br />}
-            </span>
-          ))}
+        <span className="match-coin-link">
+          {inner}
         </span>
       )
   }
@@ -462,11 +481,11 @@ export default function OrderPage () {
       : lockTimeMakerMs
     const refundAfter = new Date(m.stamp + lockTime)
     if (Date.now() > refundAfter.getTime()) {
-      return <span className="text-warning">{t('REFUND_IMMINENT')}</span>
+      return <span className="refund-imminent">{t('REFUND_IMMINENT')}</span>
     }
     const refundAfterStr = formatMatchDate(refundAfter.getTime())
     return (
-      <span className="text-secondary">
+      <span className="refund-pending">
         {t('REFUND_WILL_HAPPEN_AFTER', { refundAfterTime: refundAfterStr })}
       </span>
     )
@@ -525,17 +544,17 @@ export default function OrderPage () {
         : ((m.qty / order.qty) * 100).toFixed(1)
 
       return (
-        <div key={m.matchID} className="border rounded p-3 mb-3">
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <span className="fs14 text-break">{m.matchID}</span>
+        <div key={m.matchID} className="match-card">
+          <div className="match-top">
+            <span className="match-id">{m.matchID}</span>
           </div>
-          <div className="fs14 text-secondary mb-1">
+          <div className="cancel-portion">
             {t('Cancel')} - {portion}%
           </div>
-          <div className="d-flex align-items-center gap-1">
+          <span className="amount-with-icon">
             <span>{cancelQty}</span>
             <img src={cancelIcon} alt="" className="micro-icon" />
-          </div>
+          </span>
         </div>
       )
     }
@@ -572,127 +591,120 @@ export default function OrderPage () {
     const isMakerSell = (m.side === MatchSideMaker && order.sell) ||
       (m.side === MatchSideTaker && !order.sell)
     const makerSwapAsset = isMakerSell
-      ? bUnit.toLowerCase()
-      : qUnit.toLowerCase()
+      ? shortSymbol(bUnit)
+      : shortSymbol(qUnit)
     const takerSwapAsset = isMakerSell
-      ? qUnit.toLowerCase()
-      : bUnit.toLowerCase()
+      ? shortSymbol(qUnit)
+      : shortSymbol(bUnit)
     const makerRedeemAsset = isMakerSell
-      ? qUnit.toLowerCase()
-      : bUnit.toLowerCase()
+      ? shortSymbol(qUnit)
+      : shortSymbol(bUnit)
     const takerRedeemAsset = isMakerSell
-      ? bUnit.toLowerCase()
-      : qUnit.toLowerCase()
+      ? shortSymbol(bUnit)
+      : shortSymbol(qUnit)
     const refundAsset = order.sell
-      ? order.baseSymbol
-      : order.quoteSymbol
+      ? shortSymbol(bUnit)
+      : shortSymbol(qUnit)
 
     const sideLabel = m.side === MatchSideMaker
       ? t('MAKER')
       : t('TAKER')
     return (
-      <div key={m.matchID} className="border rounded p-3 mb-3">
-        {/* Header */}
-        <div className="d-flex flex-wrap justify-content-between align-items-start mb-2">
+      <div key={m.matchID} className="match-card">
+        <div className="match-top">
           <div>
-            <div className="fs14 text-break mb-1">{m.matchID}</div>
-            <div className="fs13 text-secondary">
-              {matchTime} ({ageSince(m.stamp)} ago)
+            <div className="match-id">{m.matchID}</div>
+            <div className="match-time">
+              {matchTime} (<TimeAgo ms={m.stamp} /> ago)
             </div>
           </div>
-          <div className="fs14">
-            <span className="badge bg-secondary">{sideLabel}</span>
+          <span className="match-side-badge">{sideLabel}</span>
+        </div>
+
+        <div className="match-metrics">
+          <div className="metric">
+            <div className="label">{t('Status')}</div>
+            <div className="value">{matchStatusString(m, t)}</div>
+          </div>
+          <div className="metric">
+            <div className="label">{t('Rate')}</div>
+            <div className="value">{fmtRate(convRate)} {shortSymbol(bUnit)}/{shortSymbol(qUnit)}</div>
+          </div>
+          <div className="metric">
+            <div className="label">{t('Portion')}</div>
+            <div className="value">{portion}%</div>
           </div>
         </div>
 
-        {/* Summary row */}
-        <div className="d-flex flex-wrap gap-3 mb-2">
-          <div>
-            <div className="fs13 text-secondary">{t('Status')}</div>
-            <div className="fs14">{matchStatusString(m, t)}</div>
-          </div>
-          <div>
-            <div className="fs13 text-secondary">{t('Rate')}</div>
-            <div className="fs14">{fmtRate(convRate)} {bUnit.toLowerCase()}/{qUnit.toLowerCase()}</div>
-          </div>
-          <div>
-            <div className="fs13 text-secondary">{t('Portion')}</div>
-            <div className="fs14">{portion}%</div>
-          </div>
-        </div>
-
-        {/* From / To */}
-        <div className="d-flex gap-3 mb-2">
-          <div>
-            <div className="fs13 text-secondary">{t('From')}</div>
-            <div className="d-flex align-items-center gap-1">
+        <div className="flow-row">
+          <div className="metric">
+            <div className="label">{t('From')}</div>
+            <span className="amount-with-icon value">
               <span>{fromAmt}</span>
               <img src={fromIcon} alt="" className="micro-icon" />
-            </div>
+            </span>
           </div>
-          <div>
-            <div className="fs13 text-secondary">{t('To')}</div>
-            <div className="d-flex align-items-center gap-1">
+          <div className="metric">
+            <div className="label">{t('To')}</div>
+            <span className="amount-with-icon value">
               <span>{toAmt}</span>
               <img src={toIcon} alt="" className="micro-icon" />
-            </div>
+            </span>
           </div>
         </div>
 
-        {/* Confirmation message */}
         {confMsg && (
-          <div className="fs13 text-info mb-2">{confMsg}</div>
+          <div className="confirmation-msg">{confMsg}</div>
         )}
 
-        {/* Swap / Redeem / Refund steps */}
-        <div className="fs13">
+        <div className="match-steps">
           {vis.makerSwap && (
-            <div className="mb-1">
-              <strong>
+            <div className="match-step">
+              <span className="match-step-label">
                 {m.side === MatchSideMaker
                   ? t('YOUR_SWAP')
                   : t('THEIR_SWAP')}
                 {' '}({makerSwapAsset}):
-              </strong>{' '}
+              </span>
               {renderCoinLink(makerSwapCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.takerSwap && (
-            <div className="mb-1">
-              <strong>
+            <div className="match-step">
+              <span className="match-step-label">
                 {m.side === MatchSideTaker
                   ? t('YOUR_SWAP')
                   : t('THEIR_SWAP')}
                 {' '}({takerSwapAsset}):
-              </strong>{' '}
+              </span>
               {renderCoinLink(takerSwapCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.makerRedeem && (
-            <div className="mb-1">
-              <strong>
+            <div className="match-step">
+              <span className="match-step-label">
                 {m.side === MatchSideMaker
                   ? t('YOUR_REDEEM')
                   : t('THEIR_REDEEM')}
                 {' '}({makerRedeemAsset}):
-              </strong>{' '}
+              </span>
               {renderCoinLink(makerRedeemCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.takerRedeem && (
-            <div className="mb-1">
-              <strong>
+            <div className="match-step">
+              <span className="match-step-label">
                 {m.side === MatchSideTaker
                   ? t('YOUR_REDEEM')
                   : t('THEIR_REDEEM')}
                 {' '}({takerRedeemAsset}):
-              </strong>{' '}
+              </span>
               {renderCoinLink(takerRedeemCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.refund && (
-            <div className="mb-1">
-              <strong>{t('Refund')} ({refundAsset}):</strong>{' '}
+            <div className="match-step">
+              <span className="match-step-label">{t('Refund')} ({refundAsset}):</span>
               {renderRefund(m)}
             </div>
           )}
@@ -706,64 +718,58 @@ export default function OrderPage () {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="p-3 overflow-y-auto" style={{ height: '100%' }}>
-      {/* Order header */}
-      <div className="mb-3">
-        <h5 className="mb-1">
+    <div className="order-page">
+      <div className="order-header">
+        {order.id && <div className="order-id">{order.id}</div>}
+        <div className="market-host">
           {shortSymbol(bUnit)}/{shortSymbol(qUnit)} @ {order.host}
-        </h5>
-        <div className="fs14 text-break text-secondary mb-2">{order.id}</div>
-      </div>
-
-      {/* Order summary */}
-      <div className="d-flex flex-wrap gap-4 mb-3">
-        <div>
-          <div className="fs13 text-secondary">{t('Type')}</div>
-          <div className="fs15">{typeStr}</div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Status')}</div>
-          <div className="fs15">{statusString(order, t)}</div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Rate')}</div>
-          <div className="fs15">{rateStr}</div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Quantity')}</div>
-          <div className="fs15">
-            {fmtBase(order.qty)} {bUnit}
-          </div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Filled')}</div>
-          <div className="fs15">{filledPct}%</div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Settled')}</div>
-          <div className="fs15">{settledPct}%</div>
-        </div>
-        <div>
-          <div className="fs13 text-secondary">{t('Age')}</div>
-          <div className="fs15" title={new Date(order.submitTime).toLocaleString()}>
-            {ageSince(order.submitTime)} ago
-          </div>
         </div>
       </div>
 
-      {/* Action buttons */}
+      <div className="summary-grid">
+        <div className="summary-cell">
+          <div className="label">{t('Type')}</div>
+          <div className={`value ${order.sell ? 'text-danger' : 'text-success'}`}>{typeStr}</div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Status')}</div>
+          <div className="value">{statusString(order, t)}</div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Rate')}</div>
+          <div className="value">
+            {rateStr}{rateUnit && ` ${rateUnit}`}
+          </div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Quantity')}</div>
+          <div className="value">{fmtBase(order.qty)} {shortSymbol(bUnit)}</div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Filled')}</div>
+          <div className="value">{filledPct}%</div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Settled')}</div>
+          <div className="value">{settledPct}%</div>
+        </div>
+        <div className="summary-cell">
+          <div className="label">{t('Age')}</div>
+          <div className="value" title={new Date(order.submitTime).toLocaleString()}>
+            <TimeAgo ms={order.submitTime} /> ago
+          </div>
+        </div>
+      </div>
+
       {(canCancel || canAccelerate) && (
-        <div className="d-flex gap-2 mb-3">
+        <div className="action-bar">
           {canCancel && (
-            <button className="btn btn-outline-danger btn-sm" onClick={submitCancel}>
+            <button className="danger" onClick={submitCancel}>
               {t('CANCEL_ORDER_LABEL')}
             </button>
           )}
           {canAccelerate && (
-            <button
-              className="btn btn-outline-primary btn-sm"
-              onClick={() => setShowAccelerate(true)}
-            >
+            <button onClick={() => setShowAccelerate(true)}>
               {t('ACCELERATE_ORDER')}
             </button>
           )}
@@ -771,19 +777,18 @@ export default function OrderPage () {
       )}
 
       {cancelError && (
-        <div className="fs14 text-danger mb-3">{cancelError}</div>
+        <div className="cancel-error">{cancelError}</div>
       )}
 
-      {/* Matches */}
       {sortedMatches.length > 0 && (
-        <div>
-          <h6 className="mb-2">{t('Matches')} ({sortedMatches.length})</h6>
+        <div className="matches-section">
+          <h6 className="matches-heading">{t('Matches')} ({sortedMatches.length})</h6>
           {sortedMatches.map(renderMatchCard)}
         </div>
       )}
 
       {sortedMatches.length === 0 && !loading && (
-        <div className="text-secondary fs14">{t('NO_MATCHES')}</div>
+        <div className="no-matches">{t('NO_MATCHES')}</div>
       )}
 
       {/* Accelerate form overlay */}
@@ -797,7 +802,7 @@ export default function OrderPage () {
           Proposals/Proposal forms. */}
       <FormOverlay bare show={showAccelerate} onClose={() => setShowAccelerate(false)}>
         <div className="overflow-hidden">
-          <div className="bg-body border rounded p-3 slide-in-from-right" style={{ minWidth: 340 }}>
+          <div className="bg-body border rounded p-3 slide-in-from-right" style={{ minWidth: 420 }}>
             {order && (
               <AccelerateOrderForm
                 order={order}

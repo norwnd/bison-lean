@@ -456,3 +456,160 @@ div.clear {
   font-size: 0;
   line-height: 0;
 }
+
+// Bootstrap-style utility aliases for classes the React pages use but
+// the project's customized Bootstrap subset (see bootstrap.scss) omits.
+// Colors/backgrounds map to project CSS variables so they work in both
+// light and dark modes.
+
+// Gap (flex/grid spacing) on Bootstrap's $spacers scale.
+.gap-0 { gap: 0; }
+.gap-1 { gap: 0.25rem; }
+.gap-2 { gap: 0.5rem; }
+.gap-3 { gap: 1rem; }
+.gap-4 { gap: 1.5rem; }
+.gap-5 { gap: 3rem; }
+
+.rounded { border-radius: 5px; }
+.rounded-0 { border-radius: 0; }
+
+.rounded-bottom {
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
+.overflow-hidden { overflow: hidden; }
+.overflow-visible { overflow: visible; }
+.overflow-auto { overflow: auto; }
+.overflow-scroll { overflow: scroll; }
+
+.fw-normal { font-weight: 400; }
+.fw-medium { font-weight: 500; }
+.fw-semibold { font-weight: 600; }
+.fw-bold { font-weight: 700; }
+
+.text-secondary { color: var(--text-color-secondary); }
+.text-muted { color: var(--text-color-secondary); }
+.text-success { color: var(--text-success); }
+.text-info { color: var(--link-color); }
+.text-primary { color: var(--link-color); }
+.text-light { color: var(--text-color); }
+.text-dark { color: var(--text-color); }
+.text-white { color: #fff; }
+.text-break { overflow-wrap: break-word; }
+.text-decoration-underline { text-decoration: underline; }
+
+.bg-transparent { background-color: transparent; }
+.bg-secondary { background-color: var(--tertiary-bg); }
+.bg-body-secondary { background-color: var(--section-bg); }
+.bg-dark-2 { background-color: var(--section-bg); }
+.bg-success { background-color: var(--text-success); }
+.bg-info { background-color: var(--link-color); }
+.bg-warning { background-color: var(--text-warning); }
+.bg-light { background-color: var(--tertiary-bg); }
+
+.badge {
+  display: inline-block;
+  padding: 0.25em 0.45em;
+  font-size: 75%;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 3px;
+}
+
+.spinner-border {
+  display: inline-block;
+  width: 2rem;
+  height: 2rem;
+  vertical-align: -0.125em;
+  border: 0.25em solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+  border-width: 0.2em;
+}
+
+// Button variants layered on top of the project's base <button> styling
+// (components.scss). Only the colored modifiers are declared; `.btn`
+// itself is a no-op because <button> already carries the base styling.
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.btn-primary {
+  background-color: var(--btn-go-bg);
+  color: var(--btn-go-color);
+
+  &:hover {
+    background-color: var(--btn-go-hover-bg);
+    color: var(--btn-go-color);
+  }
+}
+
+.btn-secondary {
+  background-color: var(--tertiary-bg);
+
+  &:hover {
+    background-color: var(--section-bg);
+  }
+}
+
+.btn-danger,
+.btn-outline-danger {
+  border-color: var(--text-danger);
+  color: var(--text-danger);
+
+  &:hover {
+    background-color: var(--text-danger);
+    color: var(--btn-danger-hover-color);
+  }
+}
+
+.btn-outline-primary {
+  border-color: var(--link-color);
+  color: var(--link-color);
+
+  &:hover {
+    background-color: var(--link-color);
+    color: #fff;
+  }
+}
+
+.btn-outline-secondary {
+  border-color: var(--border-color);
+
+  &:hover {
+    background-color: var(--tertiary-bg);
+  }
+}
+
+.btn-outline-warning {
+  border-color: var(--text-warning);
+  color: var(--text-warning);
+
+  &:hover {
+    background-color: var(--text-warning);
+    color: var(--btn-danger-hover-color);
+  }
+}
+
+.btn-link {
+  border: none;
+  color: var(--link-color);
+  background-color: transparent;
+
+  &:hover {
+    color: var(--link-color-hover);
+    background-color: transparent;
+    text-decoration: underline;
+  }
+}
