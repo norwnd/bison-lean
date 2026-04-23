@@ -1,3 +1,5 @@
+import type { Coin } from '../stores/types'
+
 export const Mainnet = 0
 export const Testnet = 1
 export const Simnet = 2
@@ -128,6 +130,15 @@ export function explorerURL (assetID: number, coinID: string, net: number): stri
   const formatter = explorer[net]
   if (!formatter) return null
   return formatter(coinID)
+}
+
+// coinExplorerURL is a coin-centric wrapper around explorerURL that
+// normalizes "no link" to `undefined` so callers can thread it
+// directly into optional props like `<a href={url ?? ''}>` without an
+// extra nullish-coalesce at every call site.
+export function coinExplorerURL (coin: Coin | undefined, net: number): string | undefined {
+  if (!coin) return undefined
+  return explorerURL(coin.assetID, coin.stringID, net) ?? undefined
 }
 
 export function formatCoinID (cid: string): string[] {

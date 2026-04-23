@@ -12,6 +12,7 @@ import {
 import {
   filled, settled, averageRate
 } from '../components/AccountUtils'
+import { orderStatusDisplay } from '../components/OrderStages'
 import {
   Order, OrderFilter,
   OrderTypeLimit, OrderTypeMarket,
@@ -26,33 +27,6 @@ const ORDER_BATCH_SIZE = 50
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function statusString (order: Order, t: (k: string) => string): string {
-  if (!order.id) return t('ORDER_SUBMITTING')
-  const isLive = order.matches?.some(m => m.active) ?? false
-  switch (order.status) {
-    case StatusEpoch: return t('EPOCH')
-    case StatusBooked:
-      if (order.cancelling) return t('CANCELING')
-      return isLive
-        ? t('SETTLING')
-        : t('BOOKED')
-    case StatusExecuted:
-      if (isLive) return t('SETTLING')
-      if (filled(order) === 0 && order.type !== 3) return t('NO_MATCH')
-      return t('EXECUTED')
-    case StatusCanceled:
-      return isLive
-        ? t('SETTLING')
-        : t('CANCELED')
-    case StatusRevoked:
-      return isLive
-        ? t('SETTLING')
-        : t('REVOKED')
-    default:
-      return t('UNKNOWN')
-  }
-}
 
 function typeString (ord: Order, t: (k: string) => string): string {
   if (ord.type === OrderTypeLimit) {
@@ -421,7 +395,7 @@ export default function OrdersPage () {
         </td>
         <td>{typeSide}</td>
         <td>{rateStr}</td>
-        <td>{statusString(ord, t)}</td>
+        <td>{orderStatusDisplay(ord, t)}</td>
         <td>{filledPct}%</td>
         <td>{settledPct}%</td>
         <td title={new Date(ord.submitTime).toLocaleString()}>

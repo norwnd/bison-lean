@@ -13,9 +13,10 @@ import { orderPath } from '../../router/routes'
 import type { Order, UnitInfo, Market } from '../../stores/types'
 import { OrderTypeMarket, StatusExecuted } from '../../stores/types'
 import {
-  ageSince, statusString, typeString,
+  ageSince, typeString,
   marketOrderRateString, useSecondTicker
 } from './helpers'
+import { orderStatusDisplay } from '../../components/OrderStages'
 
 export interface UserOrderRowProps {
   order: Order
@@ -109,7 +110,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
   // variant: active → order status ("Booked", "Settling", etc.; L2023 via
   // `updateMetaOrder`), completed → age since order was submitted (L2178).
   const headerStatusText = variant === 'active'
-    ? statusString(order)
+    ? orderStatusDisplay(order, t)
     : ageSince(order.stamp)
 
   // MP-38: Apply `unready-user-order` class when an active user order is
@@ -253,7 +254,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
           </div>
           <div className="user-order-datum fs15">
             <span>Status</span>
-            <span>{statusString(order)}</span>
+            <span>{orderStatusDisplay(order, t)}</span>
           </div>
           <div className="user-order-datum fs15">
             <span>Age</span>

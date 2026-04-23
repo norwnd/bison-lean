@@ -56,6 +56,9 @@ body:not(.dark) {
 
   // market view
   --indicator-good: #179717;
+  --indicator-warning: #e2750e;
+  --indicator-bad: #d22;
+  --indicator-neutral: #8a8a8a;
   --buy-color: #00703b;
   --sell-color: #ad0e0e;
   --market-buygreen-bg: #41aa70;
@@ -133,6 +136,9 @@ body.dark {
 
   // market view
   --indicator-good: #29bb77;
+  --indicator-warning: #F0B90B;
+  --indicator-bad: #ec6a6a;
+  --indicator-neutral: #a1a1a1;
   --buy-color: #00703b;
   --sell-color: #ad0e0e;
   --market-buygreen-bg: #41aa70;

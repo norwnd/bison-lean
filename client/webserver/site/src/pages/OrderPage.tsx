@@ -10,21 +10,32 @@ import {
   conventionalRate, shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import {
-  filled, settled, isMarketBuy, averageRate, baseToQuote,
+  isMarketBuy, averageRate, baseToQuote,
   isCancellable, canAccelerateOrder
 } from '../components/AccountUtils'
-import { explorerURL, formatCoinID } from '../components/CoinExplorers'
+import { coinExplorerURL, formatCoinID } from '../components/CoinExplorers'
 import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
 import { FormOverlay } from '../components/common/FormOverlay'
+import {
+  type LaneColor, MATCH_STAGE_COUNT,
+  matchStageLabels, matchStageColored, matchCurStageIdx,
+  matchLaneColor, matchStageHrefs,
+  makerSwapCoin, takerSwapCoin, makerRedeemCoin, takerRedeemCoin,
+} from '../components/MatchStages'
+import {
+  ORDER_STAGE_COUNT,
+  orderStageLabels, orderStageColored, orderReachedStageIdx,
+  orderLaneColor,
+} from '../components/OrderStages'
 import type {
   Order, Match, Coin, OrderNote, MatchNote,
   UnitInfo
 } from '../stores/types'
 import {
-  OrderTypeLimit, OrderTypeMarket, OrderTypeCancel,
-  StatusEpoch, StatusBooked, StatusExecuted, StatusCanceled, StatusRevoked,
+  OrderTypeLimit, OrderTypeMarket,
+  RateEncodingFactor,
   MatchSideMaker, MatchSideTaker,
-  NewlyMatched, MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
+  MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
   ImmediateTiF
 } from '../stores/types'
 
@@ -77,45 +88,6 @@ function formatMatchDate (ms: number): string {
   })
 }
 
-function statusString (order: Order, t: (k: string) => string): string {
-  if (!order.id) return t('ORDER_SUBMITTING')
-  const isLive = order.matches?.some(m => m.active) ?? false
-  // OP-02: use named constants from `stores/types.ts` instead of
-  // hardcoded numeric cases (`case 1:`, `case 4:`, `case 5:`).
-  switch (order.status) {
-    case StatusEpoch:
-      // OP-05: an epoch order whose cancel POST has succeeded should
-      // reflect "Canceling" immediately, not wait for the next WS
-      // order note. `submitCancel` sets `cancelling: true` synchronously
-      // after a successful `/api/cancel` response. Vanilla bypassed
-      // `statusString()` entirely with `page.status.textContent =
-      // intl.prep(intl.ID_CANCELING)`; React's data-driven equivalent
-      // is to honor the `cancelling` flag in both cancellable status
-      // cases (Epoch and Booked).
-      if (order.cancelling) return t('CANCELING')
-      return t('EPOCH')
-    case StatusBooked:
-      if (order.cancelling) return t('CANCELING')
-      return isLive
-        ? t('SETTLING')
-        : t('BOOKED')
-    case StatusExecuted:
-      if (isLive) return t('SETTLING')
-      if (filled(order) === 0 && order.type !== OrderTypeCancel) return t('NO_MATCH')
-      return t('EXECUTED')
-    case StatusCanceled:
-      return isLive
-        ? t('SETTLING')
-        : t('CANCELED')
-    case StatusRevoked:
-      return isLive
-        ? t('SETTLING')
-        : t('REVOKED')
-    default:
-      return t('UNKNOWN')
-  }
-}
-
 function typeString (ord: Order, t: (k: string) => string): string {
   if (ord.type === OrderTypeLimit) {
     return ord.tif === ImmediateTiF
@@ -131,67 +103,9 @@ function sellBuyString (ord: Order, t: (k: string) => string): string {
     : t('BUY')
 }
 
-// Coin resolution helpers for match display.
-function makerSwapCoin (m: Match): Coin | undefined {
-  return m.side === MatchSideMaker
-    ? m.swap
-    : m.counterSwap
-}
-
-function takerSwapCoin (m: Match): Coin | undefined {
-  return m.side === MatchSideMaker
-    ? m.counterSwap
-    : m.swap
-}
-
-function makerRedeemCoin (m: Match): Coin | undefined {
-  return m.side === MatchSideMaker
-    ? m.redeem
-    : m.counterRedeem
-}
-
-function takerRedeemCoin (m: Match): Coin | undefined {
-  return m.side === MatchSideMaker
-    ? m.counterRedeem
-    : m.redeem
-}
-
 function confirmationString (coin: Coin | undefined, t: (k: string) => string): string {
   if (!coin?.confs || coin.confs.required === 0) return ''
   return `${coin.confs.count} / ${coin.confs.required} ${t('CONFIRMATIONS')}`
-}
-
-function matchStatusString (m: Match, t: (k: string, opts?: Record<string, string>) => string): string {
-  const revoked = (statusKey: string) =>
-    t('MATCH_STATUS_REVOKED', { status: t(statusKey) })
-
-  if (m.revoked) {
-    if (m.active) {
-      if (m.redeem) return revoked('MATCH_STATUS_REDEMPTION_SENT')
-      if (m.side === MatchSideMaker) return revoked('MATCH_STATUS_REFUND_PENDING')
-      if (m.counterRedeem) return revoked('MATCH_STATUS_REDEEM_PENDING')
-      return revoked('MATCH_STATUS_REFUND_PENDING')
-    }
-    if (m.refund) return revoked('MATCH_STATUS_REFUNDED')
-    if (m.redeem) return revoked('MATCH_REDEMPTION_CONFIRMED')
-    return revoked('MATCH_STATUS_COMPLETE')
-  }
-
-  switch (m.status) {
-    // OP-06 drive-by (low-severity from the audit): use the named
-    // `NewlyMatched` constant instead of the hardcoded `0` to match
-    // the rest of the switch's named cases.
-    case NewlyMatched: return t('MATCH_STATUS_NEWLY_MATCHED')
-    case MakerSwapCast: return t('MATCH_STATUS_MAKER_SWAP_CAST')
-    case TakerSwapCast: return t('MATCH_STATUS_TAKER_SWAP_CAST')
-    case MakerRedeemed:
-      return m.side === MatchSideMaker
-        ? t('MATCH_STATUS_REDEMPTION_SENT')
-        : t('MATCH_STATUS_MAKER_REDEEMED')
-    case MatchComplete: return t('MATCH_STATUS_REDEMPTION_SENT')
-    case MatchConfirmed: return t('MATCH_REDEMPTION_CONFIRMED')
-    default: return t('UNKNOWN')
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +125,120 @@ function TimeAgo ({ ms }: { ms: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// StatusDiagram
+// ---------------------------------------------------------------------------
+
+// Match-lifecycle and order-lifecycle stage helpers live in
+// ../components/MatchStages and ../components/OrderStages so the
+// /markets page and any other status-displaying UI can reuse the
+// same mappings.
+
+function Stage ({
+  label, colored, connectorColored, href,
+}: {
+  label: string,
+  colored: boolean,
+  // connectorColored is undefined for the last stage in a lane (no
+  // outgoing connector). true draws the connector in the lane color;
+  // false draws it in the default grey.
+  connectorColored?: boolean,
+  // If provided, the stage label becomes an external explorer link.
+  // Used by the match lane for the swap/redeem stages once the
+  // corresponding on-chain coin is known.
+  href?: string,
+}) {
+  const connectorAttr = connectorColored === undefined
+    ? 'none'
+    : connectorColored ? 'colored' : 'uncolored'
+  const labelInner = href
+    ? <a href={href} target="_blank" rel="noopener noreferrer">{label}</a>
+    : label
+  return (
+    <div
+      className={`diagram-stage${colored ? ' colored' : ''}`}
+      data-connector={connectorAttr}
+    >
+      <div className="diagram-dot" />
+      <div className="diagram-stage-label">{labelInner}</div>
+    </div>
+  )
+}
+
+function MiniCard ({
+  from, to, expanded, onClick,
+}: {
+  from: { amt: string, icon: string },
+  to: { amt: string, icon: string },
+  // Match mini-cards are clickable (click to expand). Pass `onClick`
+  // undefined for non-interactive cards (e.g. the order-level card,
+  // which has no expanded form since the /order page IS the detail
+  // view). `expanded` is ignored when `onClick` is undefined.
+  expanded?: boolean,
+  onClick?: () => void,
+}) {
+  const body = (
+    <>
+      <span className="amount-with-icon">
+        <span>{from.amt}</span>
+        <img src={from.icon} alt="" className="micro-icon" />
+      </span>
+      <span className="mini-arrow">{'\u2192'}</span>
+      <span className="amount-with-icon">
+        <span>{to.amt}</span>
+        <img src={to.icon} alt="" className="micro-icon" />
+      </span>
+    </>
+  )
+  if (onClick === undefined) {
+    return <div className="mini-match-card readonly">{body}</div>
+  }
+  return (
+    <button
+      type="button"
+      className={`mini-match-card${expanded ? ' expanded' : ''}`}
+      onClick={onClick}
+    >
+      {body}
+    </button>
+  )
+}
+
+function LaneStages ({ labels, colored, hrefs }: {
+  labels: readonly string[],
+  colored: boolean[],
+  // Per-stage explorer URLs. Same length as `labels`; entries are
+  // undefined when no link applies to that stage. Omit the prop
+  // entirely for lanes where no stage is ever clickable (e.g. the
+  // order lane).
+  hrefs?: (string | undefined)[],
+}) {
+  return (
+    <div
+      className="lane-stages"
+      style={{ gridTemplateColumns: `repeat(${labels.length}, 1fr)` }}
+    >
+      {labels.map((label, i) => {
+        // A connector belongs to the lane color iff both of the stages
+        // it joins are colored — so the colored region is visually
+        // contiguous and stops exactly at the "current" stage.
+        const connectorColored = i < labels.length - 1
+          ? colored[i] && colored[i + 1]
+          : undefined
+        return (
+          <Stage
+            key={i}
+            label={label}
+            colored={colored[i]}
+            connectorColored={connectorColored}
+            href={hrefs?.[i]}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -227,6 +255,7 @@ export default function OrderPage () {
   const [loading, setLoading] = useState(true)
   const [cancelError, setCancelError] = useState('')
   const [showAccelerate, setShowAccelerate] = useState(false)
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null)
 
   // Narrow store subscriptions to just the per-order fields we need for
   // formatting. Subscribing to the whole `exchanges` object would cause
@@ -393,13 +422,6 @@ export default function OrderPage () {
   // `canAccelerateOrder()` (L1517-1532).
   const canAccelerate = canAccelerateOrder(order, walletMap)
 
-  const filledPct = order.qty > 0
-    ? (filled(order) / order.qty * 100).toFixed(1)
-    : '0.0'
-  const settledPct = order.qty > 0
-    ? (settled(order) / order.qty * 100).toFixed(1)
-    : '0.0'
-
   const typeStr = `${typeString(order, t)} ${sellBuyString(order, t)}`
 
   let rateStr: string
@@ -421,7 +443,86 @@ export default function OrderPage () {
     rateUnit = rateUnitLabel
   }
 
-  const sortedMatches = [...(order.matches ?? [])].sort((a, b) => a.stamp - b.stamp)
+  // Cancel matches are bookkeeping entries tied to cancel orders, not
+  // real swaps — they have no counterparty exchange and no progression
+  // through the swap lifecycle. We filter them out of the lane
+  // diagram entirely; the order's Canceled status (shown on the order
+  // lane's terminal stage) already communicates the outcome.
+  const regularMatches = [...(order.matches ?? [])]
+    .filter(m => !m.isCancel)
+    .sort((a, b) => a.stamp - b.stamp)
+
+  const baseIcon = logoPath(order.baseSymbol)
+  const quoteIcon = logoPath(order.quoteSymbol)
+
+  // matchFromTo returns the pay/receive sides for a regular (non-cancel)
+  // match in the user's perspective: `from` is what the user pays, `to`
+  // is what the user receives. Shared between the mini-card in the
+  // status diagram and the expanded match card's From/To metrics.
+  const matchFromTo = (m: Match): {
+    from: { amt: string, icon: string },
+    to: { amt: string, icon: string },
+  } => {
+    const baseAmt = fmtBase(m.qty)
+    const quoteAmt = fmtQuote(baseToQuote(m.rate, m.qty))
+    if (order.sell) {
+      return {
+        from: { amt: baseAmt, icon: baseIcon },
+        to: { amt: quoteAmt, icon: quoteIcon },
+      }
+    }
+    return {
+      from: { amt: quoteAmt, icon: quoteIcon },
+      to: { amt: baseAmt, icon: baseIcon },
+    }
+  }
+
+  // Portion of the overall order a match accounts for. Market buys
+  // have qty in quote units so we compute the quote portion; otherwise
+  // it's base-unit qty / order base qty.
+  const matchPortionPct = (m: Match): string => {
+    if (order.qty <= 0) return '0.0'
+    const num = isMarketBuy(order) ? baseToQuote(m.rate, m.qty) : m.qty
+    return ((num / order.qty) * 100).toFixed(1)
+  }
+
+  // Order-level mini card: shows the total order as From→To. For
+  // market buys we estimate the base amount via the matches' average
+  // rate once any match exists; before then the base side is unknown
+  // and renders as "?".
+  const orderMini = (): { from: { amt: string, icon: string }, to: { amt: string, icon: string } } => {
+    const marketBuy = isMarketBuy(order)
+    const orderRate = order.rate > 0 ? order.rate : averageRate(order)
+    let baseAmtStr: string
+    let quoteAmtStr: string
+    if (marketBuy) {
+      quoteAmtStr = fmtQuote(order.qty)
+      baseAmtStr = orderRate > 0
+        ? fmtBase(order.qty * RateEncodingFactor / orderRate)
+        : '-'
+    } else {
+      baseAmtStr = fmtBase(order.qty)
+      quoteAmtStr = orderRate > 0 ? fmtQuote(baseToQuote(orderRate, order.qty)) : '-'
+    }
+    if (order.sell) {
+      return {
+        from: { amt: baseAmtStr, icon: baseIcon },
+        to: { amt: quoteAmtStr, icon: quoteIcon },
+      }
+    }
+    return {
+      from: { amt: quoteAmtStr, icon: quoteIcon },
+      to: { amt: baseAmtStr, icon: baseIcon },
+    }
+  }
+
+  const orderColored: boolean[] = Array.from(
+    { length: ORDER_STAGE_COUNT },
+    (_, i) => orderStageColored(order, i)
+  )
+  const orderLabels = orderStageLabels(order, t)
+  const orderCurIdx = orderReachedStageIdx(order)
+  const orderColor: LaneColor = orderLaneColor(order)
 
   // ---------------------------------------------------------------------------
   // Match card rendering
@@ -432,7 +533,7 @@ export default function OrderPage () {
       return <span className="pending-placeholder">{pendingText}</span>
     }
     const parts = formatCoinID(coin.stringID)
-    const href = explorerURL(coin.assetID, coin.stringID, net)
+    const href = coinExplorerURL(coin, net)
     const inner = parts.map((p, i) => (
       <span key={i}>
         {p}
@@ -530,81 +631,39 @@ export default function OrderPage () {
     }
   }
 
-  const renderMatchCard = (m: Match) => {
-    if (m.isCancel) {
-      // Cancel match: simplified display.
-      const cancelQty = order.sell
-        ? fmtBase(m.qty)
-        : fmtQuote(baseToQuote(m.rate, m.qty))
-      const cancelIcon = order.sell
-        ? logoPath(order.baseSymbol)
-        : logoPath(order.quoteSymbol)
-      const portion = isMarketBuy(order)
-        ? ((baseToQuote(m.rate, m.qty) / order.qty) * 100).toFixed(1)
-        : ((m.qty / order.qty) * 100).toFixed(1)
-
-      return (
-        <div key={m.matchID} className="match-card">
-          <div className="match-top">
-            <span className="match-id">{m.matchID}</span>
-          </div>
-          <div className="cancel-portion">
-            {t('Cancel')} - {portion}%
-          </div>
-          <span className="amount-with-icon">
-            <span>{cancelQty}</span>
-            <img src={cancelIcon} alt="" className="micro-icon" />
-          </span>
-        </div>
-      )
+  // swapAssetLabels returns the short-symbol asset labels for a
+  // match's swap, redeem, and refund steps from the user's
+  // perspective. The maker always swaps what the seller is selling,
+  // so the side-aware permutation is driven by whether the maker of
+  // THIS match is the seller.
+  const swapAssetLabels = (m: Match): {
+    makerSwap: string,
+    takerSwap: string,
+    makerRedeem: string,
+    takerRedeem: string,
+    refund: string,
+  } => {
+    const isMakerSell = (m.side === MatchSideMaker && order.sell) ||
+      (m.side === MatchSideTaker && !order.sell)
+    const base = shortSymbol(bUnit)
+    const quote = shortSymbol(qUnit)
+    return {
+      makerSwap: isMakerSell ? base : quote,
+      takerSwap: isMakerSell ? quote : base,
+      makerRedeem: isMakerSell ? quote : base,
+      takerRedeem: isMakerSell ? base : quote,
+      refund: order.sell ? base : quote,
     }
+  }
 
-    const quoteAmount = baseToQuote(m.rate, m.qty)
+  const renderMatchCard = (m: Match) => {
     const vis = stepVisibility(m)
     const confMsg = renderConfirmationMsg(m)
     const convRate = conventionalRate(order.baseID, order.quoteID, m.rate, allAssets)
 
     const matchTime = formatMatchDate(m.stamp)
-
-    const portion = isMarketBuy(order)
-      ? ((baseToQuote(m.rate, m.qty) / order.qty) * 100).toFixed(1)
-      : ((m.qty / order.qty) * 100).toFixed(1)
-
-    // From/To display.
-    let fromAmt: string
-    let fromIcon: string
-    let toAmt: string
-    let toIcon: string
-    if (order.sell) {
-      fromAmt = fmtBase(m.qty)
-      fromIcon = logoPath(order.baseSymbol)
-      toAmt = fmtQuote(quoteAmount)
-      toIcon = logoPath(order.quoteSymbol)
-    } else {
-      fromAmt = fmtQuote(quoteAmount)
-      fromIcon = logoPath(order.quoteSymbol)
-      toAmt = fmtBase(m.qty)
-      toIcon = logoPath(order.baseSymbol)
-    }
-
-    // Swap/redeem asset labels per side.
-    const isMakerSell = (m.side === MatchSideMaker && order.sell) ||
-      (m.side === MatchSideTaker && !order.sell)
-    const makerSwapAsset = isMakerSell
-      ? shortSymbol(bUnit)
-      : shortSymbol(qUnit)
-    const takerSwapAsset = isMakerSell
-      ? shortSymbol(qUnit)
-      : shortSymbol(bUnit)
-    const makerRedeemAsset = isMakerSell
-      ? shortSymbol(qUnit)
-      : shortSymbol(bUnit)
-    const takerRedeemAsset = isMakerSell
-      ? shortSymbol(bUnit)
-      : shortSymbol(qUnit)
-    const refundAsset = order.sell
-      ? shortSymbol(bUnit)
-      : shortSymbol(qUnit)
+    const { from, to } = matchFromTo(m)
+    const assetLabels = swapAssetLabels(m)
 
     const sideLabel = m.side === MatchSideMaker
       ? t('MAKER')
@@ -623,16 +682,12 @@ export default function OrderPage () {
 
         <div className="match-metrics">
           <div className="metric">
-            <div className="label">{t('Status')}</div>
-            <div className="value">{matchStatusString(m, t)}</div>
-          </div>
-          <div className="metric">
             <div className="label">{t('Rate')}</div>
             <div className="value">{fmtRate(convRate)} {shortSymbol(bUnit)}/{shortSymbol(qUnit)}</div>
           </div>
           <div className="metric">
             <div className="label">{t('Portion')}</div>
-            <div className="value">{portion}%</div>
+            <div className="value">{matchPortionPct(m)}%</div>
           </div>
         </div>
 
@@ -640,15 +695,15 @@ export default function OrderPage () {
           <div className="metric">
             <div className="label">{t('From')}</div>
             <span className="amount-with-icon value">
-              <span>{fromAmt}</span>
-              <img src={fromIcon} alt="" className="micro-icon" />
+              <span>{from.amt}</span>
+              <img src={from.icon} alt="" className="micro-icon" />
             </span>
           </div>
           <div className="metric">
             <div className="label">{t('To')}</div>
             <span className="amount-with-icon value">
-              <span>{toAmt}</span>
-              <img src={toIcon} alt="" className="micro-icon" />
+              <span>{to.amt}</span>
+              <img src={to.icon} alt="" className="micro-icon" />
             </span>
           </div>
         </div>
@@ -664,7 +719,7 @@ export default function OrderPage () {
                 {m.side === MatchSideMaker
                   ? t('YOUR_SWAP')
                   : t('THEIR_SWAP')}
-                {' '}({makerSwapAsset}):
+                {' '}({assetLabels.makerSwap}):
               </span>
               {renderCoinLink(makerSwapCoin(m), t('PENDING'))}
             </div>
@@ -675,7 +730,7 @@ export default function OrderPage () {
                 {m.side === MatchSideTaker
                   ? t('YOUR_SWAP')
                   : t('THEIR_SWAP')}
-                {' '}({takerSwapAsset}):
+                {' '}({assetLabels.takerSwap}):
               </span>
               {renderCoinLink(takerSwapCoin(m), t('PENDING'))}
             </div>
@@ -686,7 +741,7 @@ export default function OrderPage () {
                 {m.side === MatchSideMaker
                   ? t('YOUR_REDEEM')
                   : t('THEIR_REDEEM')}
-                {' '}({makerRedeemAsset}):
+                {' '}({assetLabels.makerRedeem}):
               </span>
               {renderCoinLink(makerRedeemCoin(m), t('PENDING'))}
             </div>
@@ -697,14 +752,14 @@ export default function OrderPage () {
                 {m.side === MatchSideTaker
                   ? t('YOUR_REDEEM')
                   : t('THEIR_REDEEM')}
-                {' '}({takerRedeemAsset}):
+                {' '}({assetLabels.takerRedeem}):
               </span>
               {renderCoinLink(takerRedeemCoin(m), t('PENDING'))}
             </div>
           )}
           {vis.refund && (
             <div className="match-step">
-              <span className="match-step-label">{t('Refund')} ({refundAsset}):</span>
+              <span className="match-step-label">{t('Refund')} ({assetLabels.refund}):</span>
               {renderRefund(m)}
             </div>
           )}
@@ -732,10 +787,6 @@ export default function OrderPage () {
           <div className={`value ${order.sell ? 'text-danger' : 'text-success'}`}>{typeStr}</div>
         </div>
         <div className="summary-cell">
-          <div className="label">{t('Status')}</div>
-          <div className="value">{statusString(order, t)}</div>
-        </div>
-        <div className="summary-cell">
           <div className="label">{t('Rate')}</div>
           <div className="value">
             {rateStr}{rateUnit && ` ${rateUnit}`}
@@ -744,14 +795,6 @@ export default function OrderPage () {
         <div className="summary-cell">
           <div className="label">{t('Quantity')}</div>
           <div className="value">{fmtBase(order.qty)} {shortSymbol(bUnit)}</div>
-        </div>
-        <div className="summary-cell">
-          <div className="label">{t('Filled')}</div>
-          <div className="value">{filledPct}%</div>
-        </div>
-        <div className="summary-cell">
-          <div className="label">{t('Settled')}</div>
-          <div className="value">{settledPct}%</div>
         </div>
         <div className="summary-cell">
           <div className="label">{t('Age')}</div>
@@ -780,16 +823,83 @@ export default function OrderPage () {
         <div className="cancel-error">{cancelError}</div>
       )}
 
-      {sortedMatches.length > 0 && (
-        <div className="matches-section">
-          <h6 className="matches-heading">{t('Matches')} ({sortedMatches.length})</h6>
-          {sortedMatches.map(renderMatchCard)}
+      <div className="status-diagram">
+        {/* Order lane: 4 stages (Created / Active-filled / Active-
+            settled / Completed). Stage 2 splits out the settlement
+            phase so an Executed-but-still-settling order stays
+            visually in-progress until every match wraps up. The
+            terminal label morphs to Canceled/Revoked/Completed. */}
+        <div className={`lane order-lane lane-${orderColor}`}>
+          <div className="lane-header">
+            <span className="lane-label">{t('Order')}</span>
+          </div>
+          <LaneStages labels={orderLabels} colored={orderColored} />
+          <div
+            className="lane-card-row"
+            style={{ gridTemplateColumns: `repeat(${ORDER_STAGE_COUNT}, 1fr)` }}
+          >
+            <div
+              className="lane-card-cell"
+              style={{ gridColumn: orderCurIdx + 1 }}
+            >
+              <MiniCard {...orderMini()} />
+            </div>
+          </div>
         </div>
-      )}
 
-      {sortedMatches.length === 0 && !loading && (
-        <div className="no-matches">{t('NO_MATCHES')}</div>
-      )}
+        {/* Match lanes — one per regular match, in stamp order.
+            The mini-card under the current stage is the user's entry
+            point into the full match card (click to expand inline).
+            Revoked matches render a Refund divert stage directly below
+            the revocation column, colored once the refund coin lands. */}
+        {regularMatches.map(m => {
+          const labels = matchStageLabels(m, t)
+          const colored = labels.map((_, i) => matchStageColored(m, i))
+          const hrefs = matchStageHrefs(m, net)
+          const curIdx = matchCurStageIdx(m)
+          const mini = matchFromTo(m)
+          const expanded = expandedMatchId === m.matchID
+          const laneColor = matchLaneColor(m)
+          const gridCols = { gridTemplateColumns: `repeat(${MATCH_STAGE_COUNT}, 1fr)` }
+          return (
+            <div key={m.matchID} className={`lane match-lane lane-${laneColor}`}>
+              <LaneStages labels={labels} colored={colored} hrefs={hrefs} />
+              <div className="lane-card-row" style={gridCols}>
+                <div
+                  className="lane-card-cell"
+                  style={{ gridColumn: curIdx + 1 }}
+                >
+                  <MiniCard
+                    {...mini}
+                    expanded={expanded}
+                    onClick={() => setExpandedMatchId(expanded ? null : m.matchID)}
+                  />
+                </div>
+              </div>
+              {m.revoked && (
+                <div className="lane-divert-row" style={gridCols}>
+                  <div
+                    className="lane-divert-cell"
+                    style={{ gridColumn: curIdx + 1 }}
+                  >
+                    <div className={`lane-divert-connector${m.refund ? ' colored' : ''}`} />
+                    <Stage
+                      label={t('Refund')}
+                      colored={Boolean(m.refund)}
+                      href={coinExplorerURL(m.refund, net)}
+                    />
+                  </div>
+                </div>
+              )}
+              {expanded && (
+                <div className="expanded-match-wrap">
+                  {renderMatchCard(m)}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
       {/* Accelerate form overlay */}
       {/* OP-04: slide-in animation. Wrap the form card in

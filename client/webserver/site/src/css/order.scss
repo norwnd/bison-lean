@@ -94,21 +94,214 @@
     margin-bottom: 1.25rem;
   }
 
-  .matches-section {
+  // --------------------------------------------------------------------
+  // Status diagram (replaces the old Matches section — see OrderPage.tsx
+  // StatusDiagram block). Lanes stack vertically: order-lane at the
+  // top, match lanes in stamp order. Each lane carries a single outcome
+  // color driven by a `lane-{good|warning|bad|neutral}` modifier that
+  // sets the `--lane-color` custom property; individual stages inherit
+  // that color via `.colored` (dots) or `[data-connector="colored"]`
+  // (connectors). Stage labels are always `--text-color-secondary` so
+  // the lane color lives only in the dots+connectors, not the text.
+  // Connectors are drawn as `::after` pseudo-elements on each stage
+  // rather than as separate DOM nodes so the stages remain a clean
+  // N-column grid (one cell per stage).
+  // --------------------------------------------------------------------
+
+  .status-diagram {
     margin-top: 0.65rem;
   }
 
-  .matches-heading {
-    font-size: 20px;
-    font-family: $demi-sans;
-    margin: 0 0 0.95rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
+  .lane {
+    padding: 0.75rem 0 0.9rem;
+
+    --lane-color: var(--indicator-neutral);
+
+    &.lane-good { --lane-color: var(--indicator-good); }
+    &.lane-warning { --lane-color: var(--indicator-warning); }
+    &.lane-bad { --lane-color: var(--indicator-bad); }
+    &.lane-neutral { --lane-color: var(--indicator-neutral); }
+
+    & + .lane {
+      border-top: 1px dashed var(--border-color);
+      padding-top: 1rem;
+    }
   }
 
-  .no-matches {
+  .lane-header {
+    display: flex;
+    align-items: center;
+    column-gap: 0.6rem;
+    margin-bottom: 0.55rem;
+  }
+
+  .lane-label {
+    font-family: $demi-sans;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
     color: var(--text-color-secondary);
-    font-size: 18px;
+    line-height: 1;
+  }
+
+  .lane-stages {
+    display: grid;
+    align-items: start;
+  }
+
+  .diagram-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    min-width: 0;
+
+    .diagram-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background-color: var(--indicator-neutral);
+      position: relative;
+      z-index: 1;
+    }
+
+    .diagram-stage-label {
+      margin-top: 7px;
+      font-size: 12px;
+      font-family: $demi-sans;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--text-color-secondary);
+      text-align: center;
+      line-height: 1.15;
+
+      // Stage labels become explorer links for swap/redeem stages
+      // once the corresponding coin is known. Resting state is
+      // indistinguishable from the plain label; hover lifts color
+      // and adds an underline to signal it's clickable.
+      a {
+        color: inherit;
+        text-decoration: none;
+
+        &:hover {
+          color: var(--text-color);
+          text-decoration: underline;
+        }
+      }
+    }
+
+    &.colored .diagram-dot {
+      background-color: var(--lane-color);
+    }
+  }
+
+  // Stage-to-stage connector. Starts just past the right edge of this
+  // stage's dot, ends just before the left edge of the next stage's
+  // dot — so the line visually joins the two without overlapping
+  // either dot. `top: 6px` centers the 2px line on the 14px dot.
+  .diagram-stage[data-connector="colored"]::after,
+  .diagram-stage[data-connector="uncolored"]::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 9px);
+    width: calc(100% - 18px);
+    height: 2px;
+  }
+
+  .diagram-stage[data-connector="colored"]::after {
+    background-color: var(--lane-color);
+  }
+
+  .diagram-stage[data-connector="uncolored"]::after {
+    background-color: var(--indicator-neutral);
+  }
+
+  .lane-card-row {
+    display: grid;
+    margin-top: 0.7rem;
+  }
+
+  .lane-card-cell {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.4rem;
+    align-items: center;
+    justify-self: center;
+  }
+
+  .mini-match-card {
+    display: inline-flex;
+    align-items: center;
+    column-gap: 0.3rem;
+    font-size: 15px;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--section-bg);
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.2;
+
+    &:hover {
+      border-color: var(--btn-hover-border-color);
+      background-color: var(--tertiary-bg);
+    }
+
+    &.expanded {
+      border-color: var(--lane-color);
+      background-color: var(--tertiary-bg);
+    }
+
+    // Order-level mini-card is informational only — no click target
+    // (the /order page already IS the expanded view). Drop the card
+    // chrome entirely so it reads as plain text and doesn't invite a
+    // click like its match-lane siblings do. The transparent border
+    // preserves the 1px width so it aligns with bordered siblings.
+    &.readonly {
+      cursor: default;
+      border-color: transparent;
+      background-color: transparent;
+
+      &:hover {
+        border-color: transparent;
+        background-color: transparent;
+      }
+    }
+
+    .mini-arrow {
+      color: var(--text-color-secondary);
+      font-size: 14px;
+    }
+  }
+
+  // Revoked-match divert: vertical connector drops from the
+  // revocation column to a standalone Refund stage below.
+  .lane-divert-row {
+    display: grid;
+    margin-top: 0.2rem;
+  }
+
+  .lane-divert-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .lane-divert-connector {
+    width: 2px;
+    height: 18px;
+    background-color: var(--indicator-neutral);
+    margin-bottom: 2px;
+
+    &.colored {
+      background-color: var(--lane-color);
+    }
+  }
+
+  .expanded-match-wrap {
+    margin-top: 0.9rem;
   }
 
   .match-card {
@@ -220,12 +413,6 @@
 
   .refund-imminent {
     color: var(--text-warning);
-  }
-
-  .cancel-portion {
-    font-size: 17px;
-    color: var(--text-color-secondary);
-    margin-bottom: 0.5rem;
   }
 
   &.loading-box,
