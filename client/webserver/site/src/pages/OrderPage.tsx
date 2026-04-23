@@ -17,10 +17,13 @@ import { coinExplorerURL, formatCoinID } from '../components/CoinExplorers'
 import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
 import { FormOverlay } from '../components/common/FormOverlay'
 import {
-  type LaneColor, type StageCoinView, MATCH_STAGE_COUNT,
-  matchStageLabels, matchStageColored, matchCurStageIdx,
-  matchLaneColor, matchStageHrefs, matchStageCoinViews,
+  type LaneColor, type StageCoinView, type StagePaint, matchStageCount,
+  matchStageLabels, matchStagePaint, matchConnectorPaint, matchConnectorFill,
+  matchCurStageIdx, matchLaneColor, matchStageHrefs, matchStageCoinViews,
   makerSwapCoin, takerSwapCoin, makerRedeemCoin, takerRedeemCoin,
+  yourSwapStageIdx, refundTrackConnectorPaint, swapUnlockFill,
+  refundConnectorFill, swapUnlockDotPaint, refundDotPaint,
+  swapUnlockAtMs, takerSwapUnlockAtMs,
 } from '../components/MatchStages'
 import {
   ORDER_STAGE_COUNT,
@@ -38,15 +41,6 @@ import {
   MakerSwapCast, TakerSwapCast, MakerRedeemed, MatchComplete, MatchConfirmed,
   ImmediateTiF
 } from '../stores/types'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// lockTimeMakerMs must match LockTimeMaker in bisonw.
-const lockTimeMakerMs = 20 * 60 * 60 * 1000
-// lockTimeTakerMs must match LockTimeTaker in bisonw.
-const lockTimeTakerMs = 8 * 60 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,19 +103,45 @@ function confirmationString (coin: Coin | undefined, t: (k: string) => string): 
 }
 
 // ---------------------------------------------------------------------------
-// TimeAgo
+// Ticking helpers
 // ---------------------------------------------------------------------------
+
+// useTick triggers a re-render every `intervalMs` ms while `enabled`
+// is true. Components call it to refresh time-derived displays
+// (elapsed "X ago" strings, lockTime fill %, etc.) without wiring a
+// page-wide clock. Bumping the interval or flipping `enabled`
+// reconciles the timer cleanly via useEffect deps — no stale closure
+// and no stray setInterval after the component unmounts.
+function useTick (intervalMs: number, enabled = true) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const id = setInterval(() => setTick(n => n + 1), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs, enabled])
+}
 
 // Self-ticking "X ago" span. Kept as its own component so the tick
 // interval only re-renders the tiny timestamp text instead of the
 // whole OrderPage every 10 seconds.
 function TimeAgo ({ ms }: { ms: number }) {
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const interval = setInterval(() => setTick(n => n + 1), 10000)
-    return () => clearInterval(interval)
-  }, [])
+  useTick(10000)
   return <>{ageSince(ms)}</>
+}
+
+// cssVars packs standard camelCase style keys together with
+// hyphenated CSS custom properties (`'--foo'`) into a
+// React.CSSProperties — `--*` vars aren't typed in React's style type
+// so inline objects that mix both need a cast. Undefined values are
+// dropped so callers can pass optional props through without
+// emitting `--foo: undefined;` to the rendered style attribute.
+function cssVars (vars: Record<string, string | number | undefined>): React.CSSProperties {
+  const out: Record<string, string | number> = {}
+  for (const k of Object.keys(vars)) {
+    const v = vars[k]
+    if (v !== undefined) out[k] = v
+  }
+  return out as React.CSSProperties
 }
 
 // ---------------------------------------------------------------------------
@@ -148,25 +168,44 @@ type StageCoin = {
   sentiment: StageCoinView['sentiment'],
 }
 
+// Stage renders a single dot + label, plus an optional outgoing
+// horizontal connector as a CSS ::after gradient. `paint` colors the
+// dot; `connectorPaint` + `connectorFill` drive the connector's
+// gradient (the left `fill`% is drawn in `paint`, the remainder stays
+// neutral). Passing `connectorPaint` undefined suppresses the
+// connector entirely — used for the last stage of every lane, and
+// for bare divert-track dots. `gridColumn` / `gridRow` let callers
+// place the stage at an explicit grid cell (used by the refund
+// track, which anchors Swap Unlock / Refund to specific main-track
+// columns); LaneStages leaves them undefined and relies on
+// sequential grid flow.
 function Stage ({
-  label, colored, connectorColored, ageMs,
+  label, paint, connectorPaint, connectorFill, ageMs, gridColumn, gridRow,
 }: {
   label: string,
-  colored: boolean,
-  // connectorColored is undefined for the last stage in a lane (no
-  // outgoing connector). true draws the connector in the lane color;
-  // false draws it in the default grey.
-  connectorColored?: boolean,
+  paint: StagePaint,
+  connectorPaint?: StagePaint,
+  connectorFill?: number,
   // ageMs, when defined, appends a live "(X ago)" to the label.
   ageMs?: number,
+  gridColumn?: number | string,
+  gridRow?: number | string,
 }) {
-  const connectorAttr = connectorColored === undefined
-    ? 'none'
-    : connectorColored ? 'colored' : 'uncolored'
+  const style = cssVars({
+    'gridColumn': gridColumn,
+    'gridRow': gridRow,
+    '--conn-color': connectorPaint !== undefined
+      ? `var(--indicator-${connectorPaint})`
+      : undefined,
+    '--conn-fill': connectorPaint !== undefined
+      ? `${connectorFill ?? 100}%`
+      : undefined,
+  })
   return (
     <div
-      className={`diagram-stage${colored ? ' colored' : ''}`}
-      data-connector={connectorAttr}
+      className={`diagram-stage paint-${paint}`}
+      data-connector={connectorPaint !== undefined ? 'on' : undefined}
+      style={style}
     >
       <div className="diagram-dot" />
       <div className="diagram-stage-label">
@@ -252,33 +291,142 @@ function MiniCard ({
   )
 }
 
-function LaneStages ({ labels, colored, ages }: {
-  labels: readonly string[],
-  colored: boolean[],
-  // ages[i], when defined, drives a live "(X ago)" suffix on stage
-  // i's label. Used by the order lane for its first and terminal
-  // stages; match lanes leave this undefined.
-  ages?: (number | undefined)[],
-}) {
+// StageInfo is the per-stage bundle a LaneStages caller computes
+// in a single pass: the label, the dot's paint, and (for all but
+// the terminal stage) the outgoing connector's paint + fill. `ageMs`
+// opts the stage into a live "(X ago)" suffix. Colocating every
+// stage's inputs in one object lets each lane type's derivation
+// read as a single map() body instead of three parallel array
+// builds.
+type StageInfo = {
+  label: string,
+  paint: StagePaint,
+  connectorPaint?: StagePaint,
+  connectorFill?: number,
+  ageMs?: number,
+}
+
+// LaneStages renders the horizontal main-track strip for a lane.
+// Callers build one StageInfo per stage and hand it in directly.
+function LaneStages ({ stages }: { stages: StageInfo[] }) {
   return (
     <div className="lane-stages">
-      {labels.map((label, i) => {
-        // A connector belongs to the lane color iff both of the stages
-        // it joins are colored — so the colored region is visually
-        // contiguous and stops exactly at the "current" stage.
-        const connectorColored = i < labels.length - 1
-          ? colored[i] && colored[i + 1]
-          : undefined
-        return (
-          <Stage
-            key={i}
-            label={label}
-            colored={colored[i]}
-            connectorColored={connectorColored}
-            ageMs={ages?.[i]}
-          />
-        )
-      })}
+      {stages.map((s, i) => (
+        <Stage
+          key={i}
+          label={s.label}
+          paint={s.paint}
+          connectorPaint={s.connectorPaint}
+          connectorFill={s.connectorFill}
+          ageMs={s.ageMs}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Refund-divert column offsets, measured from the `Your Swap` stage
+// column (1-indexed, so `yourSwapIdx + STUB_COL_OFFSET` is the
+// stub's grid-column). The stub drops straight below Your Swap,
+// Swap Unlock sits one column to the right, and Refund aligns with
+// Your Redeem another column further — independent of maker/taker
+// perspective because both lanes put Your Swap immediately before
+// the pair (Their Redeem | Your Redeem) for the taker or simply
+// before Your Redeem for the maker.
+const STUB_COL_OFFSET = 1
+const SWAP_UNLOCK_COL_OFFSET = 2
+const REFUND_COL_OFFSET = 3
+
+// RefundTrack renders the refund divert for a single match lane.
+// Layout (compact horizontal):
+//
+//   Main track row:   … [Your Swap] … [Their/Your Redeem] [Your Redeem]
+//                              │
+//   Divert row 1:              └───────── [Swap Unlock] ─── [Refund]
+//   Divert row 2:                                                │
+//                                                          [refund pill]
+//
+// Column anchoring (independent of maker/taker side):
+//   stub       → Your Swap column (L-shape reaches right to Swap Unlock)
+//   Swap Unlock → column preceding "Your Redeem"
+//   Refund     → Your Redeem column
+// Math reduces to yourSwapIdx+1 / yourSwapIdx+2 / yourSwapIdx+3 —
+// the stub sits below Your Swap, Swap Unlock one column to the
+// right, Refund another column further.
+//
+// The track is always rendered (not gated on m.revoked) so the happy
+// and refund outcomes sit side-by-side from the first render. For
+// terminal matches, exactly one of the two post-divergence paths
+// (main-track redeem stages vs this divert) paints `good`; the other
+// stays `neutral`. While active the connectors show granular
+// progress: the L-stub fills with elapsed lockTime, the horizontal
+// Swap Unlock→Refund connector fills with refund-coin confirmations.
+// The component self-ticks every 10s so the lockTime fill advances
+// in real time; the tick is gated on `m.active` so terminal matches
+// carry zero timers.
+function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
+  m: Match,
+  yourSwapIdx: number,
+  refundCoin?: StageCoin,
+  t: (k: string) => string,
+}) {
+  // Gate ticks on `m.active` — terminal matches are frozen so they
+  // don't need to wake the component every 10s.
+  useTick(10000, m.active)
+  const now = Date.now()
+  const connPaint = refundTrackConnectorPaint(m)
+  const stubCol = yourSwapIdx + STUB_COL_OFFSET
+  const swapUnlockCol = yourSwapIdx + SWAP_UNLOCK_COL_OFFSET
+  const refundCol = yourSwapIdx + REFUND_COL_OFFSET
+  return (
+    <div className="lane-divert-row">
+      {/* L-shape connector dropping from the Your Swap column and
+          reaching across to the Swap Unlock dot. The vertical and
+          horizontal arms are drawn as ::before / ::after pseudo-
+          elements on the stub wrapper — both inherit `--conn-color`
+          / `--conn-fill` set here so they paint uniformly. Fill
+          animates with elapsed lockTime while the match is active;
+          on a terminal match the L flips to good (refund path) or
+          neutral (happy path). */}
+      <div
+        className="lane-divert-stub"
+        style={cssVars({
+          'gridColumn': stubCol,
+          'gridRow': 1,
+          '--conn-color': `var(--indicator-${connPaint})`,
+          '--conn-fill': `${swapUnlockFill(m, now)}%`,
+        })}
+      />
+      {/* Swap Unlock — the horizontal ::after reaches across to
+          Refund and fills with refund-coin confirmations (0 until a
+          refund is broadcast). */}
+      <Stage
+        label={t('Swap Unlock')}
+        paint={swapUnlockDotPaint(m, now)}
+        connectorPaint={connPaint}
+        connectorFill={refundConnectorFill(m)}
+        gridColumn={swapUnlockCol}
+        gridRow={1}
+      />
+      {/* Refund — terminal stage of the divert, no outgoing
+          connector. */}
+      <Stage
+        label={t('Refund')}
+        paint={refundDotPaint(m)}
+        gridColumn={refundCol}
+        gridRow={1}
+      />
+      {/* Refund coin pill stacked below the Refund stage (row 2,
+          same column), mirroring how redeem coin pills sit below
+          their main-track stage in .lane-card-row. */}
+      {refundCoin && (
+        <div
+          className="lane-divert-pill-slot"
+          style={{ gridColumn: refundCol, gridRow: 2 }}
+        >
+          <StageCoinButton coin={refundCoin} />
+        </div>
+      )}
     </div>
   )
 }
@@ -561,16 +709,24 @@ export default function OrderPage () {
     }
   }
 
-  const orderColored: boolean[] = Array.from(
-    { length: ORDER_STAGE_COUNT },
-    (_, i) => orderStageColored(order, i)
-  )
-  const orderLabels = orderStageLabels(order, t)
-  const orderAges: (number | undefined)[] = Array.from(
-    { length: ORDER_STAGE_COUNT },
-    (_, i) => orderStageAgeMs(order, i)
-  )
+  // Order lane: reached stages adopt the lane color; the order track
+  // has no granular in-flight progress (no confs to watch, stage
+  // transitions are instantaneous from the UI's point of view), so
+  // connector fills are binary 0/100. Single-pass build so each
+  // stage's label/paint/connector/age stay colocated.
   const orderColor: LaneColor = orderLaneColor(order)
+  const orderStages: StageInfo[] = orderStageLabels(order, t).map((label, i) => {
+    const reached = orderStageColored(order, i)
+    const isLast = i === ORDER_STAGE_COUNT - 1
+    const connected = !isLast && reached && orderStageColored(order, i + 1)
+    return {
+      label,
+      paint: reached ? orderColor : 'neutral',
+      connectorPaint: isLast ? undefined : (connected ? orderColor : 'neutral'),
+      connectorFill: isLast ? undefined : (connected ? 100 : 0),
+      ageMs: orderStageAgeMs(order, i),
+    }
+  })
 
   // ---------------------------------------------------------------------------
   // Match card rendering
@@ -624,18 +780,16 @@ export default function OrderPage () {
     if (m.refund) {
       return renderCoinLink(m.refund, '')
     }
-    // Pending refund messaging.
-    const lockTime = m.side === MatchSideTaker
-      ? lockTimeTakerMs
-      : lockTimeMakerMs
-    const refundAfter = new Date(m.stamp + lockTime)
-    if (Date.now() > refundAfter.getTime()) {
+    // Pending refund messaging. `swapUnlockAtMs` shares the lockTime
+    // lookup with the Refund-track's Swap Unlock connector so the
+    // two UI surfaces stay in sync.
+    const refundAfterMs = swapUnlockAtMs(m)
+    if (Date.now() > refundAfterMs) {
       return <span className="refund-imminent">{t('REFUND_IMMINENT')}</span>
     }
-    const refundAfterStr = formatMatchDate(refundAfter.getTime())
     return (
       <span className="refund-pending">
-        {t('REFUND_WILL_HAPPEN_AFTER', { refundAfterTime: refundAfterStr })}
+        {t('REFUND_WILL_HAPPEN_AFTER', { refundAfterTime: formatMatchDate(refundAfterMs) })}
       </span>
     )
   }
@@ -659,8 +813,7 @@ export default function OrderPage () {
     }
 
     // Revoked path.
-    const takerRefundsAfter = new Date(m.stamp + lockTimeTakerMs)
-    const takerLockTimeExpired = Date.now() > takerRefundsAfter.getTime()
+    const takerLockTimeExpired = Date.now() > takerSwapUnlockAtMs(m)
 
     let expectingRefund = Boolean(tSwap) // as taker
     if (m.side === MatchSideMaker) {
@@ -871,12 +1024,12 @@ export default function OrderPage () {
             morphs to Completed/Canceled/Revoked. */}
         <div
           className={`lane order-lane lane-${orderColor}`}
-          style={{ '--stage-count': ORDER_STAGE_COUNT } as React.CSSProperties}
+          style={cssVars({ '--stage-count': ORDER_STAGE_COUNT })}
         >
           <div className="lane-header">
             <span className="lane-label">{t('Order')}</span>
           </div>
-          <LaneStages labels={orderLabels} colored={orderColored} ages={orderAges} />
+          <LaneStages stages={orderStages} />
           <div className="lane-card-row">
             <div className="lane-card-cell" style={{ gridColumn: 1 }}>
               <MiniCard {...orderMini()} />
@@ -885,22 +1038,40 @@ export default function OrderPage () {
         </div>
 
         {/* Match lanes — one per regular match, in stamp order.
-            The mini-card under the current stage is the user's entry
+            The mini-card under stage 0 (Match) is the user's entry
             point into the full match card (click to expand inline).
-            Revoked matches render a Refund divert stage directly below
-            the revocation column, colored once the refund coin lands. */}
-        {regularMatches.map(m => {
-          const labels = matchStageLabels(m, t)
-          const colored = labels.map((_, i) => matchStageColored(m, i))
+            Every match also renders a Refund divert below the
+            "Your Swap" column so the happy-path and refund-path
+            outcomes are visible side-by-side from the first render. */}
+        {regularMatches.map((m, matchIdx) => {
           const hrefs = matchStageHrefs(m, net)
           const views = matchStageCoinViews(m)
           const mini = matchFromTo(m)
           const curIdx = matchCurStageIdx(m)
+          const yourSwapIdx = yourSwapStageIdx(m)
+          // Per-match stage count — maker lanes drop "Their Redeem"
+          // and terminate at Your Redeem (4 stages); taker lanes
+          // keep the full 5. Used both to gate the terminal stage's
+          // connector and to size the lane's CSS grid.
+          const stageCount = matchStageCount(m)
+          // Single-pass stage build. The terminal stage has no
+          // outgoing connector — we leave its connectorPaint /
+          // connectorFill undefined and Stage skips the ::after
+          // entirely.
+          const matchStages: StageInfo[] = matchStageLabels(m, t).map((label, i) => {
+            const isLast = i === stageCount - 1
+            return {
+              label,
+              paint: matchStagePaint(m, i),
+              connectorPaint: isLast ? undefined : matchConnectorPaint(m, i),
+              connectorFill: isLast ? undefined : matchConnectorFill(m, i),
+            }
+          })
           // Compose per-stage coin pills from hrefs + views + mini.
-          // A stage gets a pill when it has a mapped view (Match and
-          // Completed stages are undefined in `views`) AND either the
-          // coin's explorer URL is known (clickable) or it's the
-          // current stage (readonly preview — no href, non-clickable
+          // A stage gets a pill when it has a mapped view (Match
+          // stage is undefined in `views`) AND either the coin's
+          // explorer URL is known (clickable) or it's the current
+          // stage (readonly preview — no href, non-clickable
           // styling).
           const stageCoins: (StageCoin | undefined)[] = views.map((view, i) => {
             if (!view) return undefined
@@ -915,11 +1086,11 @@ export default function OrderPage () {
           })
           const expanded = expandedMatchId === m.matchID
           const laneColor = matchLaneColor(m)
-          // Refund stage coin: the user is always refunded their own
+          // Refund pill: the user is always refunded their own
           // outgoing asset ('from' side) and getting money back is a
-          // credit — sentiment 'good' with a "+" prefix. Only
-          // computed for revoked matches.
-          const refundHref = m.revoked ? coinExplorerURL(m.refund, net) : undefined
+          // credit — sentiment 'good' with a "+" prefix. Present
+          // only once the refund coin has been broadcast.
+          const refundHref = coinExplorerURL(m.refund, net)
           const refundCoin: StageCoin | undefined = refundHref
             ? { amt: mini.from.amt, icon: mini.from.icon, href: refundHref, sentiment: 'good' }
             : undefined
@@ -927,9 +1098,12 @@ export default function OrderPage () {
             <div
               key={m.matchID}
               className={`lane match-lane lane-${laneColor}`}
-              style={{ '--stage-count': MATCH_STAGE_COUNT } as React.CSSProperties}
+              style={cssVars({ '--stage-count': stageCount })}
             >
-              <LaneStages labels={labels} colored={colored} />
+              <div className="lane-header">
+                <span className="lane-label">{t('Match')} #{matchIdx + 1}</span>
+              </div>
+              <LaneStages stages={matchStages} />
               {/* Mini-card first in DOM so CSS grid auto-flow places
                   it on row 1 col 1 before the coin cells fill columns
                   2..N — otherwise sparse auto-flow would wrap the
@@ -955,21 +1129,7 @@ export default function OrderPage () {
                   )
                   : null)}
               </div>
-              {m.revoked && (
-                <div className="lane-divert-row">
-                  <div
-                    className="lane-divert-cell"
-                    style={{ gridColumn: curIdx + 1 }}
-                  >
-                    <div className={`lane-divert-connector${m.refund ? ' colored' : ''}`} />
-                    <Stage
-                      label={t('Refund')}
-                      colored={Boolean(m.refund)}
-                    />
-                    {refundCoin && <StageCoinButton coin={refundCoin} />}
-                  </div>
-                </div>
-              )}
+              <RefundTrack m={m} yourSwapIdx={yourSwapIdx} refundCoin={refundCoin} t={t} />
               {expanded && (
                 <div className="expanded-match-wrap">
                   {renderMatchCard(m)}

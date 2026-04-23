@@ -1,6 +1,11 @@
 {
     "extends": "stylelint-config-standard-scss",
     "rules": {
+        "at-rule-empty-line-before": ["always", {
+            "except": ["blockless-after-same-name-blockless", "first-nested"],
+            "ignore": ["after-comment"],
+            "ignoreAtRules": ["else", "include"]
+        }],
         "at-rule-no-unknown": null,
         "font-family-name-quotes": "always-unless-keyword",
         "no-descending-specificity": null,

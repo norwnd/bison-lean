@@ -28,6 +28,19 @@
   background-color: var(--tertiary-bg);
 }
 
+// Two-stop progress-fill gradient shared by the main-track stage
+// connector and the refund-track L-stub. The first `--conn-fill%`
+// renders in `--conn-color`; the remainder stays neutral. Pass the
+// gradient direction (`to right` for horizontal, `to bottom` for
+// vertical) as the argument.
+@mixin conn-fill-gradient($dir) {
+  background: linear-gradient(
+    $dir,
+    var(--conn-color, var(--indicator-neutral)) var(--conn-fill, 0%),
+    var(--indicator-neutral) var(--conn-fill, 0%)
+  );
+}
+
 .order-page {
   padding: 1.25rem;
   height: 100%;
@@ -128,11 +141,16 @@
   .lane {
     padding: 0.75rem 0 0.9rem;
 
+    // --lane-color drives only the mini-card expanded border — a
+    // single accent color per lane that tracks its overall state
+    // (warning while in flight, good when terminal, neutral when
+    // nothing happened). Individual dots / connectors paint
+    // themselves per-stage via `.paint-*` classes and `--conn-color`
+    // inline vars, so the lane color is intentionally narrow in scope.
     --lane-color: var(--indicator-neutral);
 
     &.lane-good { --lane-color: var(--indicator-good); }
     &.lane-warning { --lane-color: var(--indicator-warning); }
-    &.lane-bad { --lane-color: var(--indicator-bad); }
     &.lane-neutral { --lane-color: var(--indicator-neutral); }
 
     & + .lane {
@@ -158,10 +176,12 @@
   }
 
   // Stage-count grid. All three "columns by stage" containers (the
-  // stage row, the mini-card row, the revoked-match divert row) share
-  // the same N-column layout driven by `--stage-count` set on the
-  // parent .lane div (ORDER_STAGE_COUNT or MATCH_STAGE_COUNT from the
-  // React side).
+  // main-track stage row, the mini-card row, the refund divert row)
+  // share the same N-column layout driven by `--stage-count` set on
+  // the parent .lane div (ORDER_STAGE_COUNT or matchStageCount(m)
+  // from the React side), so children placed via explicit
+  // `grid-column` end up vertically aligned with main-track stages
+  // above.
   .lane-stages,
   .lane-card-row,
   .lane-divert-row {
@@ -173,6 +193,13 @@
     align-items: start;
   }
 
+  // .diagram-stage is used for the main-track stages inside
+  // .lane-stages and for the Swap Unlock / Refund dots inside
+  // .lane-divert-row — both are direct grid children so their 1fr
+  // width gives the outgoing `::after` connector the right distance
+  // to the next dot. The connector is gated on `data-connector`
+  // being present on the element — the terminal stage of every lane
+  // omits the attribute so it stays a bare dot.
   .diagram-stage {
     display: flex;
     flex-direction: column;
@@ -200,9 +227,10 @@
       line-height: 1.15;
     }
 
-    &.colored .diagram-dot {
-      background-color: var(--lane-color);
-    }
+    // Per-stage dot paint. `paint-neutral` is the default so we don't
+    // need a rule for it — it matches the `.diagram-dot` base color.
+    &.paint-good .diagram-dot { background-color: var(--indicator-good); }
+    &.paint-warning .diagram-dot { background-color: var(--indicator-warning); }
   }
 
   // Per-stage coin pill (amount + icon), a smaller sibling of
@@ -249,22 +277,20 @@
   // stage's dot, ends just before the left edge of the next stage's
   // dot — so the line visually joins the two without overlapping
   // either dot. `top: 6px` centers the 2px line on the 14px dot.
-  .diagram-stage[data-connector="colored"]::after,
-  .diagram-stage[data-connector="uncolored"]::after {
+  // The background is a two-stop linear gradient with a hard stop at
+  // `--conn-fill`, so the left `--conn-fill`% renders in
+  // `--conn-color` and the remainder stays neutral. That's how the
+  // match lane draws granular "partial progress" on an in-flight
+  // connector based on coin-confirmation progress; binary colored /
+  // uncolored states fall out as fill=100% or fill=0%.
+  .diagram-stage[data-connector]::after {
     content: '';
     position: absolute;
     top: 6px;
     left: calc(50% + 9px);
     width: calc(100% - 18px);
     height: 2px;
-  }
-
-  .diagram-stage[data-connector="colored"]::after {
-    background-color: var(--lane-color);
-  }
-
-  .diagram-stage[data-connector="uncolored"]::after {
-    background-color: var(--indicator-neutral);
+    @include conn-fill-gradient(to right);
   }
 
   .lane-card-row {
@@ -319,26 +345,85 @@
     }
   }
 
-  // Revoked-match divert: vertical connector drops from the
-  // revocation column to a standalone Refund stage below.
+  // Refund divert: compact horizontal layout, anchored by explicit
+  // grid-column on the React side. Row 1 carries an L-shape stub
+  // dropping below the Your Swap column and reaching across to the
+  // Swap Unlock dot (two columns before the Your Redeem column),
+  // plus the Swap Unlock → Refund connector in the adjacent column.
+  // Row 2 (present only when a refund coin has been broadcast)
+  // stacks the refund pill below the Refund stage. Swap Unlock →
+  // Refund reuses the main-track `::after` connector mechanism
+  // (Swap Unlock is a direct grid child, so its `100%` resolves to
+  // one grid-column width — the distance to the next dot). Once
+  // terminal exactly one of the main-track post-divergence path
+  // and this divert paints `good`; the other stays `neutral`.
+  // While active the L-stub fills with elapsed lockTime and the
+  // horizontal Swap Unlock → Refund connector fills with refund-
+  // coin confirmations. The divert row's dots are shifted down 8px
+  // (via `padding-top` below) so the L-stub's vertical can be tall
+  // enough (16px) to visually separate the refund branch from the
+  // main track while still landing its horizontal arm on the Swap
+  // Unlock dot's center.
   .lane-divert-row {
     margin-top: 0.2rem;
+    row-gap: 0.4rem;
+
+    // Shift divert-row stages down 8px so their dot centers land at
+    // y=15 — the bottom-edge alignment target of the lengthened L-
+    // stub's 16px-tall vertical. Labels follow the dots naturally
+    // (flex column).
+    .diagram-stage {
+      padding-top: 8px;
+    }
+
+    // The main-track `::after` connector on Swap Unlock (→ Refund)
+    // is anchored to `.diagram-stage`'s top edge, above the padding;
+    // shift its `top` to match the dropped dot so it stays centered
+    // on the 2px connector line.
+    .diagram-stage[data-connector]::after {
+      top: 14px;
+    }
   }
 
-  .lane-divert-cell {
+  // Pill slot centers its single child (a coin pill) inside the
+  // grid cell — mirrors `.lane-card-cell` for row-2 pill placement
+  // under the Refund stage.
+  .lane-divert-pill-slot {
     display: flex;
     flex-direction: column;
     align-items: center;
   }
 
-  .lane-divert-connector {
-    width: 2px;
-    height: 18px;
-    background-color: var(--indicator-neutral);
-    margin-bottom: 2px;
+  // Stub cell draws an L-shape connecting the Your Swap column above
+  // to the Swap Unlock dot in the next column. Vertical strip drops
+  // from the main-track line (y=0..16) and joins a horizontal arm
+  // at y=[14, 16] that reaches 9px shy of the next column's center
+  // — matching the main-track `::after` 9px dot-gap so the L lands
+  // on the Swap Unlock dot the same way an ordinary connector does.
+  // Both pseudos read `--conn-color` / `--conn-fill` from the
+  // wrapper so the L fills uniformly as elapsed lockTime advances.
+  .lane-divert-stub {
+    position: relative;
+    min-height: 16px;
 
-    &.colored {
-      background-color: var(--lane-color);
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: calc(50% - 1px);
+      width: 2px;
+      height: 16px;
+      @include conn-fill-gradient(to bottom);
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: calc(50% - 1px);
+      width: calc(100% - 8px);
+      height: 2px;
+      @include conn-fill-gradient(to right);
     }
   }
 
