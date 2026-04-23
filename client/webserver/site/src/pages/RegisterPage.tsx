@@ -162,15 +162,10 @@ export default function RegisterPage () {
     return (
       <div className="d-flex align-items-center justify-content-center py-5">
         <div className="col-12 col-sm-8 col-md-6 col-lg-4">
-          <LoginForm
-            onSuccess={async () => {
-              // `useAuthStore.login()` already calls `fetchUser()`
-              // internally; nothing else to do -- the re-render
-              // triggered by `authed` flipping true will land the
-              // user back on this same component, which then takes
-              // the registration branch below.
-            }}
-          />
+          {/* RP-02 flow: LoginForm has no success callback — once
+              `authed` flips true, this component re-renders and the
+              branch below (the registration flow) takes over. */}
+          <LoginForm />
         </div>
       </div>
     )

@@ -1,8 +1,16 @@
 import { Suspense, lazy } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '../layout/AppLayout'
-import { AuthGuard, InitGuard, DexConnectionGuard } from './guards'
+import { AuthGuard, InitGuard, DexConnectionGuard, GuestGuard } from './guards'
 import { ROUTES } from './routes'
+import { loadLastVisitedPage } from './lastVisitedPage'
+
+// Index route: restore the last-visited authed page, falling back to
+// /wallets. Wrapped in a component (not a static <Navigate>) so the
+// localStorage read happens at mount time, not module-load time.
+function IndexRedirect () {
+  return <Navigate to={loadLastVisitedPage()} replace />
+}
 
 // Lazy-load pages for code splitting.
 const LoginPage = lazy(() => import('../pages/LoginPage'))
@@ -29,7 +37,7 @@ export const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
-      { path: ROUTES.LOGIN, element: <PageSuspense><LoginPage /></PageSuspense> },
+      { path: ROUTES.LOGIN, element: <GuestGuard><PageSuspense><LoginPage /></PageSuspense></GuestGuard> },
       { path: ROUTES.REGISTER, element: <PageSuspense><RegisterPage /></PageSuspense> },
       {
         path: ROUTES.INIT,
@@ -38,7 +46,7 @@ export const router = createBrowserRouter([
       {
         element: <AuthGuard />,
         children: [
-          { index: true, element: <Navigate to={ROUTES.WALLETS} replace /> },
+          { index: true, element: <IndexRedirect /> },
           { path: ROUTES.WALLETS, element: <PageSuspense><WalletsPage /></PageSuspense> },
           { path: ROUTES.SETTINGS, element: <PageSuspense><SettingsPage /></PageSuspense> },
           { path: ROUTES.PROPOSALS, element: <PageSuspense><ProposalsPage /></PageSuspense> },

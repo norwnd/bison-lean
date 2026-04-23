@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from '../stores/useAuthStore'
 import { ROUTES } from './routes'
+import { loadLastVisitedPage } from './lastVisitedPage'
 
 // useWaitForInitialFetch blocks every guard until the first fetchUser()
 // resolves. Without this, guards would act on Zustand's initial state
@@ -26,6 +27,17 @@ export function InitGuard ({ children }: { children: React.ReactNode }) {
   const inited = useAuthStore(s => s.inited)
   if (!ready) return null
   if (inited) return <Navigate to={ROUTES.LOGIN} replace />
+  return <>{children}</>
+}
+
+// GuestGuard redirects already-authenticated users to their last-visited
+// page. Used for /login so hitting it directly after logging in bounces
+// the user forward instead of showing the login form.
+export function GuestGuard ({ children }: { children: React.ReactNode }) {
+  const ready = useWaitForInitialFetch()
+  const authed = useAuthStore(s => s.authed)
+  if (!ready) return null
+  if (authed) return <Navigate to={loadLastVisitedPage()} replace />
   return <>{children}</>
 }
 

@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../stores/useAuthStore'
 
-interface Props {
-  onSuccess: () => void
-}
-
-export function LoginForm ({ onSuccess }: Props) {
+// LoginForm is self-contained: on success it only flips `authed` in the
+// auth store. Consumers react by re-rendering (RegisterPage swaps to the
+// registration branch; /login's GuestGuard redirects to the last-visited
+// page). No `onSuccess` callback needed.
+export function LoginForm () {
   const { t } = useTranslation()
   const login = useAuthStore(s => s.login)
 
@@ -29,9 +29,7 @@ export function LoginForm ({ onSuccess }: Props) {
       // password"), mirroring vanilla `forms.ts` `LoginForm.submit()`
       // L1838: `Doc.showFormError(page.errMsg, res.msg)`.
       setError(result.msg)
-      return
     }
-    onSuccess()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

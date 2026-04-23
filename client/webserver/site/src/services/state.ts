@@ -50,10 +50,15 @@ export function storeLocal (k: string, v: any) {
 
 export function fetchLocal (k: string): any {
   const v = window.localStorage.getItem(k)
-  if (v !== null) {
+  if (v === null) return null
+  try {
     return JSON.parse(v)
+  } catch (err) {
+    // Corrupted entry (external edit, extension, older schema, etc.) —
+    // treat it as absent so render-time callers don't crash the app.
+    console.warn(`fetchLocal: dropping unparseable value for ${k}`, err)
+    return null
   }
-  return null
 }
 
 export function removeLocal (k: string) {

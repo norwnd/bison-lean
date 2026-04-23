@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { LoginForm } from '../components/common/LoginForm'
 import { AppPassResetForm } from '../components/common/AppPassResetForm'
-import { ROUTES } from '../router/routes'
 
 // LoginPage holds the form for login and password reset.
 //
@@ -24,16 +22,12 @@ import { ROUTES } from '../router/routes'
 //     LoginForm mounts fresh (empty pw, error cleared, autoFocus on pw)
 export default function LoginPage () {
   const { t } = useTranslation()
-  const navigate = useNavigate()
 
   const [showResetForm, setShowResetForm] = useState(false)
 
-  // No need to call `fetchUser()` here — `useAuthStore.login()` already
-  // fetches the user internally before resolving, mirroring vanilla
-  // `forms.ts` `LoginForm.submit()` (L1834: `await app().fetchUser()`).
-  const handleLoginSuccess = useCallback(() => {
-    navigate(ROUTES.WALLETS)
-  }, [navigate])
+  // Post-login navigation is handled by GuestGuard (router/guards.tsx):
+  // once `authed` flips true, GuestGuard re-renders and <Navigate>'s to
+  // loadLastVisitedPage(). LoginPage stays UI-only.
 
   const handleResetSuccess = useCallback(() => {
     setShowResetForm(false)
@@ -51,7 +45,7 @@ export default function LoginPage () {
         {!showResetForm
 ? (
           <div>
-            <LoginForm onSuccess={handleLoginSuccess} />
+            <LoginForm />
             <div className="text-center mt-2">
               <button
                 className="btn btn-link"

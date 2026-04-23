@@ -6,6 +6,7 @@ import { useNotificationStore } from '../stores/useNotificationStore'
 import { useMarketStore } from '../stores/useMarketStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useUIStore } from '../stores/useUIStore'
+import { useTrackLastVisitedPage } from '../router/lastVisitedPage'
 import { Header } from './Header'
 import { NewUserBanner } from './NewUserBanner'
 
@@ -25,6 +26,10 @@ export function AppLayout () {
   } = useMarketStore()
 
   const { handleRunStatsNote, handleEpochReportNote, handleCEXProblemsNote } = useMMStore()
+
+  // Persist the current route to localStorage on every navigation so
+  // login (and the `/` index route) can restore it.
+  useTrackLastVisitedPage()
 
   useEffect(() => {
     document.body.classList.toggle('dark', darkMode)
