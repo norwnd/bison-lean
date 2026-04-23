@@ -133,3 +133,37 @@ export function matchStageHrefs (m: Match, net: number): (string | undefined)[] 
     undefined,
   ]
 }
+
+// StageCoinView is the per-stage view-model the match lane hands to
+// its coin buttons: which half of the caller's from/to (user's
+// outgoing vs. incoming asset) to display, plus the UI sentiment —
+// 'bad' for user-sends (colored debit, "-" prefix), 'good' for
+// user-receives (colored credit, "+" prefix), 'neutral' for the
+// counterparty's own actions (observed, no prefix). The mapping is
+// perspective-aware — "Your Swap" is stage 1 for a maker and stage 2
+// for a taker, but its side+sentiment (from, bad) is the same
+// regardless of where in the six-stage lane it falls.
+export type StageCoinView = {
+  side: 'from' | 'to',
+  sentiment: 'good' | 'bad' | 'neutral',
+}
+
+// matchStageCoinViews returns a `MATCH_STAGE_COUNT`-length array of
+// view-models (or undefined) paired with `matchStageHrefs` — the
+// caller combines each (href, view) with their own `{from, to}`
+// amounts to produce per-stage coin buttons.
+//   Your Swap    → from, bad     (user sends)
+//   Their Swap   → to, neutral   (counterparty sends; user observes)
+//   Your Redeem  → to, good      (user receives)
+//   Their Redeem → from, neutral (counterparty receives; user observes)
+export function matchStageCoinViews (m: Match): (StageCoinView | undefined)[] {
+  const isMaker = m.side === MatchSideMaker
+  return [
+    undefined,
+    isMaker ? { side: 'from', sentiment: 'bad' } : { side: 'to', sentiment: 'neutral' },
+    isMaker ? { side: 'to', sentiment: 'neutral' } : { side: 'from', sentiment: 'bad' },
+    isMaker ? { side: 'to', sentiment: 'good' } : { side: 'from', sentiment: 'neutral' },
+    isMaker ? { side: 'from', sentiment: 'neutral' } : { side: 'to', sentiment: 'good' },
+    undefined,
+  ]
+}

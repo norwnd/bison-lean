@@ -5,8 +5,30 @@
 // and fonts come from the project's CSS variables so the page works in
 // both light and dark mode.
 
+// Shared pill-button geometry for the status-diagram clickables —
+// the match mini-card (from→to) and the per-stage coin buttons. Both
+// use the same border/background/hover treatment so they read as a
+// consistent family of interactive chips.
+@mixin pill-button-base {
+  display: inline-flex;
+  align-items: center;
+  column-gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background-color: var(--section-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+@mixin pill-button-hover {
+  border-color: var(--btn-hover-border-color);
+  background-color: var(--tertiary-bg);
+}
+
 .order-page {
-  max-width: 1400px;
   padding: 1.25rem;
   height: 100%;
   overflow-y: auto;
@@ -94,19 +116,10 @@
     margin-bottom: 1.25rem;
   }
 
-  // --------------------------------------------------------------------
-  // Status diagram (replaces the old Matches section — see OrderPage.tsx
-  // StatusDiagram block). Lanes stack vertically: order-lane at the
-  // top, match lanes in stamp order. Each lane carries a single outcome
-  // color driven by a `lane-{good|warning|bad|neutral}` modifier that
-  // sets the `--lane-color` custom property; individual stages inherit
-  // that color via `.colored` (dots) or `[data-connector="colored"]`
-  // (connectors). Stage labels are always `--text-color-secondary` so
-  // the lane color lives only in the dots+connectors, not the text.
-  // Connectors are drawn as `::after` pseudo-elements on each stage
-  // rather than as separate DOM nodes so the stages remain a clean
-  // N-column grid (one cell per stage).
-  // --------------------------------------------------------------------
+  // Status diagram: lanes stack vertically, each carrying a single
+  // `--lane-color` that colored dots and `::after` connectors inherit.
+  // Connectors render as pseudo-elements so the stage row stays a
+  // clean N-column grid.
 
   .status-diagram {
     margin-top: 0.65rem;
@@ -144,8 +157,19 @@
     line-height: 1;
   }
 
-  .lane-stages {
+  // Stage-count grid. All three "columns by stage" containers (the
+  // stage row, the mini-card row, the revoked-match divert row) share
+  // the same N-column layout driven by `--stage-count` set on the
+  // parent .lane div (ORDER_STAGE_COUNT or MATCH_STAGE_COUNT from the
+  // React side).
+  .lane-stages,
+  .lane-card-row,
+  .lane-divert-row {
     display: grid;
+    grid-template-columns: repeat(var(--stage-count), 1fr);
+  }
+
+  .lane-stages {
     align-items: start;
   }
 
@@ -174,25 +198,51 @@
       color: var(--text-color-secondary);
       text-align: center;
       line-height: 1.15;
-
-      // Stage labels become explorer links for swap/redeem stages
-      // once the corresponding coin is known. Resting state is
-      // indistinguishable from the plain label; hover lifts color
-      // and adds an underline to signal it's clickable.
-      a {
-        color: inherit;
-        text-decoration: none;
-
-        &:hover {
-          color: var(--text-color);
-          text-decoration: underline;
-        }
-      }
     }
 
     &.colored .diagram-dot {
       background-color: var(--lane-color);
     }
+  }
+
+  // Per-stage coin pill (amount + icon), a smaller sibling of
+  // .mini-match-card. Lives inside `.lane-card-row` so it shares the
+  // same grid row as the mini-card — horizontally aligned on a
+  // single baseline under the stages strip. When rendered as an
+  // `<a>` it's a clickable explorer link (new tab); the `.readonly`
+  // variant (used to preview the current stage's pending amount
+  // before the coin is broadcast) drops the card chrome so it reads
+  // as plain text, mirroring the `.mini-match-card.readonly` pattern.
+  .stage-coin-button {
+    @include pill-button-base;
+
+    font-size: 15px;
+    text-decoration: none;
+
+    &:hover {
+      @include pill-button-hover;
+    }
+
+    &.readonly {
+      cursor: default;
+      border-color: transparent;
+      background-color: transparent;
+
+      &:hover {
+        border-color: transparent;
+        background-color: transparent;
+      }
+    }
+  }
+
+  // Amount text inside a stage-coin-button: colored by sentiment
+  // (user-debit "-" / user-credit "+" / observe) so money flow
+  // reads at a glance. The icon stays its natural color — only the
+  // amount signals direction.
+  .stage-coin-amt {
+    &.stage-coin-bad { color: var(--indicator-bad); }
+    &.stage-coin-good { color: var(--indicator-good); }
+    &.stage-coin-neutral { color: var(--indicator-neutral); }
   }
 
   // Stage-to-stage connector. Starts just past the right edge of this
@@ -218,8 +268,11 @@
   }
 
   .lane-card-row {
-    display: grid;
     margin-top: 0.7rem;
+    // Mini-match-card and stage-coin-buttons live in the same row;
+    // center them vertically so the smaller pills sit mid-height
+    // against the taller mini-card.
+    align-items: center;
   }
 
   .lane-card-cell {
@@ -231,22 +284,12 @@
   }
 
   .mini-match-card {
-    display: inline-flex;
-    align-items: center;
-    column-gap: 0.3rem;
+    @include pill-button-base;
+
     font-size: 15px;
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background-color: var(--section-bg);
-    color: var(--text-color);
-    cursor: pointer;
-    white-space: nowrap;
-    line-height: 1.2;
 
     &:hover {
-      border-color: var(--btn-hover-border-color);
-      background-color: var(--tertiary-bg);
+      @include pill-button-hover;
     }
 
     &.expanded {
@@ -279,7 +322,6 @@
   // Revoked-match divert: vertical connector drops from the
   // revocation column to a standalone Refund stage below.
   .lane-divert-row {
-    display: grid;
     margin-top: 0.2rem;
   }
 

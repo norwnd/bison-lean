@@ -17,14 +17,14 @@ import { coinExplorerURL, formatCoinID } from '../components/CoinExplorers'
 import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
 import { FormOverlay } from '../components/common/FormOverlay'
 import {
-  type LaneColor, MATCH_STAGE_COUNT,
+  type LaneColor, type StageCoinView, MATCH_STAGE_COUNT,
   matchStageLabels, matchStageColored, matchCurStageIdx,
-  matchLaneColor, matchStageHrefs,
+  matchLaneColor, matchStageHrefs, matchStageCoinViews,
   makerSwapCoin, takerSwapCoin, makerRedeemCoin, takerRedeemCoin,
 } from '../components/MatchStages'
 import {
   ORDER_STAGE_COUNT,
-  orderStageLabels, orderStageColored, orderReachedStageIdx,
+  orderStageLabels, orderStageColored, orderStageAgeMs,
   orderLaneColor,
 } from '../components/OrderStages'
 import type {
@@ -133,8 +133,23 @@ function TimeAgo ({ ms }: { ms: number }) {
 // /markets page and any other status-displaying UI can reuse the
 // same mappings.
 
+// StageCoin is the display-layer bundle for a stage's coin pill —
+// the amount string, its asset icon, the UI sentiment that decorates
+// the amount (sign + color: 'bad' = "-" debit, 'good' = "+" credit,
+// 'neutral' = plain), and an optional explorer URL. When `href` is
+// undefined the pill renders non-clickable (no border/background) —
+// used for the in-progress stage to preview the pending amount
+// before the coin is broadcast. Absent entirely when the stage has
+// no on-chain coin (Match / Completed).
+type StageCoin = {
+  amt: string,
+  icon: string,
+  href?: string,
+  sentiment: StageCoinView['sentiment'],
+}
+
 function Stage ({
-  label, colored, connectorColored, href,
+  label, colored, connectorColored, ageMs,
 }: {
   label: string,
   colored: boolean,
@@ -142,25 +157,59 @@ function Stage ({
   // outgoing connector). true draws the connector in the lane color;
   // false draws it in the default grey.
   connectorColored?: boolean,
-  // If provided, the stage label becomes an external explorer link.
-  // Used by the match lane for the swap/redeem stages once the
-  // corresponding on-chain coin is known.
-  href?: string,
+  // ageMs, when defined, appends a live "(X ago)" to the label.
+  ageMs?: number,
 }) {
   const connectorAttr = connectorColored === undefined
     ? 'none'
     : connectorColored ? 'colored' : 'uncolored'
-  const labelInner = href
-    ? <a href={href} target="_blank" rel="noopener noreferrer">{label}</a>
-    : label
   return (
     <div
       className={`diagram-stage${colored ? ' colored' : ''}`}
       data-connector={connectorAttr}
     >
       <div className="diagram-dot" />
-      <div className="diagram-stage-label">{labelInner}</div>
+      <div className="diagram-stage-label">
+        {label}
+        {ageMs !== undefined && <> (<TimeAgo ms={ageMs} /> ago)</>}
+      </div>
     </div>
+  )
+}
+
+// StageCoinButton renders a single stage's coin as a compact pill
+// (amount + asset icon). Used inside `.lane-card-row` so the pills
+// share the same grid row as the mini-match-card — both sit on a
+// single horizontal line under the stages strip. The amount is
+// decorated with a sign + color driven by the coin's sentiment so a
+// glance shows whether this leg is user-debit ("-" bad), user-credit
+// ("+" good), or neutral observation (no prefix). When a `href` is
+// provided the pill is clickable (explorer link, new tab); otherwise
+// it renders as a non-interactive readonly preview (no border /
+// background) — used to project the current stage's pending amount
+// before the coin is broadcast.
+function StageCoinButton ({ coin }: { coin: StageCoin }) {
+  const prefix = coin.sentiment === 'bad' ? '-' : coin.sentiment === 'good' ? '+' : ''
+  const body = (
+    <>
+      <span className={`stage-coin-amt stage-coin-${coin.sentiment}`}>
+        {prefix}{coin.amt}
+      </span>
+      <img src={coin.icon} alt="" className="micro-icon" />
+    </>
+  )
+  if (!coin.href) {
+    return <span className="stage-coin-button readonly">{body}</span>
+  }
+  return (
+    <a
+      className="stage-coin-button"
+      href={coin.href}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {body}
+    </a>
   )
 }
 
@@ -203,20 +252,16 @@ function MiniCard ({
   )
 }
 
-function LaneStages ({ labels, colored, hrefs }: {
+function LaneStages ({ labels, colored, ages }: {
   labels: readonly string[],
   colored: boolean[],
-  // Per-stage explorer URLs. Same length as `labels`; entries are
-  // undefined when no link applies to that stage. Omit the prop
-  // entirely for lanes where no stage is ever clickable (e.g. the
-  // order lane).
-  hrefs?: (string | undefined)[],
+  // ages[i], when defined, drives a live "(X ago)" suffix on stage
+  // i's label. Used by the order lane for its first and terminal
+  // stages; match lanes leave this undefined.
+  ages?: (number | undefined)[],
 }) {
   return (
-    <div
-      className="lane-stages"
-      style={{ gridTemplateColumns: `repeat(${labels.length}, 1fr)` }}
-    >
+    <div className="lane-stages">
       {labels.map((label, i) => {
         // A connector belongs to the lane color iff both of the stages
         // it joins are colored — so the colored region is visually
@@ -230,7 +275,7 @@ function LaneStages ({ labels, colored, hrefs }: {
             label={label}
             colored={colored[i]}
             connectorColored={connectorColored}
-            href={hrefs?.[i]}
+            ageMs={ages?.[i]}
           />
         )
       })}
@@ -521,7 +566,10 @@ export default function OrderPage () {
     (_, i) => orderStageColored(order, i)
   )
   const orderLabels = orderStageLabels(order, t)
-  const orderCurIdx = orderReachedStageIdx(order)
+  const orderAges: (number | undefined)[] = Array.from(
+    { length: ORDER_STAGE_COUNT },
+    (_, i) => orderStageAgeMs(order, i)
+  )
   const orderColor: LaneColor = orderLaneColor(order)
 
   // ---------------------------------------------------------------------------
@@ -796,12 +844,6 @@ export default function OrderPage () {
           <div className="label">{t('Quantity')}</div>
           <div className="value">{fmtBase(order.qty)} {shortSymbol(bUnit)}</div>
         </div>
-        <div className="summary-cell">
-          <div className="label">{t('Age')}</div>
-          <div className="value" title={new Date(order.submitTime).toLocaleString()}>
-            <TimeAgo ms={order.submitTime} /> ago
-          </div>
-        </div>
       </div>
 
       {(canCancel || canAccelerate) && (
@@ -824,24 +866,19 @@ export default function OrderPage () {
       )}
 
       <div className="status-diagram">
-        {/* Order lane: 4 stages (Created / Active-filled / Active-
-            settled / Completed). Stage 2 splits out the settlement
-            phase so an Executed-but-still-settling order stays
-            visually in-progress until every match wraps up. The
-            terminal label morphs to Canceled/Revoked/Completed. */}
-        <div className={`lane order-lane lane-${orderColor}`}>
+        {/* Order lane: 3 stages (Created / Active / terminal). Stages
+            0 and 2 carry a live "(X ago)" suffix. The terminal label
+            morphs to Completed/Canceled/Revoked. */}
+        <div
+          className={`lane order-lane lane-${orderColor}`}
+          style={{ '--stage-count': ORDER_STAGE_COUNT } as React.CSSProperties}
+        >
           <div className="lane-header">
             <span className="lane-label">{t('Order')}</span>
           </div>
-          <LaneStages labels={orderLabels} colored={orderColored} />
-          <div
-            className="lane-card-row"
-            style={{ gridTemplateColumns: `repeat(${ORDER_STAGE_COUNT}, 1fr)` }}
-          >
-            <div
-              className="lane-card-cell"
-              style={{ gridColumn: orderCurIdx + 1 }}
-            >
+          <LaneStages labels={orderLabels} colored={orderColored} ages={orderAges} />
+          <div className="lane-card-row">
+            <div className="lane-card-cell" style={{ gridColumn: 1 }}>
               <MiniCard {...orderMini()} />
             </div>
           </div>
@@ -856,28 +893,70 @@ export default function OrderPage () {
           const labels = matchStageLabels(m, t)
           const colored = labels.map((_, i) => matchStageColored(m, i))
           const hrefs = matchStageHrefs(m, net)
-          const curIdx = matchCurStageIdx(m)
+          const views = matchStageCoinViews(m)
           const mini = matchFromTo(m)
+          const curIdx = matchCurStageIdx(m)
+          // Compose per-stage coin pills from hrefs + views + mini.
+          // A stage gets a pill when it has a mapped view (Match and
+          // Completed stages are undefined in `views`) AND either the
+          // coin's explorer URL is known (clickable) or it's the
+          // current stage (readonly preview — no href, non-clickable
+          // styling).
+          const stageCoins: (StageCoin | undefined)[] = views.map((view, i) => {
+            if (!view) return undefined
+            const href = hrefs[i]
+            if (!href && i !== curIdx) return undefined
+            return {
+              amt: mini[view.side].amt,
+              icon: mini[view.side].icon,
+              href,
+              sentiment: view.sentiment,
+            }
+          })
           const expanded = expandedMatchId === m.matchID
           const laneColor = matchLaneColor(m)
-          const gridCols = { gridTemplateColumns: `repeat(${MATCH_STAGE_COUNT}, 1fr)` }
+          // Refund stage coin: the user is always refunded their own
+          // outgoing asset ('from' side) and getting money back is a
+          // credit — sentiment 'good' with a "+" prefix. Only
+          // computed for revoked matches.
+          const refundHref = m.revoked ? coinExplorerURL(m.refund, net) : undefined
+          const refundCoin: StageCoin | undefined = refundHref
+            ? { amt: mini.from.amt, icon: mini.from.icon, href: refundHref, sentiment: 'good' }
+            : undefined
           return (
-            <div key={m.matchID} className={`lane match-lane lane-${laneColor}`}>
-              <LaneStages labels={labels} colored={colored} hrefs={hrefs} />
-              <div className="lane-card-row" style={gridCols}>
-                <div
-                  className="lane-card-cell"
-                  style={{ gridColumn: curIdx + 1 }}
-                >
+            <div
+              key={m.matchID}
+              className={`lane match-lane lane-${laneColor}`}
+              style={{ '--stage-count': MATCH_STAGE_COUNT } as React.CSSProperties}
+            >
+              <LaneStages labels={labels} colored={colored} />
+              {/* Mini-card first in DOM so CSS grid auto-flow places
+                  it on row 1 col 1 before the coin cells fill columns
+                  2..N — otherwise sparse auto-flow would wrap the
+                  mini-card onto a new row because col 1 precedes the
+                  flow cursor. */}
+              <div className="lane-card-row">
+                <div className="lane-card-cell" style={{ gridColumn: 1 }}>
                   <MiniCard
                     {...mini}
                     expanded={expanded}
                     onClick={() => setExpandedMatchId(expanded ? null : m.matchID)}
                   />
                 </div>
+                {stageCoins.map((coin, i) => coin
+                  ? (
+                    <div
+                      key={`coin-${i}`}
+                      className="lane-card-cell"
+                      style={{ gridColumn: i + 1 }}
+                    >
+                      <StageCoinButton coin={coin} />
+                    </div>
+                  )
+                  : null)}
               </div>
               {m.revoked && (
-                <div className="lane-divert-row" style={gridCols}>
+                <div className="lane-divert-row">
                   <div
                     className="lane-divert-cell"
                     style={{ gridColumn: curIdx + 1 }}
@@ -886,8 +965,8 @@ export default function OrderPage () {
                     <Stage
                       label={t('Refund')}
                       colored={Boolean(m.refund)}
-                      href={coinExplorerURL(m.refund, net)}
                     />
+                    {refundCoin && <StageCoinButton coin={refundCoin} />}
                   </div>
                 </div>
               )}

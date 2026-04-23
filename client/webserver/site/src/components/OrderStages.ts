@@ -3,30 +3,29 @@ import {
   StatusCanceled, StatusRevoked,
 } from '../stores/types'
 import type { Match, Order } from '../stores/types'
-import { filled, settled } from './AccountUtils'
+import { filled } from './AccountUtils'
 import type { LaneColor } from './MatchStages'
 
-// An order progresses through four discrete UI stages:
-//   0: Created
-//   1: Active (X% filled)    — past Epoch, no match has finished yet
-//   2: Active (Z% settled)   — at least one match has finished
-//   3: Completed (Y% settled) — every match finished, order off the book
-// The terminal label morphs to reflect the actual outcome ("Completed"
-// / "Canceled" / "Revoked"). All three percentages update live from
-// filled()/settled() — e.g. once stage 2 is reached, "X% filled" in
-// stage 1 keeps ticking as new matches arrive.
+// An order progresses through three discrete UI stages:
+//   0: Created                      — fires on submit
+//   1: Active (X% filled)           — on the book, anything not-yet-
+//                                     terminal
+//   2: {Completed|Canceled|Revoked} — terminal, order off the book AND
+//                                     every regular match wrapped up
+// Stages 0 and 2 pair with a live "(X ago)" suffix the caller renders
+// via `orderStageAgeMs`.
 //
 // Unlike match statuses — which name the *last completed event* —
 // order status names the *current phase* (StatusBooked = "on the book
-// accepting matches"). And crucially, `StatusExecuted` means "fully
-// matched on the book", not "all swaps settled" — so an Executed
-// order can still be in stage 2 while counterparty swaps are in
-// flight. Stage 3 only fires when every regular match has wrapped up
-// AND the order is off the book (Executed / Canceled / Revoked).
+// accepting matches"). `StatusExecuted` means "fully matched on the
+// book", not "all swaps settled" — so an Executed order can still be
+// in stage 1 while counterparty swaps are in flight. Stage 2 only
+// fires when every regular match has wrapped up AND the order is off
+// the book (Executed / Canceled / Revoked).
 
 type TFunc = (k: string, opts?: Record<string, string>) => string
 
-export const ORDER_STAGE_COUNT = 4
+export const ORDER_STAGE_COUNT = 3
 
 function pct (n: number, d: number): string {
   if (d <= 0) return '0.0'
@@ -41,10 +40,11 @@ function regularMatches (order: Order): Match[] {
   return (order.matches ?? []).filter(m => !m.isCancel)
 }
 
-// orderTerminalName picks the outcome word used in stage-3 label and
-// in the compact status pill ("Completed" / "Canceled" / "Revoked").
-// Non-terminal statuses fall through to "Completed" — callers that
-// care about the distinction should gate the call themselves.
+// orderTerminalName picks the outcome word used in the stage-2 label
+// and in the compact status pill ("Completed" / "Canceled" /
+// "Revoked"). Non-terminal statuses fall through to "Completed" —
+// callers that care about the distinction should gate the call
+// themselves.
 function orderTerminalName (order: Order, t: TFunc): string {
   if (order.status === StatusCanceled) return t('Canceled')
   if (order.status === StatusRevoked) return t('Revoked')
@@ -52,33 +52,42 @@ function orderTerminalName (order: Order, t: TFunc): string {
 }
 
 // orderReachedStageIdx returns the furthest stage the order got to.
-// The mapping is derived from match data (not purely from status),
-// because `StatusExecuted` alone doesn't tell us whether swaps have
-// actually settled.
+// Derived from match data + status because `StatusExecuted` alone
+// doesn't tell us whether swaps have actually settled.
 export function orderReachedStageIdx (order: Order): number {
   if (order.status === StatusEpoch) return 0
   const regulars = regularMatches(order)
-  const hasFinished = regulars.some(m => !m.active)
-  if (!hasFinished) return 1
   const allDone = !regulars.some(m => m.active)
   const terminal = order.status === StatusExecuted ||
     order.status === StatusCanceled || order.status === StatusRevoked
-  if (allDone && terminal) return 3
-  return 2
+  if (allDone && terminal) return 2
+  return 1
 }
 
-// orderStageLabels returns the four left-to-right stage labels. Both
-// "settled" labels render the same cumulative % — only the outcome
-// name (Completed / Canceled / Revoked) differs in the terminal slot.
+// orderStageLabels returns the three left-to-right stage labels. The
+// terminal slot is just the outcome name — the caller pairs it with
+// a live "(X ago)" suffix via `orderStageAgeMs`.
 export function orderStageLabels (order: Order, t: TFunc): string[] {
   const filledPct = pct(filled(order), order.qty)
-  const settledPct = pct(settled(order), order.qty)
   return [
     t('Created'),
     `${t('Active')} (${filledPct}% ${t('filled')})`,
-    `${t('Active')} (${settledPct}% ${t('settled')})`,
-    `${orderTerminalName(order, t)} (${settledPct}% ${t('settled')})`,
+    orderTerminalName(order, t),
   ]
+}
+
+// orderStageAgeMs returns the reference timestamp for stages that
+// render a live "(X ago)" suffix — stage 0 (always, from submitTime)
+// and the terminal stage once it's reached (from `stamp`, which the
+// server advances on each order update; for a terminal order this
+// captures the transition). Other stages return undefined.
+export function orderStageAgeMs (order: Order, stageIdx: number): number | undefined {
+  if (stageIdx === 0) return order.submitTime
+  if (stageIdx === ORDER_STAGE_COUNT - 1 &&
+      orderReachedStageIdx(order) === ORDER_STAGE_COUNT - 1) {
+    return order.stamp
+  }
+  return undefined
 }
 
 // orderLaneColor returns the single color for the entire order lane.
