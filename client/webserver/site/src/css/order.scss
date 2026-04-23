@@ -46,43 +46,44 @@
   height: 100%;
   overflow-y: auto;
 
-  .order-header {
+  // Consolidated top-of-page summary line: "{type}: [mini-card]
+  // ({rate})". Flex baseline-aligns the type text, the inline
+  // readonly mini-card, and the rate suffix so they read as a single
+  // centered sentence. Replaces the previous `.order-header` +
+  // `.summary-grid` + the order-lane's "Order" header.
+  .order-summary-line {
     display: flex;
-    flex-direction: row;
-    justify-content: space-between;
+    justify-content: center;
     align-items: baseline;
     flex-wrap: wrap;
-    column-gap: 1.5rem;
-    row-gap: 0.4rem;
+    column-gap: 0.5rem;
+    row-gap: 0.3rem;
     padding-bottom: 1rem;
     margin-bottom: 1.1rem;
     border-bottom: 1px solid var(--border-color);
-  }
-
-  .market-host {
-    font-size: 20px;
     font-family: $demi-sans;
+    font-size: 19px;
     line-height: 1.2;
+
+    .order-rate {
+      color: var(--text-color-secondary);
+    }
+
+    // Inline the readonly order mini-card with the surrounding text:
+    // strip the pill padding and match the line's font-size so the
+    // from/to amounts baseline with "{type}:" and "({rate})". The
+    // arrow also inherits the size so it scales with the line.
+    .mini-match-card.readonly {
+      padding: 0;
+      font-size: inherit;
+      line-height: inherit;
+
+      .mini-arrow {
+        font-size: inherit;
+      }
+    }
   }
 
-  .order-id {
-    font-family: $mono;
-    font-size: 14px;
-    color: var(--text-color-secondary);
-    word-break: break-all;
-    user-select: all;
-    line-height: 1.4;
-  }
-
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
-    column-gap: 2.75rem;
-    row-gap: 1.1rem;
-    margin-bottom: 1.55rem;
-  }
-
-  .summary-cell,
   .metric {
     display: flex;
     flex-direction: column;
@@ -99,13 +100,9 @@
     }
 
     > .value {
-      font-size: 19px;
+      font-size: 18px;
       line-height: 1.2;
     }
-  }
-
-  .metric > .value {
-    font-size: 18px;
   }
 
   .action-bar {
@@ -217,7 +214,7 @@
     }
 
     .diagram-stage-label {
-      margin-top: 7px;
+      margin-top: 5px;
       font-size: 12px;
       font-family: $demi-sans;
       letter-spacing: 0.5px;
@@ -294,7 +291,7 @@
   }
 
   .lane-card-row {
-    margin-top: 0.7rem;
+    margin-top: 0.28rem;
     // Mini-match-card and stage-coin-buttons live in the same row;
     // center them vertically so the smaller pills sit mid-height
     // against the taller mini-card.

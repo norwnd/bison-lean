@@ -975,28 +975,21 @@ export default function OrderPage () {
 
   return (
     <div className="order-page">
-      <div className="order-header">
-        {order.id && <div className="order-id">{order.id}</div>}
-        <div className="market-host">
-          {shortSymbol(bUnit)}/{shortSymbol(qUnit)} @ {order.host}
-        </div>
-      </div>
-
-      <div className="summary-grid">
-        <div className="summary-cell">
-          <div className="label">{t('Type')}</div>
-          <div className={`value ${order.sell ? 'text-danger' : 'text-success'}`}>{typeStr}</div>
-        </div>
-        <div className="summary-cell">
-          <div className="label">{t('Rate')}</div>
-          <div className="value">
-            {rateStr}{rateUnit && ` ${rateUnit}`}
-          </div>
-        </div>
-        <div className="summary-cell">
-          <div className="label">{t('Quantity')}</div>
-          <div className="value">{fmtBase(order.qty)} {shortSymbol(bUnit)}</div>
-        </div>
+      {/* Single consolidated summary line, centered horizontally.
+          Collapses the previous top-of-page `.order-header` (id +
+          market/host), `.summary-grid` (Type/Rate/Quantity), and the
+          order-lane's `.lane-header` ("Order") into one baseline:
+          "{order-type}: [from → to] ({rate})". Quantity is implicit
+          in the mini-card's from/to amounts; id/host/lane-label are
+          dropped — the /order URL already identifies the order. */}
+      <div className="order-summary-line">
+        <span className={`order-type ${order.sell ? 'text-danger' : 'text-success'}`}>
+          {typeStr}:
+        </span>
+        <MiniCard {...orderMini()} />
+        <span className="order-rate">
+          ({rateStr}{rateUnit && ` ${rateUnit}`})
+        </span>
       </div>
 
       {(canCancel || canAccelerate) && (
@@ -1021,20 +1014,15 @@ export default function OrderPage () {
       <div className="status-diagram">
         {/* Order lane: 3 stages (Created / Active / terminal). Stages
             0 and 2 carry a live "(X ago)" suffix. The terminal label
-            morphs to Completed/Canceled/Revoked. */}
+            morphs to Completed/Canceled/Revoked. The lane renders
+            the stages strip only — the order-level header and
+            mini-card are consolidated into `.order-summary-line`
+            above. */}
         <div
           className={`lane order-lane lane-${orderColor}`}
           style={cssVars({ '--stage-count': ORDER_STAGE_COUNT })}
         >
-          <div className="lane-header">
-            <span className="lane-label">{t('Order')}</span>
-          </div>
           <LaneStages stages={orderStages} />
-          <div className="lane-card-row">
-            <div className="lane-card-cell" style={{ gridColumn: 1 }}>
-              <MiniCard {...orderMini()} />
-            </div>
-          </div>
         </div>
 
         {/* Match lanes — one per regular match, in stamp order.
