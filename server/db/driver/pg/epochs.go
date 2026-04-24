@@ -232,6 +232,62 @@ func (a *Archiver) InsertCandles(base, quote uint32, candleDur uint64, cs []*can
 	return nil
 }
 
+// LoadOlderCandles returns up to n candles of the specified duration with
+// end_stamp strictly less than `before`, ordered ascending by end_stamp. This
+// is the history-pagination companion to the in-memory cache used by
+// handleCandles; it reads straight from the candles table so callers can
+// page past the cache boundary.
+func (a *Archiver) LoadOlderCandles(base, quote uint32, candleDur, before uint64, n int) ([]*candles.Candle, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	marketSchema, err := a.marketSchema(base, quote)
+	if err != nil {
+		return nil, err
+	}
+
+	tableName := fullCandlesTableName(a.dbName, marketSchema, candleDur)
+	stmt := fmt.Sprintf(internal.SelectCandlesBefore, tableName)
+
+	ctx, cancel := context.WithTimeout(a.ctx, a.queryTimeout)
+	defer cancel()
+
+	rows, err := a.db.QueryContext(ctx, stmt, before, n)
+	if err != nil {
+		return nil, fmt.Errorf("QueryContext: %w", err)
+	}
+	defer rows.Close()
+
+	// SQL returns newest-first. Collect then reverse so callers get
+	// ascending end_stamp, matching how the in-memory cache is ordered.
+	result := make([]*candles.Candle, 0, n)
+	var endStamp, matchVol, quoteVol, highRate, lowRate, startRate, endRate fastUint64
+	for rows.Next() {
+		err = rows.Scan(&endStamp, &matchVol, &quoteVol, &highRate, &lowRate, &startRate, &endRate)
+		if err != nil {
+			return nil, fmt.Errorf("Scan: %w", err)
+		}
+		result = append(result, &candles.Candle{
+			StartStamp:  uint64(endStamp) - candleDur,
+			EndStamp:    uint64(endStamp),
+			MatchVolume: uint64(matchVol),
+			QuoteVolume: uint64(quoteVol),
+			HighRate:    uint64(highRate),
+			LowRate:     uint64(lowRate),
+			StartRate:   uint64(startRate),
+			EndRate:     uint64(endRate),
+		})
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	// Reverse in place (newest-first → ascending).
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return result, nil
+}
+
 // loadCandles loads the last n candles of a specified duration and market into
 // the provided cache.
 func (a *Archiver) loadCandles(base, quote uint32, cache *candles.Cache, n uint64) error {

@@ -41,6 +41,10 @@ func (db *TDBSource) InsertCandles(base, quote uint32, dur uint64, cs []*candles
 	return nil
 }
 
+func (db *TDBSource) LoadOlderCandles(base, quote uint32, candleDur, before uint64, n int) ([]*candles.Candle, error) {
+	return nil, nil
+}
+
 type TBookSource struct {
 	book *msgjson.OrderBook
 }

@@ -29,6 +29,10 @@ type DBSource interface {
 	LoadEpochStats(base, quote uint32, caches []*candles.Cache) error
 	LastCandleEndStamp(base, quote uint32, candleDur uint64) (uint64, error)
 	InsertCandles(base, quote uint32, dur uint64, cs []*candles.Candle) error
+	// LoadOlderCandles returns up to n candles with end_stamp strictly less
+	// than before, ordered ascending. Used to serve history-pagination
+	// requests past the in-memory cache window.
+	LoadOlderCandles(base, quote uint32, candleDur, before uint64, n int) ([]*candles.Candle, error)
 }
 
 // MarketSource is a source of market information. Markets are added after
@@ -231,6 +235,38 @@ func (s *DataAPI) handleCandles(thing any) (any, error) {
 		return nil, fmt.Errorf("error parsing binSize")
 	}
 	binSize := uint64(binSizeDuration / time.Millisecond)
+
+	// History-pagination path: bypass the in-memory cache and read
+	// strictly-older candles straight from the archiver.
+	if req.Before > 0 {
+		// Validate the market is actually known before hitting the DB --
+		// matches the error surface callers see on the cache path.
+		s.cacheMtx.RLock()
+		mktCaches := s.marketCaches[mkt]
+		s.cacheMtx.RUnlock()
+		if mktCaches == nil {
+			return nil, fmt.Errorf("market %s not known", mkt)
+		}
+		if _, ok := mktCaches[binSize]; !ok {
+			return nil, fmt.Errorf("no data available for binSize %s", req.BinSize)
+		}
+		older, err := s.db.LoadOlderCandles(req.BaseID, req.QuoteID, binSize, req.Before, req.NumCandles)
+		if err != nil {
+			return nil, fmt.Errorf("LoadOlderCandles: %w", err)
+		}
+		wc := msgjson.NewWireCandles(len(older))
+		for _, c := range older {
+			wc.StartStamps = append(wc.StartStamps, c.StartStamp)
+			wc.EndStamps = append(wc.EndStamps, c.EndStamp)
+			wc.MatchVolumes = append(wc.MatchVolumes, c.MatchVolume)
+			wc.QuoteVolumes = append(wc.QuoteVolumes, c.QuoteVolume)
+			wc.HighRates = append(wc.HighRates, c.HighRate)
+			wc.LowRates = append(wc.LowRates, c.LowRate)
+			wc.StartRates = append(wc.StartRates, c.StartRate)
+			wc.EndRates = append(wc.EndRates, c.EndRate)
+		}
+		return wc, nil
+	}
 
 	s.cacheMtx.RLock()
 	defer s.cacheMtx.RUnlock()

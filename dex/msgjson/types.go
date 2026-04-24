@@ -1351,6 +1351,11 @@ type CandlesRequest struct {
 	QuoteID    uint32 `json:"quoteID"`
 	BinSize    string `json:"binSize"`
 	NumCandles int    `json:"numCandles,omitempty"` // default and max defined in apidata.
+	// Before, when non-zero, requests candles strictly older than this end
+	// stamp (in ms). Used by clients to paginate further back than the
+	// in-memory cache by reading from the archiver DB. Results are returned
+	// in ascending end_stamp order, just like a cache read.
+	Before uint64 `json:"before,omitempty"`
 }
 
 // Candle is a statistical history of a specified period of market activity.

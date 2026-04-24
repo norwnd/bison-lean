@@ -87,6 +87,17 @@ const (
 	ORDER BY end_stamp
 	LIMIT $1;`
 
+	// SelectCandlesBefore returns the N newest candles that precede a given
+	// end_stamp cursor. Used for paginating further back than the server's
+	// in-memory cache. Ordered DESC so the outer call can reverse into
+	// ascending order cheaply without a SQL sort on the full table.
+	SelectCandlesBefore = `SELECT end_stamp, match_volume, quote_volume,
+		high_rate, low_rate, start_rate, end_rate
+	FROM %s
+	WHERE end_stamp < $1
+	ORDER BY end_stamp DESC
+	LIMIT $2;`
+
 	SelectLastEndStamp = `SELECT (end_stamp)
 		FROM %s
 		ORDER BY end_stamp
