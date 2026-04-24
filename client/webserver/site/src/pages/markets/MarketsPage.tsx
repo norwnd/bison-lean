@@ -194,6 +194,13 @@ export default function MarketsPage () {
   const [candleLoading, setCandleLoading] = useState(false)
   const [mouseCandle, setMouseCandle] = useState<Candle | null>(null)
   const candleCacheRef = useRef<Record<string, import('../../stores/types').CandlesPayload>>({})
+  // Durations with an outstanding `loadcandles` request. Set by the
+  // market-load prefetch and by the on-demand loadCandles fallback; cleared
+  // in handleCandles when the response lands. Used to de-dupe the two
+  // request paths so a duration-click during prefetch doesn't fire a
+  // duplicate request — the click just flips the spinner on and waits for
+  // the in-flight response.
+  const candlesInFlightRef = useRef<Set<string>>(new Set())
   // Per-duration history pagination state. `inFlight` prevents concurrent
   // loadoldercandles requests for the same dur; `floorReached` latches
   // true once the server returns fewer candles than we asked for, which
@@ -205,6 +212,11 @@ export default function MarketsPage () {
   // other durs would cost a re-render per candle_update for no benefit.
   const [candleCacheVersion, setCandleCacheVersion] = useState(0)
   const reqCandleDurRef = useRef(candleDur)
+  // Ref-stable access to `candleDur` for the market-setup effect, which
+  // deliberately omits `candleDur` from its deps (we don't want to re-run
+  // the loadmarket / handler-subscribe pipeline when only the duration
+  // changes). The prefetch loop reads this to fire the selected dur first.
+  const candleDurRef = useLatestRef(candleDur)
 
   // -------------------------------------------------------------------------
   // Trade form state
@@ -346,27 +358,32 @@ export default function MarketsPage () {
   }, [selected])
 
   // -------------------------------------------------------------------------
-  // Market subscription + WS route handlers (combined so that handlers
-  // are registered BEFORE the loadmarket request is sent)
+  // Book/order WS wiring + loadmarket subscription.
+  //
+  // Handlers are registered BEFORE the loadmarket request is sent so the
+  // first `book` notification has somewhere to land.
+  //
+  // CL-MP-RERENDER-CASCADE (Fix B): `currentXc` deliberately NOT in deps.
+  // Handlers read it via `currentXcRef.current` so spot-note-driven
+  // identity changes don't tear down + re-subscribe WS handlers and
+  // re-request `loadmarket` on every tick. Pre-fix this effect was
+  // firing ~9× per spot-note cluster, amplifying 9 notes into ~23
+  // MarketsPage renders (plus an 18ms async tail from the server
+  // responding to the rapid-fire unmarket/loadmarket round-trips).
+  // Post-fix: 1:1 renders, no tail. The sibling candle effect below
+  // observes the same discipline.
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (!selected) return
 
-    // Reset state for new market. NOTE: `initialRateFilledRef` is reset
-    // separately in its own `[selected]`-only effect above — we don't
-    // want WS reconnect (which re-fires this effect) to clobber the flag
-    // and re-seed the user's rate input. The other resets below still
-    // run on reconnect because the server will send a fresh book / we
-    // re-subscribe to candles.
+    // Reset book/match state for the new market. NOTE:
+    // `initialRateFilledRef` is reset in its own `[selected]`-only effect
+    // above — we don't want WS reconnect (which re-fires this effect) to
+    // clobber the flag and re-seed the user's rate input.
     bookRef.current = null
-    setCandleData(null)
-    candleCacheRef.current = {}
-    candleHistoryRef.current = {}
-    setCandleCacheVersion(0)
     setRecentMatches([])
     bumpBook()
 
-    // 1) Subscribe WS handlers FIRST
     const handleBook = (data: BookUpdate) => {
       const mktBook: MarketOrderBook = data.payload
       // CL-MP-RERENDER-CASCADE (Fix B): read `currentXc` through the ref
@@ -463,11 +480,72 @@ export default function MarketsPage () {
       if (order.msgRate > 0 && bookRef.current) bookRef.current.add(order)
     }
 
+    const handleEpochMatchSummary = (data: BookUpdate) => {
+      // CL-MP-FLASH-INVESTIGATE Fix 1: bail on empty arrays too, not just
+      // null. The server sends `epoch_match_summary` on every epoch
+      // boundary (every ~15s) regardless of trade activity; on an idle
+      // epoch `matchSummaries` comes through as `[]`. The old guard
+      // `!data.payload?.matchSummaries` is falsy only for null/undefined
+      // (an empty array is truthy), so every idle epoch was triggering
+      // a no-op `setRecentMatches` with a fresh array identity and
+      // forcing a MarketsPage re-render every 15s.
+      if (!data.payload?.matchSummaries?.length) return
+      setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 100))
+    }
+
+    wsSubscribe('book', handleBook)
+    wsSubscribe('book_order', handleBookOrder)
+    wsSubscribe('unbook_order', handleUnbookOrder)
+    wsSubscribe('update_remaining', handleUpdateRemaining)
+    wsSubscribe('epoch_order', handleEpochOrder)
+    wsSubscribe('epoch_match_summary', handleEpochMatchSummary)
+
+    wsRequest('loadmarket', {
+      host: selected.host,
+      base: selected.baseID,
+      quote: selected.quoteID
+    })
+
+    return () => {
+      wsUnsubscribe('book')
+      wsUnsubscribe('book_order')
+      wsUnsubscribe('unbook_order')
+      wsUnsubscribe('update_remaining')
+      wsUnsubscribe('epoch_order')
+      wsUnsubscribe('epoch_match_summary')
+      wsRequest('unmarket', {})
+    }
+  }, [selected, isWsConnected, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest, bumpBook])
+
+  // -------------------------------------------------------------------------
+  // Candle WS wiring + prefetch for every UI-exposed duration.
+  //
+  // Each response is routed to `handleCandles` and populates
+  // `candleCacheRef`; only the currently-selected dur (gated by
+  // `reqCandleDurRef`) flips the spinner off and renders. A duration-click
+  // after the prefetch is pure "display intent" — it's either an instant
+  // cache hit, or the spinner waits for the in-flight prefetch response.
+  //
+  // Sibling of the book effect above; same `currentXc`-not-in-deps
+  // discipline applies. `wsLoadCandles` on the server side idempotently
+  // calls `loadMarket`, so this effect doesn't depend on the sibling's
+  // `loadmarket` landing first.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!selected) return
+
+    setCandleData(null)
+    candleCacheRef.current = {}
+    candlesInFlightRef.current = new Set()
+    candleHistoryRef.current = {}
+    setCandleCacheVersion(0)
+
     const handleCandles = (data: BookUpdate) => {
       if (data.host !== selected.host) return
       if (!data.payload?.candles) return
       const dur = data.payload.dur
       candleCacheRef.current[dur] = data.payload
+      candlesInFlightRef.current.delete(dur)
       // MP-20: notify the high/low fallback only when the 5m cache changes.
       if (dur === '5m') setCandleCacheVersion(v => v + 1)
       if (reqCandleDurRef.current !== dur) return
@@ -541,57 +619,35 @@ export default function MarketsPage () {
       setCandleData({ ...cache })
     }
 
-    const handleEpochMatchSummary = (data: BookUpdate) => {
-      // CL-MP-FLASH-INVESTIGATE Fix 1: bail on empty arrays too, not just
-      // null. The server sends `epoch_match_summary` on every epoch
-      // boundary (every ~15s) regardless of trade activity; on an idle
-      // epoch `matchSummaries` comes through as `[]`. The old guard
-      // `!data.payload?.matchSummaries` is falsy only for null/undefined
-      // (an empty array is truthy), so every idle epoch was triggering
-      // a no-op `setRecentMatches` with a fresh array identity and
-      // forcing a MarketsPage re-render every 15s.
-      if (!data.payload?.matchSummaries?.length) return
-      setRecentMatches(prev => [...data.payload.matchSummaries, ...prev].slice(0, 100))
-    }
-
-    wsSubscribe('book', handleBook)
-    wsSubscribe('book_order', handleBookOrder)
-    wsSubscribe('unbook_order', handleUnbookOrder)
-    wsSubscribe('update_remaining', handleUpdateRemaining)
-    wsSubscribe('epoch_order', handleEpochOrder)
     wsSubscribe('candles', handleCandles)
     wsSubscribe('candle_update', handleCandleUpdate)
     wsSubscribe('older_candles', handleOlderCandles)
-    wsSubscribe('epoch_match_summary', handleEpochMatchSummary)
 
-    // 2) THEN send loadmarket (handlers are guaranteed to be ready)
-    wsRequest('loadmarket', {
-      host: selected.host,
-      base: selected.baseID,
-      quote: selected.quoteID
-    })
+    // Fire the prefetch in parallel. Selected dur first so its response
+    // isn't queued behind the others on the WS pipeline.
+    const xc = currentXcRef.current
+    const durs = xc?.candleDurs ?? []
+    const selectedDur = candleDurRef.current
+    const ordered = (selectedDur && durs.includes(selectedDur))
+      ? [selectedDur, ...durs.filter(d => d !== selectedDur)]
+      : durs
+    for (const dur of ordered) {
+      if (candlesInFlightRef.current.has(dur)) continue
+      candlesInFlightRef.current.add(dur)
+      wsRequest('loadcandles', {
+        host: selected.host,
+        base: selected.baseID,
+        quote: selected.quoteID,
+        dur
+      })
+    }
 
     return () => {
-      wsUnsubscribe('book')
-      wsUnsubscribe('book_order')
-      wsUnsubscribe('unbook_order')
-      wsUnsubscribe('update_remaining')
-      wsUnsubscribe('epoch_order')
       wsUnsubscribe('candles')
       wsUnsubscribe('candle_update')
       wsUnsubscribe('older_candles')
-      wsUnsubscribe('epoch_match_summary')
-      wsRequest('unmarket', {})
     }
-  // CL-MP-RERENDER-CASCADE (Fix B): `currentXc` deliberately NOT in deps.
-  // Handlers read it via `currentXcRef.current` so spot-note-driven
-  // identity changes don't tear down + re-subscribe WS handlers and
-  // re-request `loadmarket` on every tick. Pre-fix this effect was
-  // firing ~9× per spot-note cluster, amplifying 9 notes into ~23
-  // MarketsPage renders (plus an 18ms async tail from the server
-  // responding to the rapid-fire unmarket/loadmarket round-trips).
-  // Post-fix: 1:1 renders, no tail.
-  }, [selected, isWsConnected, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest, bumpBook])
+  }, [selected, isWsConnected, currentMktId, wsSubscribe, wsUnsubscribe, wsRequest])
 
   // -------------------------------------------------------------------------
   // Load candles when market or duration changes
@@ -614,13 +670,20 @@ export default function MarketsPage () {
       return
     }
     setCandleLoading(true)
-    wsRequest('loadcandles', {
-      host: selected.host,
-      base: selected.baseID,
-      quote: selected.quoteID,
-      dur: candleDur
-    })
-  }, [selected, isWsConnected, candleDur, wsRequest])
+    // The market-load prefetch usually has this request already in flight —
+    // a duration-click should be a pure "display intent", not a "fetch
+    // intent". Only fire on cache-and-prefetch miss (e.g. a dur that
+    // wasn't in `xc.candleDurs`, or fired before the xc was populated).
+    if (!candlesInFlightRef.current.has(candleDur)) {
+      candlesInFlightRef.current.add(candleDur)
+      wsRequest('loadcandles', {
+        host: selected.host,
+        base: selected.baseID,
+        quote: selected.quoteID,
+        dur: candleDur
+      })
+    }
+  }, [selected, candleDur, wsRequest])
 
   useEffect(() => {
     loadCandles()
