@@ -1231,6 +1231,7 @@ export default function MarketsPage () {
                     mouseCandle={mouseCandle}
                     currentMktId={currentMktId}
                     candleReporters={candleReporters}
+                    baseFiatRate={baseFiatRate}
                   />
                   <TradeForms
                     walletMap={walletMap}

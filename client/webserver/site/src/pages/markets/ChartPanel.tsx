@@ -2,7 +2,8 @@ import { useTranslation } from 'react-i18next'
 import { CandleChart, CandleReporters } from '../../components/charts/CandleChart'
 import { Wave } from '../../components/charts/Wave'
 import {
-  formatCoinAtomToLotSizeBaseCurrency, formatRateAtomToRateStep
+  atomToConventional, formatCoinAtomToLotSizeBaseCurrency, formatFiat,
+  formatRateAtomToRateStep, shortSymbol
 } from '../../hooks/useFormatters'
 import type { CandlesPayload, Candle, Market, UnitInfo } from '../../stores/types'
 import { useMarketPageContext } from './MarketPageContext'
@@ -23,6 +24,7 @@ export interface ChartPanelProps {
   mouseCandle: Candle | null
   currentMktId: string
   candleReporters: CandleReporters
+  baseFiatRate: number
 }
 
 export function ChartPanel ({
@@ -34,10 +36,18 @@ export function ChartPanel ({
   chartErrMsg,
   mouseCandle,
   currentMktId,
-  candleReporters
+  candleReporters,
+  baseFiatRate
 }: ChartPanelProps) {
   const { t } = useTranslation()
   const { currentMkt, bui, qui } = useMarketPageContext()
+
+  // Readout candle -- hovered candle, or latest when the user isn't
+  // hovering. Null when there's nothing to show (error, no market, no data).
+  const candles = candleData?.candles
+  const readoutCandle: Candle | null = !chartErrMsg && currentMkt && bui && qui && candles && candles.length > 0
+    ? (mouseCandle ?? candles[candles.length - 1])
+    : null
 
   return (
     <section className="d-flex flex-stretch-column">
@@ -98,22 +108,20 @@ export function ChartPanel ({
             />
           </div>
         </div>
-        {!chartErrMsg && currentMkt && bui && qui && (candleData?.candles?.length ?? 0) > 0 && (
-          <OhlcvReadout
-            candle={mouseCandle ?? candleData!.candles[candleData!.candles.length - 1]}
-            market={currentMkt}
-            bui={bui}
-            qui={qui}
-          />
+        {readoutCandle && currentMkt && bui && qui && (
+          <>
+            <OhlcvReadout candle={readoutCandle} market={currentMkt} bui={bui} qui={qui} />
+            <VolumeReadout candle={readoutCandle} market={currentMkt} bui={bui} baseFiatRate={baseFiatRate} />
+          </>
         )}
       </div>
     </section>
   )
 }
 
-// Binance-style top-left OHLCV readout. Renders the hovered candle, or
-// falls back to the latest candle when the user isn't hovering (or while
-// dragging). Value cells are colored per candle direction.
+// Top-left readout with High / Low / Range for the hovered candle (or the
+// latest candle when the user isn't hovering). Values inherit the candle's
+// up/down color.
 interface OhlcvReadoutProps {
   candle: Candle
   market: Market
@@ -124,25 +132,38 @@ interface OhlcvReadoutProps {
 function OhlcvReadout ({ candle, market, bui, qui }: OhlcvReadoutProps) {
   const up = candle.endRate >= candle.startRate
   const cls = up ? 'up' : 'down'
-  const changeAbs = candle.endRate - candle.startRate
-  const changePct = candle.startRate > 0 ? (changeAbs / candle.startRate) * 100 : 0
-  const sign = changeAbs >= 0 ? '+' : '\u2212'
-  const absStr = formatRateAtomToRateStep(Math.abs(changeAbs), bui, qui, market.ratestep)
-  const pctStr = `${sign}${Math.abs(changePct).toFixed(2)}%`
+  const rangePct = candle.lowRate > 0 ? ((candle.highRate - candle.lowRate) / candle.lowRate) * 100 : 0
   return (
     <div className="candle-ohlcv">
-      <span className="label">O</span>
-      <span className={cls}>{formatRateAtomToRateStep(candle.startRate, bui, qui, market.ratestep)}</span>
-      <span className="label">H</span>
-      <span className={cls}>{formatRateAtomToRateStep(candle.highRate, bui, qui, market.ratestep)}</span>
-      <span className="label">L</span>
-      <span className={cls}>{formatRateAtomToRateStep(candle.lowRate, bui, qui, market.ratestep)}</span>
-      <span className="label">C</span>
-      <span className={cls}>{formatRateAtomToRateStep(candle.endRate, bui, qui, market.ratestep)}</span>
-      <span className={cls}>{sign}{absStr}</span>
-      <span className={cls}>({pctStr})</span>
-      <span className="label">Vol</span>
-      <span className="label strong">{formatCoinAtomToLotSizeBaseCurrency(candle.matchVolume, bui, market.lotsize)}</span>
+      <span className={cls}>High: {formatRateAtomToRateStep(candle.highRate, bui, qui, market.ratestep)}</span>
+      <span className={cls}>Low: {formatRateAtomToRateStep(candle.lowRate, bui, qui, market.ratestep)}</span>
+      <span className={cls}>Range: {rangePct.toFixed(2)}%</span>
+    </div>
+  )
+}
+
+// Volume readout rendered over the chart's lower volume section. Neutral
+// color (no candle direction tint). Primary value is the USD equivalent;
+// the base amount and asset are shown in parentheses. Falls back to
+// `Volume: {base} {asset}` when no fiat rate is available.
+interface VolumeReadoutProps {
+  candle: Candle
+  market: Market
+  bui: UnitInfo
+  baseFiatRate: number
+}
+
+function VolumeReadout ({ candle, market, bui, baseFiatRate }: VolumeReadoutProps) {
+  const volStr = formatCoinAtomToLotSizeBaseCurrency(candle.matchVolume, bui, market.lotsize)
+  const asset = shortSymbol(market.basesymbol)
+  const fiat = baseFiatRate > 0 ? atomToConventional(candle.matchVolume, bui) * baseFiatRate : 0
+  return (
+    <div className="candle-volume-readout">
+      <span>
+        {fiat > 0
+          ? <>Volume: ${formatFiat(fiat)} ({volStr} {asset})</>
+          : <>Volume: {volStr} {asset}</>}
+      </span>
     </div>
   )
 }

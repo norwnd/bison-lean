@@ -353,9 +353,9 @@ div[data-handler=markets] {
     }
   }
 
-  // Binance-style top-left OHLCV readout. Renders over the canvas but
-  // doesn't steal pointer events. `.up`/`.down` cells are colored per
-  // candle direction; `.label` tags (O/H/L/C/Vol) are muted.
+  // Top-left readout with High / Low / Range for the hovered candle.
+  // Renders over the canvas but doesn't steal pointer events. All cells
+  // inherit `.up` (green) or `.down` (red) per candle direction.
   .candle-ohlcv {
     position: absolute;
     top: 5px;
@@ -373,16 +373,6 @@ div[data-handler=markets] {
     pointer-events: none;
     max-width: calc(100% - 220px); // keep the readout clear of #candleDurBttnBox on the right
 
-    .label {
-      color: var(--text-grey);
-      font-weight: 400;
-      margin-right: -4px; // tighten letter↔value spacing
-
-      &.strong {
-        color: var(--text-color);
-      }
-    }
-
     .up {
       color: #0ECB81;
       font-weight: 500;
@@ -392,6 +382,23 @@ div[data-handler=markets] {
       color: #F6465D;
       font-weight: 500;
     }
+  }
+
+  // Volume readout positioned over the chart's volume section (bottom
+  // ~15% of the plot area). Neutral color, same typography as
+  // `.candle-ohlcv`.
+  .candle-volume-readout {
+    position: absolute;
+    top: 82%;
+    left: 5px;
+    z-index: 2;
+    font-size: 12px;
+    line-height: 1;
+    font-family: -apple-system, "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
+    padding: 2px 4px;
+    pointer-events: none;
+    color: var(--text-color);
+    font-weight: 500;
   }
 
   #unreadyOrdersMsg {
