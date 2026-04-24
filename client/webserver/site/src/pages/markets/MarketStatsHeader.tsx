@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import {
   formatRateAtomToRateStep, formatRateToRateStep,
-  formatBestWeCan, formatCoinAtomToLotSizeBaseCurrency,
+  formatFiat, formatCoinAtomToLotSizeBaseCurrency,
   shortSymbol, logoPath
 } from '../../hooks/useFormatters'
 import { useMarketPageContext } from './MarketPageContext'
@@ -98,22 +98,22 @@ export function MarketStatsHeader ({
         <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
           {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
         </div>
-        {/* MP-23: 24h volume unit switches between USD (when a fiat rate
-             for the base asset is available) and the base asset's
-             conventional unit. vol24 is in base atoms: USD branch divides
-             by the base conversion factor and multiplies by baseFiatRate;
-             base branch renders via the lot-size-aware formatter. */}
-        <div className="d-flex justify-content-start align-items-center px-2 border-right">
-          <div className="fs14">
-            {spot && buiConv
-              ? baseFiatRate > 0
-                ? formatBestWeCan(vol24 / buiConv.conversionFactor * baseFiatRate)
-                : formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)
-              : '-'}
-          </div>
-          <div className="fs14 grey ms-1">
-            {spot && buiConv && baseFiatRate > 0 ? '$' : (buiConv?.unit ?? '$')}
-          </div>
+        {/* 24h volume rendered the same way as the candle chart's
+             volume readout: USD as the primary value, with the base
+             amount + asset symbol in parentheses (grey). Falls back to
+             base amount + asset when no fiat rate is available. vol24
+             is in base atoms. */}
+        <div className="d-flex justify-content-start align-items-center px-2 border-right fs14">
+          {spot && buiConv
+            ? baseFiatRate > 0
+              ? <>
+                  ${formatFiat(vol24 / buiConv.conversionFactor * baseFiatRate)}
+                  <span className="grey ms-1">({formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)} {shortSymbol(baseSymbol)})</span>
+                </>
+              : <>
+                  {formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)} <span className="grey">{shortSymbol(baseSymbol)}</span>
+                </>
+            : '-'}
         </div>
         <div className="px-2 fs14 border-right">
           {high24 > 0
