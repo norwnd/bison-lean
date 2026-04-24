@@ -3,22 +3,24 @@ import type { UnitInfo } from '../stores/types'
 // Constants.
 export const RateEncodingFactor = 1e8
 const log10RateEncodingFactor = Math.round(Math.log10(RateEncodingFactor))
-const languages = navigator.languages.filter((locale: string) => locale !== 'c')
+// Always format numbers with US-style comma thousand separators, regardless
+// of the browser's locale.
+const formatLocale = 'en-US'
 
 // Formatter caches.
-const intFormatter = new Intl.NumberFormat(languages, { maximumFractionDigits: 0, useGrouping: false })
-const fourSigFigs = new Intl.NumberFormat(languages, { maximumSignificantDigits: 4, useGrouping: false })
+const intFormatter = new Intl.NumberFormat(formatLocale, { maximumFractionDigits: 0, useGrouping: true })
+const fourSigFigs = new Intl.NumberFormat(formatLocale, { maximumSignificantDigits: 4, useGrouping: true })
 const decimalFormatters: Record<string, Intl.NumberFormat> = {}
 const fullPrecisionFormatters: Record<string, Intl.NumberFormat> = {}
 
-function formatter (formatters: Record<string, Intl.NumberFormat>, min: number, max: number, locales?: string | string[]): Intl.NumberFormat {
+function formatter (formatters: Record<string, Intl.NumberFormat>, min: number, max: number): Intl.NumberFormat {
   const k = `${min}-${max}`
   let fmt = formatters[k]
   if (!fmt) {
-    fmt = new Intl.NumberFormat(locales ?? languages, {
+    fmt = new Intl.NumberFormat(formatLocale, {
       minimumFractionDigits: min,
       maximumFractionDigits: max,
-      useGrouping: false
+      useGrouping: true
     })
     formatters[k] = fmt
   }
@@ -29,12 +31,12 @@ function decimalFormatter (prec: number) {
   return formatter(decimalFormatters, 2, prec)
 }
 
-function fullPrecisionFormatter (prec: number, locales?: string | string[]) {
-  return formatter(fullPrecisionFormatters, 0, prec, locales)
+function fullPrecisionFormatter (prec: number) {
+  return formatter(fullPrecisionFormatters, 0, prec)
 }
 
-function fullPrecisionFormatterWithPreservingZeroes (prec: number, locales?: string | string[]) {
-  return formatter(fullPrecisionFormatters, prec, prec, locales)
+function fullPrecisionFormatterWithPreservingZeroes (prec: number) {
+  return formatter(fullPrecisionFormatters, prec, prec)
 }
 
 export function atomToConventional (v: number, unitInfo: UnitInfo): number {
@@ -102,11 +104,6 @@ export function formatCoinAtomToLotSizeQuoteCurrency (coinAtom: number, bui: Uni
   return fullPrecisionFormatterWithPreservingZeroes(lotSizeDigits + rateStepDigits).format(coin)
 }
 
-// T18#5: formatProfit returns a USD profit string (always 2 decimals)
-// together with the sell/buy color class to style it. Consolidated
-// here from MMPage.tsx and MMArchivesPage.tsx, which had identical
-// implementations modulo the result-field name (`cls` vs.
-// `colorClass`). Call sites now unpack as `{ text, cls }`.
 export function formatProfit (profit: number): { text: string; cls: string } {
   const s = formatFiat(Math.abs(profit))
   if (s === '0.00') return { text: '$0.00', cls: '' }

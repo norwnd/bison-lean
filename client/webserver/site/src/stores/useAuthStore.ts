@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getJSON, postJSON } from '../services/api'
 import { useNotificationStore } from './useNotificationStore'
+import { applyRateStepMagnifyingFactors } from './rateStepConfig'
 import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
 
 // LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
@@ -46,7 +47,6 @@ export interface AuthState {
   fetchBuildInfo: () => Promise<void>
   login: (appPass: string) => Promise<LoginResult>
   logout: (force?: boolean) => Promise<LogoutResult>
-  setUser: (user: User) => void
   setAuthFailed: (host: string, msg: string) => void
 }
 
@@ -89,6 +89,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         delete nextFailed[host]
       }
     }
+    applyRateStepMagnifyingFactors(user.exchanges)
     set({
       user,
       authed: true,
@@ -193,16 +194,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
       noteStore.setNotes([])
       noteStore.setPokes([])
       return { ok: true }
-    },
-
-    setUser: (user: User) => {
-      set({
-        user,
-        assets: user.assets,
-        exchanges: user.exchanges,
-        walletMap: buildWalletMap(user.assets),
-        fiatRatesMap: user.fiatRates,
-      })
     },
 
     setAuthFailed: (host: string, msg: string) => {
