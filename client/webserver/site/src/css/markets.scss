@@ -371,7 +371,7 @@ div[data-handler=markets] {
     font-family: -apple-system, "Segoe UI", "Roboto", "Helvetica Neue", "Arial", sans-serif;
     padding: 2px 4px;
     pointer-events: none;
-    max-width: calc(100% - 220px); // keep the readout clear of #candleDurBttnBox on the right
+    max-width: calc(100% - 100px); // keep the readout clear of #candleDurBttnBox (84px grid + 2px right + ~14px gap)
 
     .up {
       color: #0ECB81;
@@ -636,14 +636,21 @@ div[data-handler=markets] {
   }
 
   #candleDurBttnBox {
-    // Tucked into the right-side price/volume gutter (canvas yLabelsRegion,
-    // min width 120px), aligned with .candle-ohlcv (top: 5px) on the left.
+    // Tucked into the right-side price/volume gutter. The width/right/top
+    // and per-button row metrics here MUST stay in sync with the
+    // DUR_BTN_GRID_* constants in CandleChart.tsx -- the canvas sizes its
+    // gutter, draws a grid-width separator, and clamps price pills based
+    // on those values. Long Y-labels widen the gutter and leave extra
+    // space on the LEFT of the grid, a minor off-centre drift we accept
+    // rather than plumbing the dynamic gutter width into CSS.
     position: absolute;
     top: 5px;
-    right: 5px;
+    right: 2px;
     z-index: 1;
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 2px;
+    width: 84px;
 
     .candle-dur-bttn {
       background-color: transparent;
@@ -653,6 +660,7 @@ div[data-handler=markets] {
       line-height: 1;
       color: var(--text-grey);
       border-radius: 2px;
+      text-align: center;
 
       &:hover {
         background-color: var(--section-bg-strong);
@@ -662,6 +670,12 @@ div[data-handler=markets] {
       &.selected {
         border-color: var(--text-warning);
         color: var(--text-warning);
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        pointer-events: none;
       }
     }
   }

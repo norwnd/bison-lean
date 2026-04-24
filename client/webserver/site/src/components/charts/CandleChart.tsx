@@ -44,6 +44,26 @@ const CANDLE_FONT = '12px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", A
 // enough to use 10px without losing readability.
 const X_LABEL_FONT = '10px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 
+// Duration-buttons grid (#candleDurBttnBox in markets.scss) geometry.
+// These values MUST stay in sync with the CSS. The canvas uses them to
+// size the right gutter, draw a separator that matches the grid
+// pixel-for-pixel, and clamp Y-axis pill positions so they never overlap
+// the buttons.
+const DUR_BTN_GRID_WIDTH = 84  // CSS: width
+const DUR_BTN_GRID_RIGHT = 2   // CSS: right
+// Gutter floor = grid width + right offset + 2px of left breathing room,
+// so the grid always sits inside the yLabelsRegion with a little padding
+// even when Y-labels are short.
+const DUR_BTN_GRID_MIN_GUTTER = DUR_BTN_GRID_WIDTH + DUR_BTN_GRID_RIGHT + 2
+// Y of the separator line drawn below the 2x2 grid. Derived from the CSS
+// layout: 5 (top) + 21 (row-h) + 2 (gap) + 21 (row-h) = 49, + 5px so the
+// line doesn't kiss the bottom of the button border.
+const DUR_BTN_SEP_Y = 54
+// Minimum Y-center for any pill rendered in the right gutter so the pill
+// box clears the buttons. Separator Y + pill half-height (~9px for 12px
+// CANDLE_FONT) + 1px breathing room.
+const DUR_BTN_PILL_MIN_Y = DUR_BTN_SEP_Y + 10
+
 export interface CandleReporters {
   mouse: (candle: Candle | null) => void
   // requestOlderHistory is invoked when the user pans or zooms such that
@@ -196,8 +216,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const xLblHeight = 22
     // Initial Y-gutter width is a rough default; render() narrows or
     // widens it after the first pass of makeYLabels measures the actual
-    // label text. The 120px floor also hosts the duration-buttons row.
-    const yLblWidth = 120
+    // label text. DUR_BTN_GRID_MIN_GUTTER keeps just enough room for the
+    // 2x2 button grid while compressing the gutter so the plot gets as
+    // much width as possible.
+    const yLblWidth = DUR_BTN_GRID_MIN_GUTTER
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -287,16 +309,19 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     // Drop ticks that would render poorly, in a single pass so that the
     // grid line and its label stay coupled (plotYGrid and the label pass
     // share this list). Two cases are filtered:
-    //  1. Ticks within a few pixels of the top (chart border) or bottom
-    //     (volume divider) edge — otherwise the grid line kisses the edge
-    //     and reads as unfinished.
+    //  1. Ticks within a few pixels of the top (chart border or duration-
+    //     buttons grid) or bottom (volume divider) edge — otherwise the
+    //     grid line kisses the edge / the label collides with the
+    //     buttons.
     //  2. The single tick closest to the live price — its label would stack
     //     under the coloured last-price pill. Done here (not in the label
     //     render loop) so the grid line is removed too; otherwise users see
     //     a naked grid line without a corresponding label after panning.
     const edgePadPx = 50
     const yFilterTools = s.candleRegion.translator(new Extents(0, 1, chartExtents.y.min, chartExtents.y.max))
-    const topEdgeY = s.candleRegion.extents.y.min + edgePadPx
+    // Top floor also has to clear the duration-buttons grid so a label
+    // center doesn't land inside a button row.
+    const topEdgeY = Math.max(s.candleRegion.extents.y.min + edgePadPx, DUR_BTN_PILL_MIN_Y)
     const botEdgeY = s.candleRegion.extents.y.max - edgePadPx
     const globalLast = allCandles[allCandles.length - 1]
     let dropIdx = -1
@@ -322,10 +347,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
 
     // Snap the Y-gutter width to the widest label so prices/volume can't clip.
     // Adjusts the shared X-max across plot/candle/volume/xLabels regions
-    // and the X-min of yLabelsRegion; Y coords are untouched. The 120px
-    // floor keeps the gutter wide enough to host the duration-buttons row
-    // (`#candleDurBttnBox`) without it overflowing into the candle plot.
-    const requiredYLblWidth = Math.max(120, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
+    // and the X-min of yLabelsRegion; Y coords are untouched. The
+    // DUR_BTN_GRID_MIN_GUTTER floor keeps the gutter wide enough to host
+    // the 2x2 duration-buttons grid without it overflowing into the plot.
+    const requiredYLblWidth = Math.max(DUR_BTN_GRID_MIN_GUTTER, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
     const currentYLblWidth = s.logicalW - s.plotRegion.extents.x.max
     if (Math.abs(requiredYLblWidth - currentYLblWidth) > 2) {
       const newPlotMaxX = s.logicalW - requiredYLblWidth
@@ -358,10 +383,13 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     plotXGrid(s.plotRegion, xLabels, chartExtents.x.min, chartExtents.x.max, theme)
     plotYGrid(s.candleRegion, yLabels, chartExtents.y.min, chartExtents.y.max, theme)
 
-    // Dividers: horizontal between candle + volume panes, and vertical
-    // between the plot area and the right-side price/volume gutter.
-    // Both share the same subtle colour so they read as the same UI
-    // chrome and are visible without dominating the chart.
+    // Dividers: horizontal between candle + volume panes, vertical between
+    // the plot area and the right-side price/volume gutter, and a short
+    // horizontal segment inside the gutter that mirrors the 2x2 duration-
+    // buttons grid and separates it from the price labels below. The
+    // segment is sized to match the grid exactly (same left/right edges)
+    // so it reads as a visual helper for the grid, not a continuation of
+    // the vertical gutter divider.
     ctx.save()
     ctx.strokeStyle = theme.axisLabel
     ctx.globalAlpha = 0.4
@@ -370,6 +398,11 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     drawLine(ctx, s.plotRegion.extents.x.min, divY, s.logicalW, divY)
     const divX = s.plotRegion.extents.x.max
     drawLine(ctx, divX, s.plotRegion.extents.y.min, divX, s.plotRegion.extents.y.max)
+    // Match the grid exactly: right-anchored with DUR_BTN_GRID_RIGHT
+    // offset, DUR_BTN_GRID_WIDTH span, DUR_BTN_SEP_Y below the 2x2 rows.
+    const gridRight = s.logicalW - DUR_BTN_GRID_RIGHT
+    const gridLeft = gridRight - DUR_BTN_GRID_WIDTH
+    drawLine(ctx, gridLeft, DUR_BTN_SEP_Y, gridRight, DUR_BTN_SEP_Y)
     ctx.restore()
 
     // Volume bars -- colored per candle with alpha. 15% headroom above the
@@ -434,10 +467,13 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
         })
       }
       // Pill — if the price is off-range, clamp to the nearest edge so
-      // the user can still see it.
+      // the user can still see it. The lower bound also clears the
+      // duration-buttons grid (DUR_BTN_PILL_MIN_Y) so the pill doesn't
+      // overlap the buttons when the live price sits near the top of
+      // the visible range.
       const candleRegYMin = s.candleRegion.extents.y.min
       const candleRegYMax = s.candleRegion.extents.y.max
-      const pillY = clamp(rawY, candleRegYMin + 10, candleRegYMax - 10)
+      const pillY = clamp(rawY, Math.max(candleRegYMin + 10, DUR_BTN_PILL_MIN_Y), candleRegYMax - 10)
       const pillX = s.yLabelsRegion.extents.x.min + s.yLabelsRegion.width() / 2
       pillLabel(
         ctx, pillX, pillY,
@@ -487,9 +523,14 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
         const yToolsPlot = s.candleRegion.translator(chartExtents)
         const priceAtCursor = yToolsPlot.uny(mousePos.y)
         const pillX = s.yLabelsRegion.extents.x.min + s.yLabelsRegion.width() / 2
+        // Clamp the pill's Y below the duration-buttons grid. When the
+        // cursor is in the top gutter area the pill decouples from the
+        // crosshair dashed line and sits just below the buttons; the
+        // label text still shows the price at the real cursor Y.
+        const pillCrossY = Math.max(mousePos.y, DUR_BTN_PILL_MIN_Y)
         ctx.font = CANDLE_FONT
         pillLabel(
-          ctx, pillX, mousePos.y,
+          ctx, pillX, pillCrossY,
           formatRateAtomToRateStep(priceAtCursor, baseUnitInfo, quoteUnitInfo, rateStep),
           theme.axisPillBg, theme.axisPillFg
         )

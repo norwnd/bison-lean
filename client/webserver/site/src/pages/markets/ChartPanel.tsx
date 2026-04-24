@@ -14,6 +14,11 @@ import { useMarketPageContext } from './MarketPageContext'
 // MarketPageContext.
 // ---------------------------------------------------------------------------
 
+// Fixed slot order for the 2x2 duration-buttons grid. Row-major: first two
+// entries fill the top row, last two the bottom. A slot whose dur isn't in
+// the server-reported `candleDurs` renders as a disabled button.
+const CANDLE_DUR_SLOTS = ['24h', '8h', '1h', '5m']
+
 export interface ChartPanelProps {
   candleData: CandlesPayload | null
   candleDurs: string[]
@@ -68,15 +73,26 @@ export function ChartPanel ({
               the DEX auth round-trip has completed. */}
           {!candleLoading && !chartErrMsg && (
             <div id="candleDurBttnBox">
-              {candleDurs.map(dur => (
-                <button
-                  key={dur}
-                  className={`candle-dur-bttn${candleDur === dur ? ' selected' : ''}`}
-                  onClick={() => setCandleDur(dur)}
-                >
-                  {dur}
-                </button>
-              ))}
+              {/* Fixed 2x2 slots (row-major: 24h/8h over 1h/5m) so the
+                  layout reads the same regardless of which bin sizes the
+                  connected server publishes. Any slot whose dur isn't in
+                  the server-reported candleDurs is rendered disabled --
+                  e.g. 8h is a forward-compat placeholder until the server
+                  extends its BinSizes. */}
+              {CANDLE_DUR_SLOTS.map(dur => {
+                const enabled = candleDurs.includes(dur)
+                const selected = enabled && candleDur === dur
+                return (
+                  <button
+                    key={dur}
+                    className={`candle-dur-bttn${selected ? ' selected' : ''}`}
+                    onClick={() => setCandleDur(dur)}
+                    disabled={!enabled}
+                  >
+                    {dur}
+                  </button>
+                )
+              })}
             </div>
           )}
           {candleLoading && !chartErrMsg && (
