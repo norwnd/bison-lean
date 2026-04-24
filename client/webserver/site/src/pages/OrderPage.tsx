@@ -205,6 +205,7 @@ function Stage ({
     <div
       className={`diagram-stage paint-${paint}`}
       data-connector={connectorPaint !== undefined ? 'on' : undefined}
+      data-conn-paint={connectorPaint}
       style={style}
     >
       <div className="diagram-dot" />
@@ -478,6 +479,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
           neutral (happy path). */}
       <div
         className="lane-divert-stub"
+        data-conn-paint={connPaint}
         style={cssVars({
           'gridColumn': stubCol,
           'gridRow': 1,

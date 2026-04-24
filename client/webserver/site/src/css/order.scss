@@ -293,6 +293,17 @@
     @include conn-fill-gradient(to right);
   }
 
+  // Warning-colored connectors (in-flight stages on the match track,
+  // plus the L-stub on the refund divert) are dimmed at rest for the
+  // same reason as the order-lane progress slab: the yellow reads
+  // loud against the surrounding neutral line. Dots are left at full
+  // saturation since they're small enough to carry it.
+  .diagram-stage[data-conn-paint="warning"]::after,
+  .lane-divert-stub[data-conn-paint="warning"]::before,
+  .lane-divert-stub[data-conn-paint="warning"]::after {
+    opacity: 0.75;
+  }
+
   .lane-card-row {
     margin-top: 0.28rem;
     // Mini-match-card and stage-coin-buttons live in the same row;
@@ -528,7 +539,16 @@
     }
 
     &.paint-good { background-color: var(--indicator-good); }
-    &.paint-warning { background-color: var(--indicator-warning); }
+
+    // Paint-warning (in-flight match) is dimmed at rest — the yellow
+    // indicator reads loud on a full-width slab. Hover/focus still
+    // applies scaleY + brightness below, which is enough signal on
+    // top of the dimmed base (no opacity restore needed).
+    &.paint-warning {
+      background-color: var(--indicator-warning);
+      opacity: 0.65;
+    }
+
     &.paint-bad { background-color: var(--indicator-bad); }
 
     &.paint-absent {
