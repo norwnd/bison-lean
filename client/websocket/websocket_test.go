@@ -140,6 +140,9 @@ func (*tBookFeed) Close() {}
 func (*tBookFeed) Candles(dur string) error {
 	return nil
 }
+func (*tBookFeed) CandlesBefore(dur string, before uint64, n int) ([]*msgjson.Candle, error) {
+	return nil, nil
+}
 
 func TestMain(m *testing.M) {
 	var shutdown func()

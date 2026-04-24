@@ -38,6 +38,11 @@ type BookFeed interface {
 	Next() <-chan *BookUpdate
 	Close()
 	Candles(dur string) error
+	// CandlesBefore fetches up to n candles strictly older than the given
+	// end-stamp, in ascending order. Used for paginating history past the
+	// initial cache window. Unlike Candles, it does not subscribe or emit
+	// to the update channel — the caller owns the returned slice.
+	CandlesBefore(dur string, before uint64, n int) ([]*msgjson.Candle, error)
 }
 
 // bookFeed implements BookFeed.
@@ -63,6 +68,12 @@ func (f *bookFeed) Close() {
 // of sticks over the update channel.
 func (f *bookFeed) Candles(durStr string) error {
 	return f.bookie.candles(durStr, f.id)
+}
+
+// CandlesBefore requests up to n candles older than `before` (ms end-stamp)
+// directly from the DEX server, bypassing the subscription/feed machinery.
+func (f *bookFeed) CandlesBefore(durStr string, before uint64, n int) ([]*msgjson.Candle, error) {
+	return f.bookie.candlesBefore(durStr, before, n)
 }
 
 // candleCache adds synchronization and an on/off switch to *candles.Cache.
@@ -310,6 +321,31 @@ func (b *bookie) candles(durStr string, feedID uint32) error {
 	cache.init(wireCandles.Candles())
 	atomic.StoreUint32(&cache.on, 1)
 	return nil
+}
+
+// candlesBefore sends a one-shot Before-cursor request to the DEX server and
+// returns the result. No subscription side effects; the returned candles are
+// not added to any cache — the caller is responsible for merging them into
+// the UI/state as it sees fit.
+func (b *bookie) candlesBefore(durStr string, before uint64, n int) ([]*msgjson.Candle, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	if n > candles.CacheSize {
+		n = candles.CacheSize
+	}
+	payload := &msgjson.CandlesRequest{
+		BaseID:     b.base,
+		QuoteID:    b.quote,
+		BinSize:    durStr,
+		NumCandles: n,
+		Before:     before,
+	}
+	wireCandles := new(msgjson.WireCandles)
+	if err := sendRequest(b.dc.WsConn, msgjson.CandlesRoute, payload, wireCandles, DefaultResponseTimeout); err != nil {
+		return nil, err
+	}
+	return wireCandles.Candles(), nil
 }
 
 // closeFeed closes the specified feed, and if no more feeds are open, sets a

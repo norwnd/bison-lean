@@ -211,10 +211,11 @@ type wsHandler func(*Server, *wsClient, *msgjson.Message) *msgjson.Error
 // wsHandlers is the map used by the server to locate the router handler for a
 // request.
 var wsHandlers = map[string]wsHandler{
-	"loadmarket":  wsLoadMarket,
-	"loadcandles": wsLoadCandles,
-	"unmarket":    wsUnmarket,
-	"acknotes":    wsAckNotes,
+	"loadmarket":       wsLoadMarket,
+	"loadcandles":      wsLoadCandles,
+	"loadoldercandles": wsLoadOlderCandles,
+	"unmarket":         wsUnmarket,
+	"acknotes":         wsAckNotes,
 }
 
 // marketLoad is sent by websocket clients to subscribe to a market and request
@@ -228,6 +229,28 @@ type marketLoad struct {
 type candlesLoad struct {
 	marketLoad
 	Dur string `json:"dur"`
+}
+
+type olderCandlesLoad struct {
+	marketLoad
+	Dur    string `json:"dur"`
+	Before uint64 `json:"before"`
+	N      int    `json:"n"`
+}
+
+// OlderCandlesRoute is the route of the notification used to deliver
+// paginated history candles back to the client in response to a
+// "loadoldercandles" request.
+const OlderCandlesRoute = "older_candles"
+
+// olderCandlesPayload is the inner payload of a core.BookUpdate
+// delivered via the OlderCandlesRoute notification. Candles are ordered
+// ascending by end-stamp. Host/marketID live on the outer BookUpdate so
+// the wire shape matches the feed-delivered candles/candle_update
+// messages the client already knows how to filter.
+type olderCandlesPayload struct {
+	Dur     string            `json:"dur"`
+	Candles []*msgjson.Candle `json:"candles"`
 }
 
 // marketSyncer is used to synchronize market subscriptions. The marketSyncer
@@ -334,6 +357,51 @@ func wsLoadCandles(s *Server, cl *wsClient, msg *msgjson.Message) *msgjson.Error
 	err = feed.Candles(req.Dur)
 	if err != nil {
 		return msgjson.NewError(msgjson.RPCInternal, "%v", err)
+	}
+	return nil
+}
+
+// wsLoadOlderCandles fetches up to `n` candles with end-stamp strictly
+// less than `before` from the DEX server and pushes them back to the
+// client as a one-shot OlderCandlesRoute notification. Unlike
+// wsLoadCandles, this does not touch the subscription/feed cache — the
+// response is intended as a scroll-back history page.
+func wsLoadOlderCandles(s *Server, cl *wsClient, msg *msgjson.Message) *msgjson.Error {
+	req := new(olderCandlesLoad)
+	err := json.Unmarshal(msg.Payload, req)
+	if err != nil {
+		return msgjson.NewError(msgjson.RPCInternal, "error unmarshalling olderCandlesLoad payload: %v", err)
+	}
+
+	feed, msgErr := loadMarket(s, cl, &req.marketLoad)
+	if msgErr != nil {
+		return msgErr
+	}
+
+	older, err := feed.CandlesBefore(req.Dur, req.Before, req.N)
+	if err != nil {
+		return msgjson.NewError(msgjson.RPCInternal, "CandlesBefore: %v", err)
+	}
+
+	mktID, err := dex.MarketName(req.Base, req.Quote)
+	if err != nil {
+		return msgjson.NewError(msgjson.UnknownMarketError, "unknown market: %v", err)
+	}
+
+	note, err := msgjson.NewNotification(OlderCandlesRoute, &core.BookUpdate{
+		Action:   OlderCandlesRoute,
+		Host:     req.Host,
+		MarketID: mktID,
+		Payload: &olderCandlesPayload{
+			Dur:     req.Dur,
+			Candles: older,
+		},
+	})
+	if err != nil {
+		return msgjson.NewError(msgjson.RPCInternal, "older_candles notification encode: %v", err)
+	}
+	if err := cl.Send(note); err != nil {
+		s.log.Debugf("send older_candles error: %v", err)
 	}
 	return nil
 }
