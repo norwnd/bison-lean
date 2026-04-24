@@ -2,6 +2,8 @@
   "_README": "Allowlist for i18n-lint.mjs — declares every dynamic `t(variable)` call site and the set of keys those variables may resolve to at runtime. Each call site must appear in `dynamicCallSites` (suppresses the 'unknown dynamic site' warning). Each key that dynamic code paths can construct must appear somewhere in `referencedKeys` — the groups there are just for readability, the linter flattens them. If a declared key isn't in en-US.json, i18n-lint fails loud — the dynamic path would fall back to the literal string at runtime, which is almost always a bug. Line numbers in `dynamicCallSites` will drift when the call-site files are edited; `node scripts/i18n-lint.mjs --list-dynamic` prints the current set so the allowlist can be refreshed.",
 
   "dynamicCallSites": [
+    "src/components/OrderStages.ts:97",
+    "src/pages/OrderPage.tsx:1025",
     "src/pages/OrdersPage.tsx:472",
     "src/pages/ProposalsPage.tsx:185",
     "src/pages/SettingsPage.tsx:617",
@@ -10,6 +12,14 @@
   ],
 
   "referencedKeys": {
+    "OrderStages_DISPLAY_STATUS_KEYS": [
+      "Placed",
+      "Active",
+      "Fulfilled",
+      "Completed",
+      "Canceled",
+      "Revoked"
+    ],
     "OrdersPage_STATUS_OPTIONS": [
       "EPOCH",
       "BOOKED",

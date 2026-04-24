@@ -44,6 +44,26 @@
   visibility: hidden;
 }
 
+// Screen-reader-only content: removes the element from visual layout
+// while keeping it in the accessibility tree. Pattern matches
+// Bootstrap's modern `helpers/_visually-hidden.scss` (which this
+// project's customized Bootstrap subset doesn't pull in — see
+// `bootstrap.scss`). Uses `clip-path: inset(50%)` instead of the
+// deprecated `clip: rect(…)` property. Used for SR-only labels
+// beside spinners (MMSettingsPage, FormComponents) and the order-
+// progress-bar's aria-describedby summary.
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .stylish-overflow {
   @include stylish-overflow;
 

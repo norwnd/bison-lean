@@ -179,6 +179,11 @@ export function averageRate (ord: Order): number {
     baseQty += m.qty
     rateProduct += (m.rate * m.qty)
   }
+  // Zero baseQty means every match has qty=0 (e.g. only cancel
+  // matches, or pre-match state where matches are present but still
+  // unsized). Return 0 rather than NaN so callers can rely on a
+  // plain-number check (`avg > 0`) without special-casing NaN.
+  if (baseQty === 0) return 0
   return rateProduct / baseQty
 }
 

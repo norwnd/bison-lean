@@ -46,11 +46,12 @@
   height: 100%;
   overflow-y: auto;
 
-  // Consolidated top-of-page summary line: "{type}: [mini-card]
-  // ({rate})". Flex baseline-aligns the type text, the inline
-  // readonly mini-card, and the rate suffix so they read as a single
-  // centered sentence. Replaces the previous `.order-header` +
-  // `.summary-grid` + the order-lane's "Order" header.
+  // Consolidated top-of-page summary line: "{type}: [mini-card] @
+  // {rate} {dot} {Status} (created {Ago})". Flex baseline-aligns the
+  // type text, the inline readonly mini-card, the rate, the status
+  // and the age suffix so they read as a single centered sentence.
+  // The "{Status} (created {Ago})" tail absorbs what used to be the
+  // order-lane's two flanking stage dots.
   .order-summary-line {
     display: flex;
     justify-content: center;
@@ -65,13 +66,40 @@
     font-size: 19px;
     line-height: 1.2;
 
-    .order-rate {
+    .order-rate,
+    .order-age {
       color: var(--text-color-secondary);
+    }
+
+    // Inline status dot sitting between the rate and the status
+    // word. A smaller sibling of `.diagram-dot` (10px vs 16px) so it
+    // reads as part of the sentence rather than as a standalone
+    // indicator chip. `align-self: center` centers it vertically
+    // against the baseline-aligned text line — plain
+    // `vertical-align` doesn't work inside a flex row.
+    .order-status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: var(--indicator-neutral);
+      align-self: center;
+
+      &.paint-good { background-color: var(--indicator-good); }
+      &.paint-warning { background-color: var(--indicator-warning); }
+    }
+
+    // Status word picks up the same paint as the adjacent dot so the
+    // indicator colors the whole status token as a unit. `paint-neutral`
+    // inherits the default text color — no dedicated rule needed.
+    .order-status {
+      &.paint-good { color: var(--indicator-good); }
+      &.paint-warning { color: var(--indicator-warning); }
     }
 
     // Inline the readonly order mini-card with the surrounding text:
     // strip the pill padding and match the line's font-size so the
-    // from/to amounts baseline with "{type}:" and "({rate})". The
+    // from/to amounts baseline with "{type}:" and "@ {rate}". The
     // arrow also inherits the size so it scales with the line.
     .mini-match-card.readonly {
       padding: 0;
@@ -156,13 +184,13 @@
     }
   }
 
-  // Stage-count grid. All three "columns by stage" containers (the
-  // main-track stage row, the mini-card row, the refund divert row)
-  // share the same N-column layout driven by `--stage-count` set on
-  // the parent .lane div (ORDER_STAGE_COUNT or matchStageCount(m)
-  // from the React side), so children placed via explicit
-  // `grid-column` end up vertically aligned with main-track stages
-  // above.
+  // Stage-count grid. All three "columns by stage" containers inside
+  // a match lane (the main-track stage row, the mini-card row, the
+  // refund divert row) share the same N-column layout driven by
+  // `--stage-count` set on the parent .match-lane div (from
+  // `matchStageCount(m)` on the React side), so children placed via
+  // explicit `grid-column` end up vertically aligned with main-track
+  // stages above.
   .lane-stages,
   .lane-card-row,
   .lane-divert-row {
@@ -422,122 +450,186 @@
     }
   }
 
-  // Order-lane layout: two flanking stage dots (Created / terminal)
-  // sandwiching a full-width progress bar. Flex row so the bar
-  // stretches to fill the space between the dots while the flanks
-  // stay intrinsic-sized. The bar itself is two stacked rows (percent
-  // labels + colored segments), so the flank dot needs a matching top
-  // spacer to keep its center aligned with the segment-row center
-  // rather than drifting up to the label-row's vertical center.
-  .order-lane-layout {
-    --pct-row-height: 14px;
-    --pct-row-gap: 4px;
-    --segment-height: 16px;
+  // Order-lane progress bar: a standalone "vessel" (rounded-pill
+  // outline with a faint bg tint) that fills left-to-right as
+  // matches land. Segments pack at flex-start and their widths sum
+  // to the filled percentage of the order — the remaining portion
+  // of the vessel is left empty for active orders (bar bg shows
+  // through, reading as "still has room"). Once the order is
+  // finalized, a trailing neutral segment fills the remainder so
+  // the user sees the portion that never matched in a solid color.
+  // Each segment carries its percent-of-order as an inline label
+  // centered inside its rect; narrow segments clip the label and
+  // rely on the React-side `title` attribute for the full string.
 
-    display: flex;
-    align-items: flex-start;
-    column-gap: 0.75rem;
-  }
-
-  // Flank "stage" reuses `.diagram-stage` for the paint cascade
-  // (`.paint-X .diagram-dot`) and the label styling. Constrained
-  // width so long terminal labels (e.g. "Fulfilled (100.0% settled)")
-  // wrap onto a second line instead of stealing room from the bar.
-  .order-lane-flank {
-    flex: 0 0 auto;
-    min-width: 40px;
-    max-width: 120px;
-  }
-
-  // Top spacer above the flank dot: pct-row height + gap, so the dot
-  // sits at the same vertical origin as the segment row beside it.
-  .order-progress-top-slot {
-    height: calc(var(--pct-row-height) + var(--pct-row-gap));
-  }
-
-  // Progress bar takes all remaining width between the flanks.
-  // `min-width: 0` lets a narrow viewport squeeze the bar instead of
-  // forcing the right flank off-screen — default flex min-content
-  // would prevent shrinking because the bar contains inline content.
-  .order-progress-bar {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  // Percent labels row. Each label's cell width equals its segment's
-  // width so the label centers over its segment naturally. Small
-  // segments may clip their label (better than overflowing into
-  // neighbors); hover surfaces the full text via native title
-  // tooltip set on the React side.
-  .order-progress-labels {
-    display: flex;
-    height: var(--pct-row-height);
-    margin-bottom: var(--pct-row-gap);
-  }
-
-  .order-progress-pct {
-    font-size: 11px;
-    font-family: $demi-sans;
-    color: var(--text-color-secondary);
-    text-align: center;
-    white-space: nowrap;
-    line-height: var(--pct-row-height);
-    overflow: hidden;
-  }
-
-  // Segments row. Rounded corners come from the first/last segment
-  // themselves (see below) so `overflow: hidden` isn't needed — which
-  // matters because hovered segments scale up slightly on the Y axis
-  // and we don't want the container clipping that lift. The neutral
-  // background shows through any gaps (pre-terminal orders whose
-  // remainder hasn't matched yet leave empty trailing space).
+  // Vessel container. `::before` paints the empty-vessel outline +
+  // subtle bg tint so it's visible through any space the segments
+  // leave unfilled. `isolation: isolate` + `z-index: -1` on the
+  // pseudo keep it scoped to this container (not punching through to
+  // the page body). The segments themselves have no z-index so they
+  // paint above the pseudo naturally. Rounded corners come from the
+  // first/last segment — combined with the same radius on the
+  // vessel, filled segments visually merge into the vessel outline.
+  // No `overflow: hidden` on the container so hovered segments can
+  // scale up on the Y axis without being clipped.
   .order-progress-segments {
+    --segment-height: 28px;
+    --vessel-radius: 4px;
+    // `--vessel-bg` is the solid (opaque) vessel fill: just the
+    // faintest neutral tint on top of `--body-bg`. Exposed as a
+    // custom prop so `.paint-empty`'s label can reuse the exact
+    // same color to mask the dashed line behind the "0.0%" text.
+    --vessel-bg: color-mix(in srgb, var(--indicator-neutral) 4%, var(--body-bg));
+
+    position: relative;
+    isolation: isolate;
     display: flex;
     height: var(--segment-height);
-    background-color: var(--indicator-neutral);
-    border-radius: 3px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 1px solid var(--border-color);
+      border-radius: var(--vessel-radius);
+      background-color: var(--vessel-bg);
+      z-index: -1;
+    }
   }
 
-  // Single-color segment painted per match outcome. `absent` uses the
-  // dedicated "void" color for the unfilled remainder of a terminal
-  // order — distinct from the neutral bg used for in-flight orders'
-  // unfilled space (see colors.scss for rationale).
+  // Segment painted per match outcome. Flex-centers its inline
+  // percent label; `overflow: hidden` + `white-space: nowrap` clips
+  // the label in segments too narrow to fit it (the `title`
+  // attribute on the React side surfaces the full string via the
+  // browser's native tooltip). Textured bg: a subtle translucent-
+  // black repeating diagonal-stripe (`///`) layered over each
+  // variant's paint color, so "filled" reads both from the color
+  // AND the texture — improves glanceability and accessibility for
+  // users who can't distinguish the indicator hues. White +
+  // text-shadow provides label legibility across colored paint
+  // variants (good/warning/bad/neutral); the empty placeholder
+  // overrides the image with a horizontal dashed line and drops
+  // the shadow to sit muted over the vessel tint.
   .order-progress-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
     border: 0;
     padding: 0;
+    // Floor on segment width so tiny-portion matches (< 0.5% of
+    // order qty) stay visible and clickable rather than collapsing
+    // to a hairline. Accepts mild proportional distortion — a 0.1%
+    // segment rendered at 12px overstates its visual weight against
+    // its neighbors, but the trade-off is worth it: without the
+    // floor, those segments become unhoverable + unfocusable and
+    // the bar appears to drop matches.
+    min-width: 12px;
     background-color: var(--indicator-neutral);
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0,
+      transparent 5px,
+      rgb(0 0 0 / 15%) 5px,
+      rgb(0 0 0 / 15%) 7px
+    );
+    color: #fff;
+    font-size: 12px;
+    font-family: $demi-sans;
+    line-height: 1;
+    text-shadow: 0 0 2px rgb(0 0 0 / 50%);
     cursor: pointer;
-    transition: transform 120ms ease-out, filter 120ms ease-out;
+    // `width` transition smooths segment growth as match portions
+    // update — e.g. the remainder `empty`/`neutral` segment shrinks
+    // when a new match appears and its width animates down
+    // (300ms matches the mount keyframe duration below so new +
+    // shrinking segments animate in concert). The mount keyframe
+    // reveals via `max-width` rather than `transform`, leaving
+    // `transform` free for `.hovered`'s `scaleY(1.25)` bump — so
+    // hovering a still-animating fresh segment produces immediate
+    // feedback instead of waiting for the 300ms mount to finish.
+    transition: transform 120ms ease-out, filter 120ms ease-out, width 300ms ease-out;
     transform-origin: center;
 
     &:first-child {
-      border-top-left-radius: 3px;
-      border-bottom-left-radius: 3px;
+      border-top-left-radius: var(--vessel-radius);
+      border-bottom-left-radius: var(--vessel-radius);
     }
 
     &:last-child {
-      border-top-right-radius: 3px;
-      border-bottom-right-radius: 3px;
+      border-top-right-radius: var(--vessel-radius);
+      border-bottom-right-radius: var(--vessel-radius);
     }
 
     &.paint-good { background-color: var(--indicator-good); }
 
     // Paint-warning (in-flight match) is dimmed at rest — the yellow
-    // indicator reads loud on a full-width slab. Hover/focus still
-    // applies scaleY + brightness below, which is enough signal on
-    // top of the dimmed base (no opacity restore needed).
+    // indicator reads loud on a full-width slab. Dimming happens via
+    // a pre-blended bg (65% indicator warning, 35% body bg) rather
+    // than `opacity` so the inline label stays at full opacity for
+    // readability. Hover/focus still applies scaleY + brightness
+    // below, which bumps the bg without touching the label.
     &.paint-warning {
-      background-color: var(--indicator-warning);
-      opacity: 0.65;
+      background-color: color-mix(in srgb, var(--indicator-warning) 65%, var(--body-bg));
     }
 
     &.paint-bad { background-color: var(--indicator-bad); }
 
-    &.paint-absent {
-      background-color: var(--indicator-absent);
+    // Neutral remainder (finalized orders) is decorative — solid
+    // `--indicator-neutral` bg (inherited from the rule above) reads
+    // as "this portion never matched". Empty placeholder (active
+    // orders) uses a transparent bg so the vessel's faint ::before
+    // tint shows through — the "0.0%" label identifies the slice
+    // without implying it's committed to staying unmatched. Both
+    // are non-interactive, so the pointer affordance is dropped.
+    &.paint-neutral,
+    &.paint-empty {
       cursor: default;
+    }
+
+    &.paint-empty {
+      background-color: transparent;
+      // Horizontal dashed line centered vertically — reinforces
+      // "no match has landed here yet" with a texture distinct
+      // from the diagonal stripes on filled segments. The band is
+      // 1px tall, constrained via `background-size` + `no-repeat`,
+      // and sits in `--text-color-secondary` to blend with the
+      // muted "0.0%" label. `background-size` insets the dashes
+      // ~0.75rem from each edge so the line visibly floats inside
+      // the vessel rather than butting the border; the "0.0%"
+      // label (styled on `.order-progress-segment-label` below)
+      // masks the dashes behind it with a matching `--vessel-bg`
+      // fill so the line appears to stop cleanly at each side of
+      // the label.
+      background-image: repeating-linear-gradient(
+        to right,
+        var(--text-color-secondary) 0,
+        var(--text-color-secondary) 4px,
+        transparent 4px,
+        transparent 8px
+      );
+      background-size: calc(100% - 1.5rem) 1px;
+      background-repeat: no-repeat;
+      background-position: center;
+      color: var(--text-color-secondary);
+      text-shadow: none;
+    }
+
+    // Label wrapper span. Colored segments leave it bare — the
+    // label sits directly on the segment's striped fill with its
+    // own `text-shadow` for legibility (see the base rule above).
+    // `.paint-empty` paints a matching-vessel bg + horizontal
+    // padding on the label so the dashed line underneath is
+    // visually interrupted around the "0.0%" text rather than
+    // cutting through it.
+    .order-progress-segment-label {
+      line-height: 1;
+    }
+
+    &.paint-empty .order-progress-segment-label {
+      padding: 0 0.4rem;
+      background-color: var(--vessel-bg);
     }
 
     // Hovered / focused segment gets a subtle Y-axis scale-up and a
@@ -553,6 +645,42 @@
     &:focus-visible {
       outline: 2px solid var(--link-color);
       outline-offset: 1px;
+    }
+  }
+
+  // Mount animation: fresh match-backed segments fade + grow in so
+  // newly-arrived matches read as an event rather than a silent
+  // pop-in. Scoped to `button.order-progress-segment` (match-backed)
+  // rather than the base class so the trailing placeholder
+  // (`div.order-progress-segment.paint-empty` / `paint-neutral`)
+  // doesn't re-animate as the order state evolves — the remainder
+  // is rendered with a stable React key (see OrderProgressBar.tsx),
+  // so its DOM node is reused across renders, but the animation
+  // would fire on each `remainder-${i}`-style key change if it were
+  // ever re-introduced. 300ms duration matches the `width` transition
+  // on the base rule so the shrinking remainder and the new segment
+  // feel like one coordinated motion. The keyframe grows via
+  // `max-width` (not `transform: scaleX`) so `transform` stays free
+  // for `.hovered`'s `scaleY(1.25)` bump mid-mount: users hovering
+  // a just-arrived segment see immediate scale feedback instead of
+  // having to wait for the 300ms animation to end. The base rule's
+  // `min-width: 12px` floor takes precedence over `max-width: 0`
+  // during the opening frames, so the grow starts from a 12px
+  // slice rather than 0px — still a clear "reveal", just with a
+  // visible anchor. Disabled under `prefers-reduced-motion`.
+  button.order-progress-segment {
+    animation: order-progress-segment-mount 300ms ease-out;
+  }
+
+  @keyframes order-progress-segment-mount {
+    from {
+      max-width: 0;
+      opacity: 0;
+    }
+
+    to {
+      max-width: 100%;
+      opacity: 1;
     }
   }
 
@@ -722,5 +850,40 @@
   &.not-found-box {
     padding: 1rem;
     text-align: center;
+  }
+
+  // Reduced-motion overrides. Users who've opted out of non-essential
+  // motion via their OS setting see instant state changes instead of
+  // the animated transitions / keyframes that decorate the page:
+  //   * Progress-bar segments skip the scaleY "lifted off track"
+  //     hover transform and the 120ms transition to the brightness
+  //     bump. Brightness still applies — it's an instant color
+  //     change, not motion — so the hover signal stays readable.
+  //     The width-change transition and fresh-mount fade/grow
+  //     animation are both killed here too: segments snap to their
+  //     final width on appear, and the empty→filled vessel updates
+  //     are instant rather than animated.
+  //   * Match-lane hover tint transitions to its highlighted opacity
+  //     instantly instead of fading in/out over 120ms.
+  //   * Click-flash overlay keeps its mount/unmount machinery
+  //     (`onAnimationEnd` still clears the state) but the animation
+  //     collapses to 1ms so the pulse is imperceptible.
+  @media (prefers-reduced-motion: reduce) {
+    .order-progress-segment {
+      transition: none;
+      animation: none;
+
+      &.hovered {
+        transform: none;
+      }
+    }
+
+    .match-lane::before {
+      transition: none;
+    }
+
+    .match-lane-flash-overlay {
+      animation-duration: 1ms;
+    }
   }
 }
