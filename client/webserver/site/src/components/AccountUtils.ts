@@ -134,23 +134,40 @@ export function canAccelerateOrder (
   return false
 }
 
+// matchQtyInOrderUnits converts a match's qty into the same units as
+// `order.qty` — base units for limit / market-sell, quote units for
+// market-buy (where order.qty is denominated in the quote). Shared
+// across match-vs-order aggregations (filled, settled, order-lane
+// progress-bar segment widths, "Portion" metric on the match card)
+// so the unit-conversion rule lives in exactly one place.
+export function matchQtyInOrderUnits (ord: Order, m: Match): number {
+  return isMarketBuy(ord) ? baseToQuote(m.rate, m.qty) : m.qty
+}
+
+// matchPortion returns the fraction (0..100) of the overall order a
+// single match accounts for, in order.qty units. Zero-qty orders
+// short-circuit to 0 defensively — protocol should never produce
+// those but cheap to guard.
+export function matchPortion (ord: Order, m: Match): number {
+  if (ord.qty <= 0) return 0
+  return (matchQtyInOrderUnits(ord, m) / ord.qty) * 100
+}
+
 export function filled (order: Order): number {
   if (!order.matches) return 0
-  const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
   return order.matches.reduce((f, match) => {
     if (match.isCancel) return f
-    return f + qty(match)
+    return f + matchQtyInOrderUnits(order, match)
   }, 0)
 }
 
 export function settled (order: Order): number {
   if (!order.matches) return 0
-  const qty = isMarketBuy(order) ? (m: Match) => m.qty * (m.rate / RateEncodingFactor) : (m: Match) => m.qty
   return order.matches.reduce((s, match) => {
     if (match.isCancel) return s
     const redeemed = (match.side === MatchSideMaker && match.status >= MakerRedeemed) ||
       (match.side === MatchSideTaker && match.status >= MatchComplete)
-    return redeemed ? s + qty(match) : s
+    return redeemed ? s + matchQtyInOrderUnits(order, match) : s
   }, 0)
 }
 

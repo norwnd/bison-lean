@@ -156,6 +156,26 @@ export function matchLaneColor (m: Match): LaneColor {
   return 'warning'
 }
 
+// SegmentPaint is the outcome-level color for a single match's
+// segment in the order-lane progress bar. Unlike lane-level
+// `LaneColor` (which collapses refunded matches to 'good' because the
+// order itself is still "done"), the progress bar wants to *visually
+// distinguish* a refunded match from a successful one — hence 'bad'
+// as a first-class outcome.
+export type SegmentPaint = 'good' | 'warning' | 'bad'
+
+// matchSegmentPaint resolves the color for a match's order-progress-
+// bar segment:
+//   'warning' — match still in flight (not visually terminal)
+//   'bad'     — terminal with a refund coin broadcast (refund path)
+//   'good'    — terminal on the happy path (both sides redeemed, or
+//               the maker's post-MakerRedeemed window — see
+//               `matchVisuallyTerminal`)
+export function matchSegmentPaint (m: Match): SegmentPaint {
+  if (!matchVisuallyTerminal(m)) return 'warning'
+  return matchRefundPathTaken(m) ? 'bad' : 'good'
+}
+
 // matchStagePaint resolves a single main-track stage's color.
 //  - Active (not yet visually terminal): stages 0..doneIdx are
 //    'warning' (completed steps); later stages stay 'neutral'. The

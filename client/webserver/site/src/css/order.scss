@@ -205,8 +205,8 @@
     min-width: 0;
 
     .diagram-dot {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
       background-color: var(--indicator-neutral);
       position: relative;
@@ -273,8 +273,11 @@
   // Stage-to-stage connector. Starts just past the right edge of this
   // stage's dot, ends just before the left edge of the next stage's
   // dot — so the line visually joins the two without overlapping
-  // either dot. `top: 6px` centers the 2px line on the 14px dot.
-  // The background is a two-stop linear gradient with a hard stop at
+  // either dot. `top: 7px` centers the 2px line on the 16px dot (dot
+  // center at y=8 → strip y=7..9). The `+10` / `-20` offsets leave a
+  // 2px gap each side (dot radius 8 + 2), matching the original
+  // visual rhythm when dots were 14px (radius 7 + 2 = 9). The
+  // background is a two-stop linear gradient with a hard stop at
   // `--conn-fill`, so the left `--conn-fill`% renders in
   // `--conn-color` and the remainder stays neutral. That's how the
   // match lane draws granular "partial progress" on an in-flight
@@ -283,9 +286,9 @@
   .diagram-stage[data-connector]::after {
     content: '';
     position: absolute;
-    top: 6px;
-    left: calc(50% + 9px);
-    width: calc(100% - 18px);
+    top: 7px;
+    left: calc(50% + 10px);
+    width: calc(100% - 20px);
     height: 2px;
     @include conn-fill-gradient(to right);
   }
@@ -358,7 +361,7 @@
   // horizontal Swap Unlock → Refund connector fills with refund-
   // coin confirmations. The divert row's dots are shifted down 8px
   // (via `padding-top` below) so the L-stub's vertical can be tall
-  // enough (16px) to visually separate the refund branch from the
+  // enough (17px) to visually separate the refund branch from the
   // main track while still landing its horizontal arm on the Swap
   // Unlock dot's center.
   .lane-divert-row {
@@ -366,8 +369,8 @@
     row-gap: 0.4rem;
 
     // Shift divert-row stages down 8px so their dot centers land at
-    // y=15 — the bottom-edge alignment target of the lengthened L-
-    // stub's 16px-tall vertical. Labels follow the dots naturally
+    // y=16 — the bottom-edge alignment target of the lengthened L-
+    // stub's 17px-tall vertical. Labels follow the dots naturally
     // (flex column).
     .diagram-stage {
       padding-top: 8px;
@@ -378,7 +381,7 @@
     // shift its `top` to match the dropped dot so it stays centered
     // on the 2px connector line.
     .diagram-stage[data-connector]::after {
-      top: 14px;
+      top: 15px;
     }
   }
 
@@ -393,15 +396,15 @@
 
   // Stub cell draws an L-shape connecting the Your Swap column above
   // to the Swap Unlock dot in the next column. Vertical strip drops
-  // from the main-track line (y=0..16) and joins a horizontal arm
-  // at y=[14, 16] that reaches 9px shy of the next column's center
-  // — matching the main-track `::after` 9px dot-gap so the L lands
+  // from the main-track line (y=0..17) and joins a horizontal arm
+  // at y=[15, 17] that reaches 10px shy of the next column's center
+  // — matching the main-track `::after` 10px dot-gap so the L lands
   // on the Swap Unlock dot the same way an ordinary connector does.
   // Both pseudos read `--conn-color` / `--conn-fill` from the
   // wrapper so the L fills uniformly as elapsed lockTime advances.
   .lane-divert-stub {
     position: relative;
-    min-height: 16px;
+    min-height: 17px;
 
     &::before {
       content: '';
@@ -409,19 +412,191 @@
       top: 0;
       left: calc(50% - 1px);
       width: 2px;
-      height: 16px;
+      height: 17px;
       @include conn-fill-gradient(to bottom);
     }
 
     &::after {
       content: '';
       position: absolute;
-      top: 14px;
+      top: 15px;
       left: calc(50% - 1px);
-      width: calc(100% - 8px);
+      width: calc(100% - 9px);
       height: 2px;
       @include conn-fill-gradient(to right);
     }
+  }
+
+  // Order-lane layout: two flanking stage dots (Created / terminal)
+  // sandwiching a full-width progress bar. Flex row so the bar
+  // stretches to fill the space between the dots while the flanks
+  // stay intrinsic-sized. The bar itself is two stacked rows (percent
+  // labels + colored segments), so the flank dot needs a matching top
+  // spacer to keep its center aligned with the segment-row center
+  // rather than drifting up to the label-row's vertical center.
+  .order-lane-layout {
+    --pct-row-height: 14px;
+    --pct-row-gap: 4px;
+    --segment-height: 16px;
+
+    display: flex;
+    align-items: flex-start;
+    column-gap: 0.75rem;
+  }
+
+  // Flank "stage" reuses `.diagram-stage` for the paint cascade
+  // (`.paint-X .diagram-dot`) and the label styling. Constrained
+  // width so long terminal labels (e.g. "Fulfilled (100.0% settled)")
+  // wrap onto a second line instead of stealing room from the bar.
+  .order-lane-flank {
+    flex: 0 0 auto;
+    min-width: 40px;
+    max-width: 120px;
+  }
+
+  // Top spacer above the flank dot: pct-row height + gap, so the dot
+  // sits at the same vertical origin as the segment row beside it.
+  .order-progress-top-slot {
+    height: calc(var(--pct-row-height) + var(--pct-row-gap));
+  }
+
+  // Progress bar takes all remaining width between the flanks.
+  // `min-width: 0` lets a narrow viewport squeeze the bar instead of
+  // forcing the right flank off-screen — default flex min-content
+  // would prevent shrinking because the bar contains inline content.
+  .order-progress-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  // Percent labels row. Each label's cell width equals its segment's
+  // width so the label centers over its segment naturally. Small
+  // segments may clip their label (better than overflowing into
+  // neighbors); hover surfaces the full text via native title
+  // tooltip set on the React side.
+  .order-progress-labels {
+    display: flex;
+    height: var(--pct-row-height);
+    margin-bottom: var(--pct-row-gap);
+  }
+
+  .order-progress-pct {
+    font-size: 11px;
+    font-family: $demi-sans;
+    color: var(--text-color-secondary);
+    text-align: center;
+    white-space: nowrap;
+    line-height: var(--pct-row-height);
+    overflow: hidden;
+  }
+
+  // Segments row. Rounded corners come from the first/last segment
+  // themselves (see below) so `overflow: hidden` isn't needed — which
+  // matters because hovered segments scale up slightly on the Y axis
+  // and we don't want the container clipping that lift. The neutral
+  // background shows through any gaps (pre-terminal orders whose
+  // remainder hasn't matched yet leave empty trailing space).
+  .order-progress-segments {
+    display: flex;
+    height: var(--segment-height);
+    background-color: var(--indicator-neutral);
+    border-radius: 3px;
+  }
+
+  // Single-color segment painted per match outcome. `absent` uses the
+  // dedicated "void" color for the unfilled remainder of a terminal
+  // order — distinct from the neutral bg used for in-flight orders'
+  // unfilled space (see colors.scss for rationale).
+  .order-progress-segment {
+    border: 0;
+    padding: 0;
+    background-color: var(--indicator-neutral);
+    cursor: pointer;
+    transition: transform 120ms ease-out, filter 120ms ease-out;
+    transform-origin: center;
+
+    &:first-child {
+      border-top-left-radius: 3px;
+      border-bottom-left-radius: 3px;
+    }
+
+    &:last-child {
+      border-top-right-radius: 3px;
+      border-bottom-right-radius: 3px;
+    }
+
+    &.paint-good { background-color: var(--indicator-good); }
+    &.paint-warning { background-color: var(--indicator-warning); }
+    &.paint-bad { background-color: var(--indicator-bad); }
+
+    &.paint-absent {
+      background-color: var(--indicator-absent);
+      cursor: default;
+    }
+
+    // Hovered / focused segment gets a subtle Y-axis scale-up and a
+    // brightness bump — unmistakable click affordance without
+    // shifting adjacent segments (scaleY leaves width alone). The
+    // scale pokes a few px above and below the bar, intentional:
+    // it reads as "lifted off the track".
+    &.hovered {
+      transform: scaleY(1.25);
+      filter: brightness(1.15);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--link-color);
+      outline-offset: 1px;
+    }
+  }
+
+  // Match-lane hover tint + click flash. The persistent hover tint
+  // (driven by the progress-bar segment) paints a translucent lane-
+  // color wash behind the lane's content; the click flash briefly
+  // pulses a stronger opacity that fades out. Both live behind the
+  // lane's content so cards / pills / text stay readable. `isolation:
+  // isolate` establishes a stacking context so `z-index: -1` on the
+  // hover-tint pseudo stays scoped within the lane rather than
+  // punching through to the page body.
+  .match-lane {
+    position: relative;
+    isolation: isolate;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-color: var(--lane-color);
+      opacity: 0;
+      pointer-events: none;
+      z-index: -1;
+      transition: opacity 120ms ease-out;
+    }
+
+    &.highlighted::before {
+      opacity: 0.1;
+    }
+  }
+
+  // Flash overlay is a real DOM node (not a pseudo-element) so React
+  // can remount it on repeat clicks via a changing `key` — which
+  // restarts the keyframe animation from the first frame. Lives at
+  // `z-index: -1` so it stays behind lane content just like the
+  // hover tint above.
+  .match-lane-flash-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: var(--lane-color);
+    pointer-events: none;
+    z-index: -1;
+    animation: match-lane-flash 0.9s ease-out forwards;
+  }
+
+  @keyframes match-lane-flash {
+    from { opacity: 0.35; }
+    to { opacity: 0; }
   }
 
   .expanded-match-wrap {

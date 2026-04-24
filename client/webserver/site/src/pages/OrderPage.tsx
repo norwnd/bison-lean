@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
@@ -11,22 +11,22 @@ import {
 } from '../hooks/useFormatters'
 import {
   isMarketBuy, averageRate, baseToQuote,
-  isCancellable, canAccelerateOrder
+  isCancellable, canAccelerateOrder, matchPortion
 } from '../components/AccountUtils'
 import { coinExplorerURL, formatCoinID } from '../components/CoinExplorers'
 import { AccelerateOrderForm } from '../components/common/AccelerateOrderForm'
 import { FormOverlay } from '../components/common/FormOverlay'
 import {
-  type LaneColor, type StageCoinView, type StagePaint, matchStageCount,
-  matchStageLabels, matchStagePaint, matchConnectorPaint, matchConnectorFill,
-  matchCurStageIdx, matchLaneColor, matchStageHrefs, matchStageCoinViews,
+  type LaneColor, type SegmentPaint, type StageCoinView, type StagePaint,
+  matchStageCount, matchStageLabels, matchStagePaint, matchConnectorPaint,
+  matchConnectorFill, matchCurStageIdx, matchLaneColor, matchSegmentPaint,
+  matchStageHrefs, matchStageCoinViews,
   makerSwapCoin, takerSwapCoin, makerRedeemCoin, takerRedeemCoin,
   yourSwapStageIdx, refundTrackConnectorPaint, swapUnlockFill,
   refundConnectorFill, swapUnlockDotPaint, refundDotPaint,
   swapUnlockAtMs, takerSwapUnlockAtMs,
 } from '../components/MatchStages'
 import {
-  ORDER_STAGE_COUNT,
   orderStageLabels, orderStageColored, orderStageAgeMs,
   orderLaneColor,
 } from '../components/OrderStages'
@@ -325,6 +325,94 @@ function LaneStages ({ stages }: { stages: StageInfo[] }) {
   )
 }
 
+// OrderSegment is the per-segment bundle the order progress bar
+// consumes. Each regular match contributes one segment; a terminal
+// order with an unfilled remainder gets one trailing `absent`
+// segment (matchID undefined, no percentage label). The paint
+// widens `SegmentPaint` with 'absent' for that trailing slot —
+// match-backed segments always resolve to one of good/warning/bad.
+type OrderSegment = {
+  matchID?: string,
+  widthPct: number,
+  pctLabel: string,
+  paint: SegmentPaint | 'absent',
+}
+
+// OrderProgressBar renders a two-row strip: percent labels on top,
+// clickable colored segments below. The two rows share the same
+// per-segment width percentages so each label sits centered above
+// its segment. Segments for regular matches respond to hover
+// (persistent tint on the corresponding match lane + a visual bump
+// via the `.hovered` modifier) and click (scrollIntoView + flash
+// highlight on that match lane). The optional trailing `absent`
+// segment is decorative only — no handlers, no percent label.
+function OrderProgressBar ({
+  segments, hoveredMatchID, onHover, onClick, t,
+}: {
+  segments: OrderSegment[],
+  hoveredMatchID: string | null,
+  onHover: (matchID: string | null) => void,
+  onClick: (matchID: string) => void,
+  t: (k: string, opts?: Record<string, string>) => string,
+}) {
+  return (
+    <div className="order-progress-bar">
+      {/* Row 1: percent labels. Same width distribution as the
+          segments row below so each label centers over its segment.
+          Narrow segments clip their label (CSS `overflow: hidden`);
+          the `title` attribute surfaces the full text via the
+          browser's native tooltip on hover. Skip `title` when the
+          label is empty (absent segment) so the browser doesn't show
+          an empty tooltip. */}
+      <div className="order-progress-labels" aria-hidden="true">
+        {segments.map((s, i) => (
+          <div
+            key={i}
+            className="order-progress-pct"
+            style={{ width: `${s.widthPct}%` }}
+            title={s.pctLabel || undefined}
+          >
+            {s.pctLabel}
+          </div>
+        ))}
+      </div>
+      {/* Row 2: colored segments. Each match-backed segment is a
+          button for native keyboard + pointer semantics; the absent
+          remainder is a plain div (non-interactive, aria-hidden). */}
+      <div className="order-progress-segments">
+        {segments.map((s, i) => {
+          const matchID = s.matchID
+          if (!matchID) {
+            return (
+              <div
+                key={`absent-${i}`}
+                className={`order-progress-segment paint-${s.paint}`}
+                style={{ width: `${s.widthPct}%` }}
+                aria-hidden="true"
+              />
+            )
+          }
+          const hovered = matchID === hoveredMatchID
+          return (
+            <button
+              key={matchID}
+              type="button"
+              className={`order-progress-segment paint-${s.paint}${hovered ? ' hovered' : ''}`}
+              style={{ width: `${s.widthPct}%` }}
+              onMouseEnter={() => onHover(matchID)}
+              onMouseLeave={() => onHover(null)}
+              onFocus={() => onHover(matchID)}
+              onBlur={() => onHover(null)}
+              onClick={() => onClick(matchID)}
+              aria-label={`${t('Match')} ${s.pctLabel}`}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // Refund-divert column offsets, measured from the `Your Swap` stage
 // column (1-indexed, so `yourSwapIdx + STUB_COL_OFFSET` is the
 // stub's grid-column). The stub drops straight below Your Swap,
@@ -449,6 +537,32 @@ export default function OrderPage () {
   const [cancelError, setCancelError] = useState('')
   const [showAccelerate, setShowAccelerate] = useState(false)
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null)
+
+  // Progress-bar ↔ match-lane interactions.
+  //
+  // `hoveredMatchID` drives the persistent cross-lane hover tint: when
+  // the pointer is over a progress-bar segment, the corresponding
+  // match-lane gets `.highlighted` (subtle lane-color bg wash).
+  //
+  // `flash` triggers a brief pulse on the match-lane when a segment
+  // is clicked. The `tick` counter ensures repeat clicks on the same
+  // match re-run the animation — React reads the tick as the overlay
+  // element's key, so a new tick unmounts+remounts the overlay and
+  // restarts the keyframe from the first frame.
+  //
+  // `matchLaneRefs` is a ref map keyed by matchID so a segment click
+  // can `scrollIntoView` the corresponding lane without the
+  // progress-bar needing to know anything about the DOM structure
+  // below it.
+  const [hoveredMatchID, setHoveredMatchID] = useState<string | null>(null)
+  const [flash, setFlash] = useState<{ id: string, tick: number } | null>(null)
+  const matchLaneRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const handleSegmentClick = useCallback((matchID: string) => {
+    const el = matchLaneRefs.current[matchID]
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlash(prev => ({ id: matchID, tick: (prev?.tick ?? 0) + 1 }))
+  }, [])
 
   // Narrow store subscriptions to just the per-order fields we need for
   // formatting. Subscribing to the whole `exchanges` object would cause
@@ -670,14 +784,12 @@ export default function OrderPage () {
     }
   }
 
-  // Portion of the overall order a match accounts for. Market buys
-  // have qty in quote units so we compute the quote portion; otherwise
-  // it's base-unit qty / order base qty.
-  const matchPortionPct = (m: Match): string => {
-    if (order.qty <= 0) return '0.0'
-    const num = isMarketBuy(order) ? baseToQuote(m.rate, m.qty) : m.qty
-    return ((num / order.qty) * 100).toFixed(1)
-  }
+  // Portion of the overall order a match accounts for, formatted to
+  // one decimal for the match-card "Portion" metric. Same math drives
+  // the order-lane progress-bar segment widths — both go through
+  // `matchPortion` so the unit-conversion + zero-guard logic lives in
+  // exactly one place (see AccountUtils).
+  const matchPortionPct = (m: Match): string => matchPortion(order, m).toFixed(1)
 
   // Order-level mini card: shows the total order as From→To. For
   // market buys we estimate the base amount via the matches' average
@@ -709,24 +821,46 @@ export default function OrderPage () {
     }
   }
 
-  // Order lane: reached stages adopt the lane color; the order track
-  // has no granular in-flight progress (no confs to watch, stage
-  // transitions are instantaneous from the UI's point of view), so
-  // connector fills are binary 0/100. Single-pass build so each
-  // stage's label/paint/connector/age stay colocated.
+  // Order lane: two stage dots (Created / terminal) flank a progress
+  // bar. The dots use the same paint rule as match-lane stages —
+  // colored in the lane-color when reached, neutral otherwise.
   const orderColor: LaneColor = orderLaneColor(order)
-  const orderStages: StageInfo[] = orderStageLabels(order, t).map((label, i) => {
-    const reached = orderStageColored(order, i)
-    const isLast = i === ORDER_STAGE_COUNT - 1
-    const connected = !isLast && reached && orderStageColored(order, i + 1)
-    return {
-      label,
-      paint: reached ? orderColor : 'neutral',
-      connectorPaint: isLast ? undefined : (connected ? orderColor : 'neutral'),
-      connectorFill: isLast ? undefined : (connected ? 100 : 0),
-      ageMs: orderStageAgeMs(order, i),
-    }
-  })
+  const orderStageLabelArr = orderStageLabels(order, t)
+  const orderDotPaints: StagePaint[] = [
+    orderStageColored(order, 0) ? orderColor : 'neutral',
+    orderStageColored(order, 1) ? orderColor : 'neutral',
+  ]
+
+  // Per-match segments for the order-lane progress bar. Each regular
+  // match contributes a segment whose width tracks its portion of the
+  // overall order qty (in order.qty's units — base for
+  // limit/market-sell, quote for market-buy) and whose color tracks
+  // the match's outcome (good / warning / bad). Once the order is
+  // terminal, any unfilled remainder becomes a trailing 'absent'
+  // segment so the bar visually accounts for the full 100% — active
+  // orders leave that space empty (bar bg shows through) because the
+  // remainder might still match.
+  const orderSegments: OrderSegment[] = []
+  let orderFilledPct = 0
+  for (const m of regularMatches) {
+    const portion = matchPortion(order, m)
+    if (portion <= 0) continue
+    orderSegments.push({
+      matchID: m.matchID,
+      widthPct: portion,
+      pctLabel: `${portion.toFixed(1)}%`,
+      paint: matchSegmentPaint(m),
+    })
+    orderFilledPct += portion
+  }
+  const orderTerminal = orderStageColored(order, 1)
+  if (orderTerminal && orderFilledPct < 100) {
+    orderSegments.push({
+      widthPct: 100 - orderFilledPct,
+      pctLabel: '',
+      paint: 'absent',
+    })
+  }
 
   // ---------------------------------------------------------------------------
   // Match card rendering
@@ -1012,17 +1146,51 @@ export default function OrderPage () {
       )}
 
       <div className="status-diagram">
-        {/* Order lane: 3 stages (Created / Active / terminal). Stages
-            0 and 2 carry a live "(X ago)" suffix. The terminal label
-            morphs to Completed/Canceled/Revoked. The lane renders
-            the stages strip only — the order-level header and
-            mini-card are consolidated into `.order-summary-line`
-            above. */}
-        <div
-          className={`lane order-lane lane-${orderColor}`}
-          style={cssVars({ '--stage-count': ORDER_STAGE_COUNT })}
-        >
-          <LaneStages stages={orderStages} />
+        {/* Order lane: two flanking stage dots (Created / terminal)
+            connected by a progress bar. The bar renders one segment
+            per regular match in stamp order (same order as the match
+            lanes below), widths proportional to each match's portion
+            of the order qty, colors driven by match outcome
+            (good/bad/warning). Segments are hoverable (tints the
+            corresponding match lane) and clickable (scrolls to + flashes
+            the match lane). Once terminal with an unfilled remainder,
+            a trailing 'absent' segment paints the void in black. */}
+        <div className={`lane order-lane lane-${orderColor}`}>
+          <div className="order-lane-layout">
+            {/* Left (Created) dot. Reuses `.diagram-stage` so the
+                paint cascade (`.paint-X .diagram-dot`) and the
+                label styling carry over unchanged. The top spacer
+                above the dot matches the pct-label row on the
+                progress bar so dot-centers and segment-centers
+                land on the same horizontal line. */}
+            <div className={`diagram-stage order-lane-flank paint-${orderDotPaints[0]}`}>
+              <div className="order-progress-top-slot" aria-hidden="true" />
+              <div className="diagram-dot" />
+              <div className="diagram-stage-label">
+                {orderStageLabelArr[0]}
+                {orderStageAgeMs(order, 0) !== undefined && (
+                  <> (<TimeAgo ms={orderStageAgeMs(order, 0)!} /> ago)</>
+                )}
+              </div>
+            </div>
+            <OrderProgressBar
+              segments={orderSegments}
+              hoveredMatchID={hoveredMatchID}
+              onHover={setHoveredMatchID}
+              onClick={handleSegmentClick}
+              t={t}
+            />
+            {/* Right (terminal) dot. Label already carries the
+                "(X% settled)" suffix (embedded in orderStageLabels)
+                so no age render here. */}
+            <div className={`diagram-stage order-lane-flank paint-${orderDotPaints[1]}`}>
+              <div className="order-progress-top-slot" aria-hidden="true" />
+              <div className="diagram-dot" />
+              <div className="diagram-stage-label">
+                {orderStageLabelArr[1]}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Match lanes — one per regular match, in stamp order.
@@ -1082,12 +1250,28 @@ export default function OrderPage () {
           const refundCoin: StageCoin | undefined = refundHref
             ? { amt: mini.from.amt, icon: mini.from.icon, href: refundHref, sentiment: 'good' }
             : undefined
+          const highlighted = hoveredMatchID === m.matchID
+          const flashing = flash?.id === m.matchID
           return (
             <div
               key={m.matchID}
-              className={`lane match-lane lane-${laneColor}`}
+              ref={el => { matchLaneRefs.current[m.matchID] = el }}
+              className={`lane match-lane lane-${laneColor}${highlighted ? ' highlighted' : ''}`}
               style={cssVars({ '--stage-count': stageCount })}
             >
+              {/* Flash overlay: keyed by `flash.tick` so a repeat
+                  click re-mounts the element and restarts the
+                  keyframe animation from the first frame. Lives
+                  only on the currently-flashing lane; `onAnimationEnd`
+                  clears the state so the overlay unmounts cleanly
+                  instead of lingering at opacity 0. */}
+              {flashing && (
+                <div
+                  key={flash.tick}
+                  className="match-lane-flash-overlay"
+                  onAnimationEnd={() => setFlash(null)}
+                />
+              )}
               <div className="lane-header">
                 <span className="lane-label">{t('Match')} #{matchIdx + 1}</span>
               </div>
