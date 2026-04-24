@@ -251,7 +251,22 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     if (!s.plotRegion || !s.candleRegion || !s.volumeRegion || !s.xLabelsRegion || !s.yLabelsRegion) return
 
     const { theme, mousePos, numToShow, panOffset, isDragging } = s
-    const allCandles = data.candles || []
+    // TEMPORARY WORKAROUND: the 3rd-party DEX server publishes an
+    // anomalous 24h candle around 2026-02-10 UTC whose high rate dwarfs
+    // the rest of the visible range and compresses every other candle
+    // into a flat line near the bottom of the chart. Drop any 24h
+    // candle whose startStamp falls in a 3-day window around Feb 10
+    // UTC so the filter still catches the spike regardless of small
+    // timezone-driven alignment differences. Non-chart UI (e.g. the
+    // 24h volume header) still sees the full data. REMOVE once the
+    // server data is corrected.
+    const ANOMALY_24H_MIN = Date.UTC(2026, 1, 9)   // 2026-02-09 UTC inclusive
+    const ANOMALY_24H_MAX = Date.UTC(2026, 1, 12)  // 2026-02-12 UTC exclusive
+    const allCandles = (data.candles || []).filter(c =>
+      !(data.ms === 86400000 &&
+        c.startStamp >= ANOMALY_24H_MIN &&
+        c.startStamp < ANOMALY_24H_MAX)
+    )
     const candleWidth = data.ms
     const rateStep = market.ratestep
 
@@ -289,9 +304,15 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     // right.
     const xPadding = panOffset === 0 ? (endStamp - startStamp) * 0.05 : 0
     const yPadding = (highPrice - lowPrice) * 0.5
-    const chartExtents = new Extents(startStamp, endStamp + xPadding, lowPrice - yPadding, highPrice + yPadding)
+    // Clamp Y min to 0: rates are always > 0, so negative axis values
+    // are never meaningful. Without this, anomalous data (e.g. a spike
+    // candle with very high rate, or a wide volatile range where
+    // yPadding > lowPrice) can push the bottom padding below zero and
+    // surface negative price labels on the right gutter.
+    const yMin = Math.max(0, lowPrice - yPadding)
+    const chartExtents = new Extents(startStamp, endStamp + xPadding, yMin, highPrice + yPadding)
     if (lowPrice === highPrice) {
-      chartExtents.y.min -= rateStep
+      chartExtents.y.min = Math.max(0, chartExtents.y.min - rateStep)
       chartExtents.y.max += rateStep
     }
 
