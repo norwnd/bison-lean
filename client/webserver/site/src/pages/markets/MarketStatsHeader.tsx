@@ -94,8 +94,11 @@ export function MarketStatsHeader ({
         <span className="fs14 grey px-2 border-right border-bottom">{t('HIGH24')}</span>
         <span className="fs14 grey ps-2 border-bottom">{t('LOW24')}</span>
 
-        <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
-          {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
+        <div
+          className="px-2 fs14 border-right"
+          style={spot ? { color: change24 >= 0 ? 'var(--buy-color)' : 'var(--sell-color)' } : undefined}
+        >
+          {spot ? `${change24 >= 0 ? '+' : ''}${(change24 * 100).toFixed(1)}%` : '-'}
         </div>
         {/* 24h volume shown as the USD equivalent only -- the chart's
              readout keeps the base-amount breakdown; the header stays
