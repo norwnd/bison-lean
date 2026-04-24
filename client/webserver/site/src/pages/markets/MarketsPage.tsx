@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useWebSocketStore } from '../../stores/useWebSocketStore'
 import { useNotifications } from '../../hooks/useNotifications'
 import OrderBook from '../../components/OrderBook'
+import { HISTORY_BATCH_SIZE } from '../../components/charts/CandleChart'
 import { formatRateAtomToRateStep, shortSymbol } from '../../hooks/useFormatters'
 import { hasActiveMatches } from '../../components/AccountUtils'
 import type {
@@ -193,6 +194,11 @@ export default function MarketsPage () {
   const [candleLoading, setCandleLoading] = useState(false)
   const [mouseCandle, setMouseCandle] = useState<Candle | null>(null)
   const candleCacheRef = useRef<Record<string, import('../../stores/types').CandlesPayload>>({})
+  // Per-duration history pagination state. `inFlight` prevents concurrent
+  // loadoldercandles requests for the same dur; `floorReached` latches
+  // true once the server returns fewer candles than we asked for, which
+  // means we've reached the start of the archive. Reset on market change.
+  const candleHistoryRef = useRef<Record<string, { inFlight: boolean; floorReached: boolean }>>({})
   // MP-20: bumped whenever the 5m candle cache changes so the high/low
   // fallback can reactively pick up new data. Scoped to the 5m dur because
   // that's the only cache entry the MP-20 fallback reads from -- bumping on
@@ -355,6 +361,7 @@ export default function MarketsPage () {
     bookRef.current = null
     setCandleData(null)
     candleCacheRef.current = {}
+    candleHistoryRef.current = {}
     setCandleCacheVersion(0)
     setRecentMatches([])
     bumpBook()
@@ -468,6 +475,44 @@ export default function MarketsPage () {
       setCandleLoading(false)
     }
 
+    const handleOlderCandles = (data: BookUpdate) => {
+      if (data.host !== selected.host || data.marketID !== currentMktId) return
+      const payload = data.payload as {
+        dur: string
+        candles: Candle[] | null
+      }
+      const received = payload.candles ?? []
+      const state = candleHistoryRef.current[payload.dur] ?? { inFlight: false, floorReached: false }
+      state.inFlight = false
+      // Short response means we hit the start of server-side history for
+      // this duration. Latch so we stop asking for more.
+      if (received.length < HISTORY_BATCH_SIZE) state.floorReached = true
+      candleHistoryRef.current[payload.dur] = state
+      if (received.length === 0) return
+      const cache = candleCacheRef.current[payload.dur]
+      if (!cache) return
+      // Defensive de-dupe: the server returns `end_stamp < before`, so in
+      // normal operation every incoming candle is strictly older than the
+      // oldest cached candle. Guard anyway in case a retry crosses wires.
+      const oldest = cache.candles[0]
+      const older = oldest
+        ? received.filter(c => c.endStamp < oldest.endStamp)
+        : received
+      // Nothing new after de-dupe means the server is returning overlap
+      // (e.g. a stock server that ignores `before` and re-sends the newest
+      // cache). Latch so we stop asking; otherwise the chart would keep
+      // triggering loads that can never advance the cache edge.
+      if (older.length === 0) {
+        state.floorReached = true
+        candleHistoryRef.current[payload.dur] = state
+        return
+      }
+      cache.candles = [...older, ...cache.candles]
+      if (payload.dur === '5m') setCandleCacheVersion(v => v + 1)
+      if (reqCandleDurRef.current !== payload.dur) return
+      setCandleData({ ...cache })
+    }
+
     const handleCandleUpdate = (data: BookUpdate) => {
       if (data.host !== selected.host) return
       const { dur, candle } = data.payload
@@ -516,6 +561,7 @@ export default function MarketsPage () {
     wsSubscribe('epoch_order', handleEpochOrder)
     wsSubscribe('candles', handleCandles)
     wsSubscribe('candle_update', handleCandleUpdate)
+    wsSubscribe('older_candles', handleOlderCandles)
     wsSubscribe('epoch_match_summary', handleEpochMatchSummary)
 
     // 2) THEN send loadmarket (handlers are guaranteed to be ready)
@@ -533,6 +579,7 @@ export default function MarketsPage () {
       wsUnsubscribe('epoch_order')
       wsUnsubscribe('candles')
       wsUnsubscribe('candle_update')
+      wsUnsubscribe('older_candles')
       wsUnsubscribe('epoch_match_summary')
       wsRequest('unmarket', {})
     }
@@ -554,13 +601,18 @@ export default function MarketsPage () {
     // spot-note-driven identity changes don't give this callback a new
     // identity on every tick (which would cascade into EFF-5).
     if (!selected || !currentXcRef.current) return
+    // Sync the requested-duration guard on every call -- not only when we
+    // issue a WS fetch. Cache-hit paths otherwise leave `reqCandleDurRef`
+    // pointing at a prior request, so a late response for that prior
+    // duration passes `handleCandles`' stale-check and overwrites the chart
+    // while the button UI still reflects the user's latest selection.
+    reqCandleDurRef.current = candleDur
     const cache = candleCacheRef.current[candleDur]
     if (cache) {
       setCandleData(cache)
       setCandleLoading(false)
       return
     }
-    reqCandleDurRef.current = candleDur
     setCandleLoading(true)
     wsRequest('loadcandles', {
       host: selected.host,
@@ -789,9 +841,28 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Candle chart reporters
   // -------------------------------------------------------------------------
+  const requestOlderHistory = useCallback(() => {
+    if (!selected) return
+    const dur = reqCandleDurRef.current
+    const cache = candleCacheRef.current[dur]
+    if (!cache || cache.candles.length === 0) return
+    const state = candleHistoryRef.current[dur] ?? { inFlight: false, floorReached: false }
+    if (state.inFlight || state.floorReached) return
+    state.inFlight = true
+    candleHistoryRef.current[dur] = state
+    wsRequest('loadoldercandles', {
+      host: selected.host,
+      base: selected.baseID,
+      quote: selected.quoteID,
+      dur,
+      before: cache.candles[0].endStamp,
+      n: HISTORY_BATCH_SIZE
+    })
+  }, [selected, wsRequest])
   const candleReporters = useMemo(() => ({
-    mouse: (c: Candle | null) => setMouseCandle(c)
-  }), [])
+    mouse: (c: Candle | null) => setMouseCandle(c),
+    requestOlderHistory
+  }), [requestOlderHistory])
 
   // -------------------------------------------------------------------------
   // Fiat reference rates and derived external (non-Bison) price.

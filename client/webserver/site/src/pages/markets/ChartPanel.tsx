@@ -4,7 +4,7 @@ import { Wave } from '../../components/charts/Wave'
 import {
   formatCoinAtomToLotSizeBaseCurrency, formatRateAtomToRateStep
 } from '../../hooks/useFormatters'
-import type { CandlesPayload, Candle } from '../../stores/types'
+import type { CandlesPayload, Candle, Market, UnitInfo } from '../../stores/types'
 import { useMarketPageContext } from './MarketPageContext'
 
 // ---------------------------------------------------------------------------
@@ -98,21 +98,51 @@ export function ChartPanel ({
             />
           </div>
         </div>
-        {!chartErrMsg && mouseCandle && (
-          <div className="grey p-1 border-bottom border-start" style={{ position: 'absolute', top: 0, right: 0 }}>
-            <div className="d-flex align-items-center">
-              <span className="ico-target fs11 me-1"></span>
-              <span>
-                S: {formatRateAtomToRateStep(mouseCandle.startRate, bui, qui, currentMkt.ratestep)},
-                E: {formatRateAtomToRateStep(mouseCandle.endRate, bui, qui, currentMkt.ratestep)},
-                L: {formatRateAtomToRateStep(mouseCandle.lowRate, bui, qui, currentMkt.ratestep)},
-                H: {formatRateAtomToRateStep(mouseCandle.highRate, bui, qui, currentMkt.ratestep)},
-                V: {formatCoinAtomToLotSizeBaseCurrency(mouseCandle.matchVolume, bui, currentMkt.lotsize)}
-              </span>
-            </div>
-          </div>
+        {!chartErrMsg && currentMkt && bui && qui && (candleData?.candles?.length ?? 0) > 0 && (
+          <OhlcvReadout
+            candle={mouseCandle ?? candleData!.candles[candleData!.candles.length - 1]}
+            market={currentMkt}
+            bui={bui}
+            qui={qui}
+          />
         )}
       </div>
     </section>
+  )
+}
+
+// Binance-style top-left OHLCV readout. Renders the hovered candle, or
+// falls back to the latest candle when the user isn't hovering (or while
+// dragging). Value cells are colored per candle direction.
+interface OhlcvReadoutProps {
+  candle: Candle
+  market: Market
+  bui: UnitInfo
+  qui: UnitInfo
+}
+
+function OhlcvReadout ({ candle, market, bui, qui }: OhlcvReadoutProps) {
+  const up = candle.endRate >= candle.startRate
+  const cls = up ? 'up' : 'down'
+  const changeAbs = candle.endRate - candle.startRate
+  const changePct = candle.startRate > 0 ? (changeAbs / candle.startRate) * 100 : 0
+  const sign = changeAbs >= 0 ? '+' : '\u2212'
+  const absStr = formatRateAtomToRateStep(Math.abs(changeAbs), bui, qui, market.ratestep)
+  const pctStr = `${sign}${Math.abs(changePct).toFixed(2)}%`
+  return (
+    <div className="candle-ohlcv">
+      <span className="label">O</span>
+      <span className={cls}>{formatRateAtomToRateStep(candle.startRate, bui, qui, market.ratestep)}</span>
+      <span className="label">H</span>
+      <span className={cls}>{formatRateAtomToRateStep(candle.highRate, bui, qui, market.ratestep)}</span>
+      <span className="label">L</span>
+      <span className={cls}>{formatRateAtomToRateStep(candle.lowRate, bui, qui, market.ratestep)}</span>
+      <span className="label">C</span>
+      <span className={cls}>{formatRateAtomToRateStep(candle.endRate, bui, qui, market.ratestep)}</span>
+      <span className={cls}>{sign}{absStr}</span>
+      <span className={cls}>({pctStr})</span>
+      <span className="label">Vol</span>
+      <span className="label strong">{formatCoinAtomToLotSizeBaseCurrency(candle.matchVolume, bui, market.lotsize)}</span>
+    </div>
   )
 }

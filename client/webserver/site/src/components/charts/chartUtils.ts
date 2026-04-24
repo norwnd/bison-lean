@@ -169,59 +169,76 @@ export class Animation {
   }
 }
 
-// Theme definitions
+// Theme definitions.
+//
+// - body/axisLabel/gridLines/gapLine are shared across charts.
+// - sellLine/buyLine/sellFill/buyFill are kept for PlacementsChart (MM
+//   placements visualisation). CandleChart uses the Binance-palette
+//   candleUp/candleDown tokens instead.
+// - candleUp/candleDown/volumeUp/volumeDown/crosshair/axisPill*/lastLine*
+//   are Binance Original palette tokens for CandleChart.
 export interface Theme {
   body: string
   axisLabel: string
-  gridBorder: string
   gridLines: string
   gapLine: string
-  value: string
-  zoom: string
-  zoomHover: string
   sellLine: string
   buyLine: string
   sellFill: string
   buyFill: string
-  crosshairs: string
-  legendFill: string
-  legendText: string
+  candleUp: string
+  candleDown: string
+  volumeUp: string
+  volumeDown: string
+  crosshair: string
+  axisPillBg: string
+  axisPillFg: string
+  lastLineUp: string
+  lastLineDown: string
 }
 
 export const darkTheme: Theme = {
-  body: '#0b2031',
-  axisLabel: '#b1b1b1',
-  gridBorder: '#383f4b',
-  gridLines: '#383f4b',
+  body: '#181A20',
+  axisLabel: '#848E9C',
+  gridLines: '#1E2329',
   gapLine: '#6b6b6b',
-  value: '#9a9a9a',
-  zoom: '#5b5b5b',
-  zoomHover: '#aaa',
-  sellLine: '#d10e0e',
-  buyLine: '#2e9f67',
-  sellFill: '#d10e0e',
-  buyFill: '#2e9f67',
-  crosshairs: '#888',
-  legendFill: 'black',
-  legendText: '#d5d5d5'
+  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) — match the
+  // app-wide --sell-color / --buy-color CSS variables.
+  sellLine: '#ad0e0e',
+  buyLine: '#00703b',
+  sellFill: '#ad0e0e',
+  buyFill: '#00703b',
+  candleUp: '#0ECB81',
+  candleDown: '#F6465D',
+  volumeUp: 'rgba(14,203,129,0.35)',
+  volumeDown: 'rgba(246,70,93,0.35)',
+  crosshair: 'rgba(132,142,156,0.55)',
+  axisPillBg: '#474D57',
+  axisPillFg: '#EAECEF',
+  lastLineUp: 'rgba(14,203,129,0.9)',
+  lastLineDown: 'rgba(246,70,93,0.9)'
 }
 
 export const lightTheme: Theme = {
-  body: '#f4f4f4',
-  axisLabel: '#1b1b1b',
-  gridBorder: '#ddd',
-  gridLines: '#e8e8e8',
+  body: '#FFFFFF',
+  axisLabel: '#707A8A',
+  gridLines: '#EAECEF',
   gapLine: '#595959',
-  value: '#4d4d4d',
-  zoom: '#777',
-  zoomHover: '#333',
-  sellLine: '#d10e0e',
-  buyLine: '#2e9f67',
-  sellFill: '#d10e0e',
-  buyFill: '#2e9f67',
-  crosshairs: '#595959',
-  legendFill: '#e6e6e6',
-  legendText: '#1b1b1b'
+  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) — match the
+  // app-wide --sell-color / --buy-color CSS variables.
+  sellLine: '#ad0e0e',
+  buyLine: '#00703b',
+  sellFill: '#ad0e0e',
+  buyFill: '#00703b',
+  candleUp: '#0ECB81',
+  candleDown: '#F6465D',
+  volumeUp: 'rgba(14,203,129,0.35)',
+  volumeDown: 'rgba(246,70,93,0.35)',
+  crosshair: 'rgba(112,122,138,0.55)',
+  axisPillBg: '#474D57',
+  axisPillFg: '#FFFFFF',
+  lastLineUp: 'rgba(14,203,129,0.9)',
+  lastLineDown: 'rgba(246,70,93,0.9)'
 }
 
 // Helper drawing functions
@@ -230,6 +247,50 @@ export function line (ctx: CanvasRenderingContext2D, x0: number, y0: number, x1:
   ctx.moveTo(x0, y0)
   ctx.lineTo(x1, y1)
   if (!skipStroke) ctx.stroke()
+}
+
+export function dashedLine (ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, pattern: number[] = [4, 4]) {
+  ctx.save()
+  ctx.setLineDash(pattern)
+  ctx.beginPath()
+  ctx.moveTo(x0, y0)
+  ctx.lineTo(x1, y1)
+  ctx.stroke()
+  ctx.restore()
+}
+
+// Draw a Binance-style axis pill (rounded rect + centered text). `x`,`y`
+// anchor the pill's center. Height grows to fit the configured font.
+export function pillLabel (
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  text: string,
+  bg: string, fg: string,
+  paddingX: number = 6, paddingY: number = 3, radius: number = 2
+) {
+  ctx.save()
+  const metrics = ctx.measureText(text)
+  const textW = metrics.width
+  const ascent = (metrics as TextMetrics).actualBoundingBoxAscent ?? 8
+  const descent = (metrics as TextMetrics).actualBoundingBoxDescent ?? 2
+  const textH = ascent + descent
+  const w = Math.ceil(textW + 2 * paddingX)
+  const h = Math.ceil(textH + 2 * paddingY)
+  const rectX = x - w / 2
+  const rectY = y - h / 2
+  ctx.fillStyle = bg
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath()
+    ctx.roundRect(rectX, rectY, w, h, radius)
+    ctx.fill()
+  } else {
+    ctx.fillRect(rectX, rectY, w, h)
+  }
+  ctx.fillStyle = fg
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x, y)
+  ctx.restore()
 }
 
 export function dot (ctx: CanvasRenderingContext2D, x: number, y: number, color: string, radius: number) {
@@ -274,7 +335,9 @@ export function makeYLabels (
   return { widest, lbls: pts }
 }
 
-const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+// Shared month abbreviations. Title-case here; callers that want lower-case
+// axis labels can downcase on demand.
+export const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function makeCandleTimeLabels (candles: { endStamp: number }[], dur: number, screenW: number, spacingGuess: number): LabelSet {
   const first = candles[0]
@@ -296,17 +359,20 @@ export function makeCandleTimeLabels (candles: { endStamp: number }[], dur: numb
   if (dayStamp(first.endStamp) === dayStamp(last.endStamp)) lastDay = 0
   const pts: Label[] = []
   let label: (d: Date, x: number) => string
+  // Binance axis format: `HH:MM` within a day, `MM/DD` at a day boundary or
+  // on daily+ durations, prefixed with the year on year boundaries.
+  const mmdd = (d: Date) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
   if (dur < 86400000) {
     label = (d: Date, x: number) => {
       const day = dayStamp(x)
-      if (day !== lastDay) return `${months[d.getMonth()]}${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
-      return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+      if (day !== lastDay) return mmdd(d)
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     }
   } else {
     label = (d: Date) => {
       const year = d.getFullYear()
-      if (year !== lastYear) return `${months[d.getMonth()]}${d.getDate()} '${String(year).slice(2, 4)}`
-      return `${months[d.getMonth()]}${d.getDate()}`
+      if (year !== lastYear) return `${year}/${mmdd(d)}`
+      return mmdd(d)
     }
   }
   while (x <= end) {

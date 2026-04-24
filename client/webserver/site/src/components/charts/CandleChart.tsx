@@ -1,36 +1,52 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useUIStore } from '../../stores/useUIStore'
 import { Candle, CandlesPayload, Market, UnitInfo } from '../../stores/types'
-import { formatRateAtomToRateStep } from '../../hooks/useFormatters'
+import { formatRateAtomToRateStep, formatCoinAtomToLotSizeBaseCurrency } from '../../hooks/useFormatters'
 import { fetchLocal, storeLocal, lastCandleZoomLevelLK } from '../../services/state'
 import {
   Extents, Region, Theme, darkTheme, lightTheme,
-  line as drawLine, LabelSet, makeYLabels, makeCandleTimeLabels, truncate, Point
+  line as drawLine, dashedLine, pillLabel, clamp,
+  LabelSet, makeYLabels, makeCandleTimeLabels, truncate, Point
 } from './chartUtils'
 
-// Default zoom level (candle count) used when the user has no saved
-// preference yet. The preference is persisted to localStorage under
-// `lastCandleZoomLevelLK` and reused across market / duration switches
-// and across browser sessions. Live candle updates do NOT reset the zoom.
+// Default zoom (candle count) used on first load before any saved
+// preference exists. Persisted across sessions via `lastCandleZoomLevelLK`.
 const DEFAULT_ZOOM_CANDLES = 90
 
-// Snap a target candle count to the nearest valid zoom level (preferring
-// the largest level that does not exceed the target). Needed because
-// saved preferences may not land exactly on a level when the candle count
-// or duration changes.
-function snapToZoomLevel (target: number, levels: number[]): number {
-  if (levels.length === 0) return 0
-  if (levels.includes(target)) return target
-  let best = levels[0]
-  for (const lvl of levels) {
-    if (lvl > target) break
-    best = lvl
-  }
-  return best
-}
+// Floor for zoom so the chart stays legible when users wheel in hard.
+const MIN_ZOOM_CANDLES = 10
+
+// Wheel-zoom multiplier per tick. ~1.5% per event -- keeps trackpad
+// momentum-scrolls from snapping the viewport in huge jumps.
+const ZOOM_WHEEL_FACTOR = 1.015
+
+// Pixels the mouse must move before a mousedown becomes a drag (prevents
+// jitter on a quick click from triggering a pan).
+const DRAG_THRESHOLD_PX = 3
+
+// Ask the parent for more history once the visible window is within this
+// many candles of the oldest loaded candle. Must stay strictly less than
+// HISTORY_BATCH_SIZE so a normal-size response actually pushes the oldest
+// candle past the threshold and re-arms a later trigger. A full batch of
+// headroom is the goal so panning continues without visible staleness.
+const HISTORY_PREFETCH_THRESHOLD = 500
+
+// Number of candles requested per `loadoldercandles` batch. Exported
+// because MarketsPage drives the actual WS fetch and latches the
+// history-floor flag when the response is short (`received.length <
+// HISTORY_BATCH_SIZE`). Colocated with HISTORY_PREFETCH_THRESHOLD so the
+// batch-vs-threshold invariant stays visible in one place.
+export const HISTORY_BATCH_SIZE = 1000
+
+const CANDLE_FONT = '12px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 
 export interface CandleReporters {
   mouse: (candle: Candle | null) => void
+  // requestOlderHistory is invoked when the user pans or zooms such that
+  // the visible window is near the start of the locally-cached history.
+  // Fire-and-forget; the parent is responsible for debouncing, enforcing
+  // history-floor state, and merging the response.
+  requestOlderHistory: () => void
 }
 
 interface Props {
@@ -45,10 +61,29 @@ interface Props {
 export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId, reporters }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const darkMode = useUIStore(s => s.darkMode)
+  // Gates the one-shot zoom/pan initialisation inside the [data] effect.
+  // Flipped to true after the first data payload for a given market/dur
+  // and cleared back to false on market/dur change so the saved zoom is
+  // reapplied to the fresh stream.
+  const hasInitRef = useRef(false)
+  // endStamp of the newest candle seen on the last data update. Used to
+  // distinguish appends (newest advances) from prepends (newest stays,
+  // oldest moves further back). Only appends shift panOffset -- panOffset
+  // is measured from the newest, so prepends leave the user's view anchored
+  // without adjustment.
+  const prevNewestStampRef = useRef(0)
+  // Total candle count for which we most recently fired
+  // `reporters.requestOlderHistory`. We re-arm the trigger when `total`
+  // grows (older candles arrived and extended the cache) so the next pan
+  // into the new history edge can request more. Reset on market/dur
+  // change via the effect below.
+  const lastLoadOlderForTotalRef = useRef(0)
   const stateRef = useRef<{
     mousePos: Point | null
     numToShow: number
-    zoomLevels: number[]
+    panOffset: number
+    dragStart: { x: number; panOffset: number } | null
+    isDragging: boolean
     plotRegion: Region | null
     candleRegion: Region | null
     volumeRegion: Region | null
@@ -59,7 +94,9 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
   }>({
     mousePos: null,
     numToShow: 0,
-    zoomLevels: [],
+    panOffset: 0,
+    dragStart: null,
+    isDragging: false,
     plotRegion: null,
     candleRegion: null,
     volumeRegion: null,
@@ -69,32 +106,64 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     theme: darkMode ? darkTheme : lightTheme
   })
 
-  // Update theme when darkMode changes
   useEffect(() => {
     stateRef.current.theme = darkMode ? darkTheme : lightTheme
   }, [darkMode])
 
-  // Rebuild zoom levels on every data change. `numToShow` is derived from
-  // the user's saved preference (localStorage) or DEFAULT_ZOOM_CANDLES on
-  // first load, then preserved across live candle updates so the zoom
-  // doesn't snap back every time a new epoch arrives.
+  // Reset pan when market or duration changes — the candle index space
+  // starts fresh so the old offset is meaningless.
+  useEffect(() => {
+    stateRef.current.panOffset = 0
+    hasInitRef.current = false
+    prevNewestStampRef.current = 0
+    lastLoadOlderForTotalRef.current = 0
+  }, [mktId, data?.dur])
+
+  // Initialise / clamp zoom+pan on each data update. When new candles
+  // append while the user is scrolled back, shift panOffset by the number
+  // of appends so they keep seeing the same absolute slice of history.
+  // Prepends (older-history pagination) don't shift panOffset because
+  // panOffset is measured from the newest candle — a prepend grows the
+  // index space at the far end, leaving the current view anchored.
   useEffect(() => {
     if (!data || !data.candles?.length) return
-    const candles = data.candles
-    const levels: number[] = []
-    let lvl = Math.min(20, candles.length)
-    while (lvl <= candles.length) {
-      levels.push(lvl)
-      lvl += 2
-    }
-    if (levels[levels.length - 1] !== candles.length) levels.push(candles.length)
-    stateRef.current.zoomLevels = levels
+    const total = data.candles.length
+    const s = stateRef.current
+    const newestStamp = data.candles[total - 1].endStamp
 
-    const saved = fetchLocal(lastCandleZoomLevelLK)
-    const desired = (typeof saved === 'number' && saved > 0)
-      ? saved
-      : (stateRef.current.numToShow || DEFAULT_ZOOM_CANDLES)
-    stateRef.current.numToShow = snapToZoomLevel(Math.min(desired, candles.length), levels)
+    if (!hasInitRef.current) {
+      // First data for this market/duration — initialise zoom from the
+      // saved preference or a default. If the chart would boot maxed out
+      // (desired >= total), back off to ~70% so the wheel has room to
+      // zoom out. Without this, small markets silently no-op on zoom-out
+      // because clamp snaps `newNum` back to total.
+      const saved = fetchLocal(lastCandleZoomLevelLK)
+      let desired = (typeof saved === 'number' && saved > 0)
+        ? saved
+        : (s.numToShow || DEFAULT_ZOOM_CANDLES)
+      if (desired >= total) desired = Math.max(MIN_ZOOM_CANDLES, Math.floor(total * 0.7))
+      s.numToShow = clamp(Math.round(desired), MIN_ZOOM_CANDLES, Math.max(total, MIN_ZOOM_CANDLES))
+      hasInitRef.current = true
+    } else {
+      // Subsequent ticks within the same stream — preserve the user's
+      // chosen zoom, just re-clamp to the new `total`. Running the init
+      // here would undo an explicit zoom-to-max the moment the next
+      // candle ticks in.
+      s.numToShow = clamp(s.numToShow, MIN_ZOOM_CANDLES, Math.max(total, MIN_ZOOM_CANDLES))
+
+      // Compute append count from the endStamp delta instead of the
+      // overall length delta: only appended candles move the rightmost
+      // index, so only they should shift panOffset. Prepends from
+      // older-history pagination leave newestStamp unchanged, giving
+      // appendCount=0 and leaving panOffset alone.
+      const prevNewest = prevNewestStampRef.current
+      if (newestStamp > prevNewest && s.panOffset > 0) {
+        const appendCount = Math.round((newestStamp - prevNewest) / data.ms)
+        if (appendCount > 0) s.panOffset += appendCount
+      }
+    }
+    prevNewestStampRef.current = newestStamp
+    s.panOffset = clamp(s.panOffset, 0, Math.max(0, total - s.numToShow))
   }, [data])
 
   const resize = useCallback(() => {
@@ -104,13 +173,11 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     if (!parent) return
     canvas.width = parent.clientWidth
     canvas.height = parent.clientHeight
-    const xLblHeight = 30
-    let yLblWidth = 80
-    const yLblWidthByAsset: Record<string, number> = {
-      'dcr_usdc.polygon': 48, 'dcr_usdt.polygon': 48, 'ltc_usdt.polygon': 54,
-      'dcr_btc': 78, 'usdc.polygon_usdt.polygon': 56, 'btc_usdt.polygon': 70, 'dcr_polygon': 48
-    }
-    if (yLblWidthByAsset[mktId]) yLblWidth = yLblWidthByAsset[mktId]
+    const xLblHeight = 22
+    // Initial Y-gutter width is a rough default; render() narrows or
+    // widens it after the first pass of makeYLabels measures the actual
+    // label text.
+    const yLblWidth = 68
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -125,7 +192,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     s.candleRegion = new Region(ctx, new Extents(ext.x.min, ext.x.max, ext.y.min, ext.y.min + ext.yRange * 0.85))
     s.volumeRegion = new Region(ctx, new Extents(ext.x.min, ext.x.max, ext.y.min + 0.85 * ext.yRange, ext.y.max))
     s.rect = canvas.getBoundingClientRect()
-  }, [mktId])
+  }, [])
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
@@ -136,7 +203,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const s = stateRef.current
     if (!s.plotRegion || !s.candleRegion || !s.volumeRegion || !s.xLabelsRegion || !s.yLabelsRegion) return
 
-    const { theme, mousePos, numToShow } = s
+    const { theme, mousePos, numToShow, panOffset, isDragging } = s
     const allCandles = data.candles || []
     const candleWidth = data.ms
     const rateStep = market.ratestep
@@ -144,7 +211,11 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (numToShow === 0 || allCandles.length === 0) return
 
-    const candles = allCandles.slice(allCandles.length - numToShow)
+    const endIdx = allCandles.length - panOffset
+    const startIdx = Math.max(0, endIdx - numToShow)
+    const candles = allCandles.slice(startIdx, endIdx)
+    if (candles.length === 0) return
+
     const candleWidthPadding = 0.2
     const start = (c: Candle) => truncate(c.endStamp, candleWidth)
     const end = (c: Candle) => start(c) + candleWidth
@@ -152,7 +223,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const paddedWidth = (1 - 2 * candleWidthPadding) * candleWidth
 
     const candleFirst = candles[0]
-    const candleLast = candles[numToShow - 1]
+    const candleLast = candles[candles.length - 1]
     const startStamp = start(candleFirst)
     const endStamp = end(candleLast)
 
@@ -163,126 +234,368 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       if (c.matchVolume > highVol) highVol = c.matchVolume
     }
 
-    const xPadding = (endStamp - startStamp) * 0.05
-    const yPadding = (highPrice - lowPrice) * 0.16
-    const chartExtents = new Extents(startStamp, endStamp + xPadding, lowPrice, highPrice + yPadding)
+    // Right-side padding is applied only when the latest candle is in
+    // view (panOffset === 0) so it doesn't sit flush against the Y-axis
+    // gutter on first load. When the user has panned back in history the
+    // rightmost visible candle is an older one, so we want candles to
+    // fill the full plot width instead of leaving a dead strip on the
+    // right.
+    const xPadding = panOffset === 0 ? (endStamp - startStamp) * 0.05 : 0
+    const yPadding = (highPrice - lowPrice) * 0.5
+    const chartExtents = new Extents(startStamp, endStamp + xPadding, lowPrice - yPadding, highPrice + yPadding)
     if (lowPrice === highPrice) {
       chartExtents.y.min -= rateStep
       chartExtents.y.max += rateStep
     }
 
-    // Mouse highlight
-    let mouseCandle: Candle | null = null
-    if (mousePos) {
-      s.plotRegion.plot(new Extents(chartExtents.x.min, chartExtents.x.max, 0, 1), (plotCtx, tools) => {
-        const selectedStartStamp = truncate(tools.unx(mousePos.x), candleWidth)
-        for (const c of candles) {
-          if (start(c) === selectedStartStamp) {
-            mouseCandle = c
-            plotCtx.fillStyle = theme.gridLines
-            plotCtx.fillRect(tools.x(start(c)), tools.y(0), tools.w(candleWidth), tools.h(1))
-            break
-          }
-        }
-      })
-    }
-
-    // Grid
-    const xLabels = makeCandleTimeLabels(candles, candleWidth, s.plotRegion.width(), 100)
-    plotXGrid(s.plotRegion, xLabels, chartExtents.x.min, chartExtents.x.max, theme)
-
-    // Y labels
+    ctx.font = CANDLE_FONT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = '14px \'sans\', sans-serif'
     ctx.fillStyle = theme.axisLabel
     s.yLabelsRegion.extents.y.max = s.candleRegion.extents.y.max
+
+    // Compute Y labels first — uses candleRegion.height() which doesn't
+    // depend on gutter width, so it's safe to run before resizing regions.
     const yLabels = makeYLabels(ctx, s.candleRegion.height(), chartExtents.y.min, chartExtents.y.max, 50, rateStep,
       v => formatRateAtomToRateStep(v, baseUnitInfo, quoteUnitInfo, rateStep)
     )
+    // Drop ticks that would render poorly, in a single pass so that the
+    // grid line and its label stay coupled (plotYGrid and the label pass
+    // share this list). Two cases are filtered:
+    //  1. Ticks within a few pixels of the top (chart border) or bottom
+    //     (volume divider) edge — otherwise the grid line kisses the edge
+    //     and reads as unfinished.
+    //  2. The single tick closest to the live price — its label would stack
+    //     under the coloured last-price pill. Done here (not in the label
+    //     render loop) so the grid line is removed too; otherwise users see
+    //     a naked grid line without a corresponding label after panning.
+    const edgePadPx = 50
+    const yFilterTools = s.candleRegion.translator(new Extents(0, 1, chartExtents.y.min, chartExtents.y.max))
+    const topEdgeY = s.candleRegion.extents.y.min + edgePadPx
+    const botEdgeY = s.candleRegion.extents.y.max - edgePadPx
+    const globalLast = allCandles[allCandles.length - 1]
+    let dropIdx = -1
+    if (globalLast && yLabels.lbls.length > 0) {
+      let minDist = Infinity
+      yLabels.lbls.forEach((lbl, i) => {
+        const d = Math.abs(lbl.val - globalLast.endRate)
+        if (d < minDist) { minDist = d; dropIdx = i }
+      })
+    }
+    yLabels.lbls = yLabels.lbls.filter((lbl, i) => {
+      if (i === dropIdx) return false
+      const ly = yFilterTools.y(lbl.val)
+      return ly >= topEdgeY && ly <= botEdgeY
+    })
+
+    // Volume gutter tick shows 50% of the visible max volume, centered
+    // vertically in the volume pane. Its width feeds into the gutter sizing
+    // so the label shares the same column as the price labels without
+    // clipping.
+    const volLabelText = formatCoinAtomToLotSizeBaseCurrency(highVol / 2, baseUnitInfo, market.lotsize)
+    const volLabelWidth = ctx.measureText(volLabelText).width
+
+    // Snap the Y-gutter width to the widest label so prices/volume can't clip.
+    // Adjusts the shared X-max across plot/candle/volume/xLabels regions
+    // and the X-min of yLabelsRegion; Y coords are untouched.
+    const requiredYLblWidth = Math.max(40, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
+    const currentYLblWidth = canvas.width - s.plotRegion.extents.x.max
+    if (Math.abs(requiredYLblWidth - currentYLblWidth) > 2) {
+      const newPlotMaxX = canvas.width - requiredYLblWidth
+      s.plotRegion.extents.x.max = newPlotMaxX
+      s.candleRegion.extents.x.max = newPlotMaxX
+      s.volumeRegion.extents.x.max = newPlotMaxX
+      s.xLabelsRegion.extents.x.max = newPlotMaxX
+      s.yLabelsRegion.extents.x.min = newPlotMaxX
+    }
+
+    // Identify the candle under the cursor (drives the OHLCV reporter and
+    // the crosshair X snap). Must run AFTER the gutter-width adjustment so
+    // the cursor-to-data mapping reflects the final plot width.
+    let mouseCandle: Candle | null = null
+    let mouseCandleCenterX: number | null = null
+    if (mousePos && !isDragging) {
+      const plotToolsX = s.plotRegion.translator(new Extents(chartExtents.x.min, chartExtents.x.max, 0, 1))
+      const selectedStartStamp = truncate(plotToolsX.unx(mousePos.x), candleWidth)
+      for (const c of candles) {
+        if (start(c) === selectedStartStamp) {
+          mouseCandle = c
+          mouseCandleCenterX = plotToolsX.x(start(c) + candleWidth / 2)
+          break
+        }
+      }
+    }
+
+    // X labels depend on plotRegion.width(), which may have just changed.
+    const xLabels = makeCandleTimeLabels(candles, candleWidth, s.plotRegion.width(), 100)
+    plotXGrid(s.plotRegion, xLabels, chartExtents.x.min, chartExtents.x.max, theme)
     plotYGrid(s.candleRegion, yLabels, chartExtents.y.min, chartExtents.y.max, theme)
 
-    // Volume bars
-    const volDataExtents = new Extents(chartExtents.x.min, chartExtents.x.max, 0, highVol)
+    // Horizontal divider between candle + volume panes. Runs the full
+    // canvas width (into the right gutter) so price labels above and the
+    // volume label below are visually separated. Intentionally faint --
+    // just slightly more present than the grid so it reads as a divider
+    // without dominating the chart.
+    const divY = s.candleRegion.extents.y.max
+    ctx.save()
+    ctx.strokeStyle = theme.axisLabel
+    ctx.globalAlpha = 0.25
+    ctx.lineWidth = 1
+    drawLine(ctx, s.plotRegion.extents.x.min, divY, canvas.width, divY)
+    ctx.restore()
+
+    // Volume bars -- colored per candle with alpha. 15% headroom above the
+    // tallest bar keeps bars from kissing the divider and leaves space for
+    // the max-volume tick label.
+    const volDataExtents = new Extents(chartExtents.x.min, chartExtents.x.max, 0, highVol * 1.15)
     s.volumeRegion.plot(volDataExtents, (vCtx, tools) => {
-      vCtx.fillStyle = theme.gridBorder
       for (const c of candles) {
+        const up = c.endRate >= c.startRate
+        vCtx.fillStyle = up ? theme.volumeUp : theme.volumeDown
         vCtx.fillRect(tools.x(paddedStart(c)), tools.y(0), tools.w(paddedWidth), tools.h(c.matchVolume))
       }
     })
 
-    // Candles
+    // Volume tick label on the right gutter: 50% of visible max volume,
+    // centered vertically in the volume pane.
+    const volLabelY = (s.volumeRegion.extents.y.min + s.volumeRegion.extents.y.max) / 2
+    ctx.save()
+    ctx.font = CANDLE_FONT
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = theme.axisLabel
+    ctx.fillText(volLabelText, s.yLabelsRegion.extents.x.min + 5, volLabelY)
+    ctx.restore()
+
+    // Candles.
     s.candleRegion.plot(chartExtents, (cCtx, tools) => {
       cCtx.lineWidth = 1
       for (const c of candles) {
-        const desc = c.startRate > c.endRate
+        const up = c.endRate >= c.startRate
+        const color = up ? theme.candleUp : theme.candleDown
         const [x, y, w, h] = [tools.x(paddedStart(c)), tools.y(c.startRate), tools.w(paddedWidth), tools.h(c.endRate - c.startRate)]
         const [high, low, cx] = [tools.y(c.highRate), tools.y(c.lowRate), w / 2 + x]
-        cCtx.strokeStyle = desc ? theme.sellLine : theme.buyLine
-        cCtx.fillStyle = desc ? theme.sellFill : theme.buyFill
+        cCtx.strokeStyle = color
+        cCtx.fillStyle = color
         cCtx.beginPath()
         cCtx.moveTo(cx, high)
         cCtx.lineTo(cx, low)
         cCtx.stroke()
-        cCtx.fillRect(x, y, w, h)
-        cCtx.strokeRect(x, y, w, h)
+        // Doji (open == close) — draw a 1px stub instead of an invisible rect.
+        if (Math.abs(h) < 1) {
+          cCtx.fillRect(x, y - 0.5, w, 1)
+        } else {
+          cCtx.fillRect(x, y, w, h)
+          cCtx.strokeRect(x, y, w, h)
+        }
       }
     })
 
-    // X labels
+    // Last-price line + right-gutter pill — always pinned to the latest
+    // global candle, so the marker survives panning back in history.
+    if (globalLast) {
+      const lastUp = globalLast.endRate >= globalLast.startRate
+      const inRange = globalLast.endRate >= chartExtents.y.min && globalLast.endRate <= chartExtents.y.max
+      const candleYTools = s.candleRegion.translator(chartExtents)
+      const rawY = candleYTools.y(globalLast.endRate)
+      if (inRange) {
+        s.candleRegion.plot(chartExtents, (lctx, tools) => {
+          lctx.strokeStyle = lastUp ? theme.lastLineUp : theme.lastLineDown
+          lctx.lineWidth = 1
+          dashedLine(lctx, tools.x(chartExtents.x.min), rawY, tools.x(chartExtents.x.max), rawY, [4, 4])
+        })
+      }
+      // Pill — if the price is off-range, clamp to the nearest edge so
+      // the user can still see it.
+      const candleRegYMin = s.candleRegion.extents.y.min
+      const candleRegYMax = s.candleRegion.extents.y.max
+      const pillY = clamp(rawY, candleRegYMin + 10, candleRegYMax - 10)
+      const pillX = s.yLabelsRegion.extents.x.min + s.yLabelsRegion.width() / 2
+      pillLabel(
+        ctx, pillX, pillY,
+        formatRateAtomToRateStep(globalLast.endRate, baseUnitInfo, quoteUnitInfo, rateStep),
+        lastUp ? theme.lastLineUp : theme.lastLineDown,
+        '#FFFFFF'
+      )
+    }
+
+    // X labels (bottom axis).
     plotXLabels(s.xLabelsRegion, xLabels, chartExtents.x.min, chartExtents.x.max, theme)
 
-    // Y labels text
+    // Y labels (right gutter). yLabels.lbls was pre-filtered upstream so
+    // both the grid line and its label disappear together.
     const xExtents = new Extents(chartExtents.x.min, chartExtents.x.max, 0, 1)
     const yExtents = new Extents(0, 1, chartExtents.y.min, chartExtents.y.max)
     const xTools = s.xLabelsRegion.translator(xExtents)
     s.yLabelsRegion.plot(yExtents, (yCtx, yTools) => {
       yCtx.textAlign = 'left'
-      yCtx.font = '14px \'sans\', sans-serif'
+      yCtx.textBaseline = 'middle'
+      yCtx.font = CANDLE_FONT
       yCtx.fillStyle = theme.axisLabel
       const xPad = 5
-      const yPadTop = 10
       const xTextStart = xTools.x(endStamp + xPadding) + xPad
-      yLabels.lbls.forEach(lbl => {
-        const ly = yTools.y(lbl.val)
-        if (ly < yTools.y(chartExtents.y.max) + yPadTop) return
-        yCtx.fillText(lbl.txt, xTextStart, ly)
+      yLabels.lbls.forEach((lbl) => {
+        yCtx.fillText(lbl.txt, xTextStart, yTools.y(lbl.val))
       })
     }, true)
 
-    reporters.mouse(mouseCandle)
+    // Crosshair + axis pills.
+    if (mousePos && !isDragging && s.plotRegion.contains(mousePos.x, mousePos.y)) {
+      const crossX = mouseCandleCenterX ?? mousePos.x
+      ctx.save()
+      ctx.strokeStyle = theme.crosshair
+      ctx.lineWidth = 1
+      dashedLine(ctx,
+        crossX, s.plotRegion.extents.y.min,
+        crossX, s.plotRegion.extents.y.max,
+        [4, 4]
+      )
+      if (mousePos.y >= s.candleRegion.extents.y.min && mousePos.y <= s.candleRegion.extents.y.max) {
+        dashedLine(ctx,
+          s.plotRegion.extents.x.min, mousePos.y,
+          s.plotRegion.extents.x.max, mousePos.y,
+          [4, 4]
+        )
+        const yToolsPlot = s.candleRegion.translator(chartExtents)
+        const priceAtCursor = yToolsPlot.uny(mousePos.y)
+        const pillX = s.yLabelsRegion.extents.x.min + s.yLabelsRegion.width() / 2
+        ctx.font = CANDLE_FONT
+        pillLabel(
+          ctx, pillX, mousePos.y,
+          formatRateAtomToRateStep(priceAtCursor, baseUnitInfo, quoteUnitInfo, rateStep),
+          theme.axisPillBg, theme.axisPillFg
+        )
+      }
+      if (mouseCandle && mouseCandleCenterX != null) {
+        const pillY = s.xLabelsRegion.extents.y.min + s.xLabelsRegion.height() / 2
+        ctx.font = CANDLE_FONT
+        pillLabel(
+          ctx, crossX, pillY,
+          formatCrosshairTime(mouseCandle.endStamp, candleWidth),
+          theme.axisPillBg, theme.axisPillFg
+        )
+      }
+      ctx.restore()
+    }
+
+    reporters.mouse(isDragging ? null : mouseCandle)
   }, [data, market, baseUnitInfo, quoteUnitInfo, reporters])
 
-  // Setup: resize observer, mouse events, wheel
+  // Trigger a load-older request when the visible window has pushed
+  // within HISTORY_PREFETCH_THRESHOLD candles of the cached history edge.
+  // De-duped by the last total we fired for, so subsequent pans don't
+  // spam requests until more history actually arrives (which grows
+  // `total`). `lastLoadOlderForTotalRef` is reset on market/dur change.
+  const maybeRequestOlderHistory = useCallback(() => {
+    const total = data?.candles?.length ?? 0
+    if (total === 0) return
+    const s = stateRef.current
+    if (s.panOffset + s.numToShow < total - HISTORY_PREFETCH_THRESHOLD) return
+    if (lastLoadOlderForTotalRef.current === total) return
+    lastLoadOlderForTotalRef.current = total
+    reporters.requestOlderHistory()
+  }, [data, reporters])
+
+  // Mouse + wheel + resize wiring.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const parent = canvas.parentElement
     if (!parent) return
 
+    const getPos = (e: MouseEvent): Point | null => {
+      const s = stateRef.current
+      if (!s.rect) return null
+      return { x: e.clientX - s.rect.left, y: e.clientY - s.rect.top }
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      const s = stateRef.current
+      const pos = getPos(e)
+      if (!pos || !s.plotRegion?.contains(pos.x, pos.y)) return
+      s.dragStart = { x: pos.x, panOffset: s.panOffset }
+      s.isDragging = false
+    }
+
     const onMouseMove = (e: MouseEvent) => {
       const s = stateRef.current
-      if (!s.rect) return
-      s.mousePos = { x: e.clientX - s.rect.left, y: e.clientY - s.rect.y }
-      render()
-    }
-    const onMouseLeave = () => {
-      stateRef.current.mousePos = null
-      render()
-    }
-    const onWheel = (e: WheelEvent) => {
-      const s = stateRef.current
-      const bigger = e.deltaY < 0
-      const idx = s.zoomLevels.indexOf(s.numToShow)
-      if (idx < 0) return
-      if (bigger && idx > 0) s.numToShow = s.zoomLevels[idx - 1]
-      else if (!bigger && idx + 1 < s.zoomLevels.length) s.numToShow = s.zoomLevels[idx + 1]
-      else return
-      storeLocal(lastCandleZoomLevelLK, s.numToShow)
+      const pos = getPos(e)
+      if (!pos) return
+      s.mousePos = pos
+      if (s.dragStart && data && s.plotRegion) {
+        const dx = pos.x - s.dragStart.x
+        if (!s.isDragging && Math.abs(dx) > DRAG_THRESHOLD_PX) {
+          s.isDragging = true
+          canvas.style.cursor = 'grabbing'
+        }
+        if (s.isDragging) {
+          const pxPerCandle = s.plotRegion.width() / Math.max(s.numToShow, 1)
+          const deltaCandles = Math.round(dx / pxPerCandle)
+          const total = data.candles?.length ?? 0
+          s.panOffset = clamp(s.dragStart.panOffset + deltaCandles, 0, Math.max(0, total - s.numToShow))
+          maybeRequestOlderHistory()
+        }
+      }
       render()
     }
 
+    const onMouseUp = () => {
+      const s = stateRef.current
+      s.dragStart = null
+      s.isDragging = false
+      canvas.style.cursor = ''
+      render()
+    }
+
+    const onMouseLeave = () => {
+      const s = stateRef.current
+      s.mousePos = null
+      s.dragStart = null
+      s.isDragging = false
+      canvas.style.cursor = ''
+      render()
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      const s = stateRef.current
+      if (!data || !s.plotRegion) return
+      const total = data.candles?.length ?? 0
+      if (total === 0) return
+      const bigger = e.deltaY < 0
+      const factor = bigger ? 1 / ZOOM_WHEEL_FACTOR : ZOOM_WHEEL_FACTOR
+      // Guarantee at least a one-candle step per wheel tick — at small
+      // numToShow values the ~1.5% multiplier rounds to zero, which would
+      // otherwise make the wheel feel dead.
+      let stepped = Math.round(s.numToShow * factor)
+      if (stepped === s.numToShow) stepped = s.numToShow + (bigger ? -1 : 1)
+      const newNum = clamp(stepped, MIN_ZOOM_CANDLES, Math.max(MIN_ZOOM_CANDLES, total))
+      if (newNum === s.numToShow) return
+      // Anchor the zoom to the cursor so the candle under the mouse stays
+      // under the mouse (Binance behaviour). With no cursor, pin right edge.
+      const width = s.plotRegion.width()
+      const plotX0 = s.plotRegion.extents.x.min
+      const cursorX = s.mousePos?.x
+      const fraction = (cursorX != null && width > 0)
+        ? clamp((cursorX - plotX0) / width, 0, 1)
+        : 1
+      const viewportStart = total - s.numToShow - s.panOffset
+      const anchorIdx = viewportStart + fraction * s.numToShow
+      const newViewportStart = anchorIdx - fraction * newNum
+      s.numToShow = newNum
+      s.panOffset = clamp(
+        Math.round(total - newNum - newViewportStart),
+        0,
+        Math.max(0, total - newNum)
+      )
+      storeLocal(lastCandleZoomLevelLK, s.numToShow)
+      maybeRequestOlderHistory()
+      render()
+    }
+
+    canvas.addEventListener('mousedown', onMouseDown)
     canvas.addEventListener('mousemove', onMouseMove)
+    canvas.addEventListener('mouseup', onMouseUp)
     canvas.addEventListener('mouseleave', onMouseLeave)
     canvas.addEventListener('wheel', onWheel, { passive: true })
 
@@ -296,23 +609,30 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     render()
 
     return () => {
+      canvas.removeEventListener('mousedown', onMouseDown)
       canvas.removeEventListener('mousemove', onMouseMove)
+      canvas.removeEventListener('mouseup', onMouseUp)
       canvas.removeEventListener('mouseleave', onMouseLeave)
       canvas.removeEventListener('wheel', onWheel)
       observer.disconnect()
     }
-  }, [resize, render])
+    // `data` is intentionally omitted — `render`'s useCallback deps include
+    // it, so `render`'s identity changes when candles update and this effect
+    // re-runs, rebinding handlers with the fresh closure.
+    // `maybeRequestOlderHistory` is included because the handlers reference
+    // it; its identity also changes with `data`, which re-runs this effect.
+  }, [resize, render, maybeRequestOlderHistory])
 
-  // Re-render when data/market change
   useEffect(() => {
     resize()
     render()
-  }, [data, market, darkMode, resize, render])
+    // `data` / `market` are folded into `render`'s identity. `darkMode`
+    // stays because theme updates mutate stateRef without touching render.
+  }, [darkMode, resize, render])
 
   return <canvas ref={canvasRef} />
 }
 
-// Internal helper: draw x-axis grid lines
 function plotXGrid (plotRegion: Region, labels: LabelSet, minX: number, maxX: number, theme: Theme) {
   const extents = new Extents(minX, maxX, 0, 1)
   plotRegion.plot(extents, (ctx, tools) => {
@@ -324,7 +644,6 @@ function plotXGrid (plotRegion: Region, labels: LabelSet, minX: number, maxX: nu
   }, true)
 }
 
-// Internal helper: draw y-axis grid lines
 function plotYGrid (region: Region, labels: LabelSet, minY: number, maxY: number, theme: Theme) {
   const extents = new Extents(0, 1, minY, maxY)
   region.plot(extents, (ctx, tools) => {
@@ -336,13 +655,12 @@ function plotYGrid (region: Region, labels: LabelSet, minY: number, maxY: number
   }, true)
 }
 
-// Internal helper: draw x-axis labels
 function plotXLabels (xLabelsRegion: Region, labels: LabelSet, minX: number, maxX: number, theme: Theme) {
   const extents = new Extents(minX, maxX, 0, 1)
   xLabelsRegion.plot(extents, (ctx, tools) => {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = '14px \'sans\', sans-serif'
+    ctx.font = CANDLE_FONT
     ctx.fillStyle = theme.axisLabel
     const [leftEdge, rightEdge] = [tools.x(minX), tools.x(maxX)]
     const centerY = tools.y(0.5)
@@ -353,4 +671,16 @@ function plotXLabels (xLabelsRegion: Region, labels: LabelSet, minX: number, max
       ctx.fillText(lbl.txt, x, centerY)
     })
   }, true)
+}
+
+function formatCrosshairTime (endStamp: number, dur: number): string {
+  const d = new Date(endStamp - dur)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  if (dur >= 86400000) {
+    return `${d.getFullYear()}/${mm}/${dd}`
+  }
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${mm}/${dd} ${hh}:${mi}`
 }
