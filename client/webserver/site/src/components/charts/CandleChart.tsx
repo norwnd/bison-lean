@@ -558,6 +558,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     }
 
     const onWheel = (e: WheelEvent) => {
+      // Claim the wheel so the page doesn't scroll while the cursor is
+      // over the chart. Requires the listener to be non-passive (see
+      // addEventListener call below).
+      e.preventDefault()
       const s = stateRef.current
       if (!data || !s.plotRegion) return
       const total = data.candles?.length ?? 0
@@ -597,7 +601,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     canvas.addEventListener('mousemove', onMouseMove)
     canvas.addEventListener('mouseup', onMouseUp)
     canvas.addEventListener('mouseleave', onMouseLeave)
-    canvas.addEventListener('wheel', onWheel, { passive: true })
+    canvas.addEventListener('wheel', onWheel, { passive: false })
 
     const observer = new ResizeObserver(() => {
       resize()
