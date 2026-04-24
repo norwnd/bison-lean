@@ -402,7 +402,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
           Refund and fills with refund-coin confirmations (0 until a
           refund is broadcast). */}
       <Stage
-        label={t('Swap Unlock')}
+        label={t('STAGE_SWAP_UNLOCK')}
         paint={swapUnlockDotPaint(m, now)}
         connectorPaint={connPaint}
         connectorFill={refundConnectorFill(m)}
@@ -412,7 +412,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
       {/* Refund — terminal stage of the divert, no outgoing
           connector. */}
       <Stage
-        label={t('Refund')}
+        label={t('REFUND')}
         paint={refundDotPaint(m)}
         gridColumn={refundCol}
         gridRow={1}
@@ -448,6 +448,13 @@ export default function OrderPage () {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [cancelError, setCancelError] = useState('')
+  // cancelSubmitting blocks a second cancel click while the POST is
+  // in flight (prevents the "only one cancel order per epoch" server
+  // error on double-tap). Reset on rejection so the user can retry;
+  // once the server accepts, `order.cancelling` flips true and the
+  // button stays rendered in its pressed/disabled state until the
+  // order exits `isCancellable` (status >= StatusExecuted).
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
   const [showAccelerate, setShowAccelerate] = useState(false)
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null)
 
@@ -563,9 +570,11 @@ export default function OrderPage () {
   // Cancel order.
   const submitCancel = useCallback(async () => {
     setCancelError('')
+    setCancelSubmitting(true)
     const res = await postJSON('/api/cancel', { orderID: oid })
     if (!checkResponse(res)) {
       setCancelError(res.msg)
+      setCancelSubmitting(false)
       return
     }
     setOrder(prev =>
@@ -573,6 +582,7 @@ export default function OrderPage () {
         ? { ...prev, cancelling: true }
         : prev
     )
+    setCancelSubmitting(false)
   }, [oid])
 
   // Accelerate success handler.
@@ -633,6 +643,15 @@ export default function OrderPage () {
       : '-'
 
   const canCancel = isCancellable(order)
+  // The button stays visible while a cancel is in flight (local POST
+  // round trip) or already accepted by the server (`order.cancelling`
+  // flips true before the order's status progresses off Booked). In
+  // both cases the button renders in the `.submit-pressed` state:
+  // disabled, desaturated, scaled down — same pattern the Buy/Sell
+  // submit button uses while waiting for its own round trip. The
+  // button hides only when the order ages out of `isCancellable`
+  // (status >= StatusExecuted or non-standing TiF).
+  const cancelPressed = cancelSubmitting || order.cancelling
   // OP-01: full vanilla parity for the Accelerate button. Previously
   // used `hasActiveMatches()` which only checked whether ANY match
   // was still active -- it returned true even for matches well past
@@ -985,7 +1004,7 @@ export default function OrderPage () {
           )}
           {vis.refund && (
             <div className="match-step">
-              <span className="match-step-label">{t('Refund')} ({assetLabels.refund}):</span>
+              <span className="match-step-label">{t('REFUND')} ({assetLabels.refund}):</span>
               {renderRefund(m)}
             </div>
           )}
@@ -1000,16 +1019,22 @@ export default function OrderPage () {
 
   return (
     <div className="order-page">
-      {/* Single consolidated summary line, centered horizontally.
+      {/* Single consolidated summary line, left-aligned with the
+          per-order action buttons (Accelerate, Cancel) pushed to
+          the right.
           Collapses the previous top-of-page `.order-header` (id +
           market/host), `.summary-grid` (Type/Rate/Quantity), and the
           order-lane's `.lane-header` ("Order") into one baseline:
           "{order-type}: [from → to] @ {rate} {dot} {Status} (created
-          {Ago})". Quantity is implicit in the mini-card's from/to
-          amounts; id/host/lane-label are dropped — the /order URL
-          already identifies the order. The trailing "{Status}
-          (created {Ago})" block absorbs what used to be the order-
-          lane's two flanking stage dots (Created / terminal). */}
+          {Ago}) [Accelerate] [Cancel]". Quantity is implicit in the
+          mini-card's from/to amounts; id/host/lane-label are dropped
+          — the /order URL already identifies the order. The trailing
+          "{Status} (created {Ago})" block absorbs what used to be
+          the order-lane's two flanking stage dots (Created /
+          terminal). Action buttons live inline here instead of in
+          their own `.action-bar` row so they sit alongside the line
+          they act on; `margin-left: auto` on the first `.order-
+          action-btn` in `order.scss` pins them to the far right. */}
       <div className="order-summary-line">
         <span className={`order-type ${order.sell ? 'text-danger' : 'text-success'}`}>
           {typeStr}:
@@ -1024,24 +1049,26 @@ export default function OrderPage () {
         />
         <span className={`order-status paint-${status.color}`}>{t(status.key)}</span>
         <span className="order-age">
-          ({t('created')} <TimeAgo ms={order.submitTime} /> ago)
+          ({t('CREATED')} <TimeAgo ms={order.submitTime} /> ago)
         </span>
+        {canAccelerate && (
+          <button
+            className="order-action-btn"
+            onClick={() => setShowAccelerate(true)}
+          >
+            {t('ACCELERATE_ORDER')}
+          </button>
+        )}
+        {canCancel && (
+          <button
+            className={`order-action-btn danger${cancelPressed ? ' submit-pressed' : ''}`}
+            onClick={submitCancel}
+            disabled={cancelPressed}
+          >
+            {t('CANCEL')}
+          </button>
+        )}
       </div>
-
-      {(canCancel || canAccelerate) && (
-        <div className="action-bar">
-          {canCancel && (
-            <button className="danger" onClick={submitCancel}>
-              {t('CANCEL_ORDER_LABEL')}
-            </button>
-          )}
-          {canAccelerate && (
-            <button onClick={() => setShowAccelerate(true)}>
-              {t('ACCELERATE_ORDER')}
-            </button>
-          )}
-        </div>
-      )}
 
       {cancelError && (
         <div className="cancel-error">{cancelError}</div>

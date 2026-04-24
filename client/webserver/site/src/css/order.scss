@@ -47,14 +47,16 @@
   overflow-y: auto;
 
   // Consolidated top-of-page summary line: "{type}: [mini-card] @
-  // {rate} {dot} {Status} (created {Ago})". Flex baseline-aligns the
-  // type text, the inline readonly mini-card, the rate, the status
-  // and the age suffix so they read as a single centered sentence.
-  // The "{Status} (created {Ago})" tail absorbs what used to be the
-  // order-lane's two flanking stage dots.
+  // {rate} {dot} {Status} (created {Ago}) [Cancel]". Flex
+  // baseline-aligns the type text, the inline readonly mini-card,
+  // the rate, the status and the age suffix so they read as a single
+  // left-aligned sentence, with an optional Cancel button pinned to
+  // the right via `margin-left: auto`. The "{Status} (created {Ago})"
+  // tail absorbs what used to be the order-lane's two flanking stage
+  // dots.
   .order-summary-line {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: baseline;
     flex-wrap: wrap;
     column-gap: 0.5rem;
@@ -69,6 +71,43 @@
     .order-rate,
     .order-age {
       color: var(--text-color-secondary);
+    }
+
+    // Inline action buttons (Cancel, Accelerate) live at the right
+    // end of the summary line. `:first-of-type` gives the first
+    // button the `margin-left: auto` gap so it — or both, if Cancel
+    // and Accelerate are both visible — pins to the right. The
+    // remaining button (if any) follows with the normal flex
+    // `column-gap`. Sized for the 19px summary line: ~15px font,
+    // ~15% larger than the previous Cancel-button-only styling.
+    // In-flight state reuses the `.submit-pressed` pattern from the
+    // Buy/Sell submit button in OrderForm: visible, disabled,
+    // desaturated + dimmed + scaled down 0.96, cursor `wait`. Shared
+    // so the /order cancel flow reads the same as the /markets buy-
+    // or-sell flow mid-submit. The `:disabled` variant is included
+    // under the same selector so Chrome's default "disabled means no
+    // visual change beyond :hover suppression" doesn't drop our
+    // treatment.
+    .order-action-btn {
+      align-self: center;
+      padding: 0.23rem 0.58rem;
+      font-size: 15px;
+      border-radius: 6px;
+      line-height: 1.2;
+      transition: transform 120ms ease-out, filter 120ms ease-out,
+                  opacity 120ms ease-out;
+
+      &:first-of-type {
+        margin-left: auto;
+      }
+
+      &.submit-pressed,
+      &.submit-pressed:disabled {
+        opacity: 0.55;
+        transform: scale(0.96);
+        filter: grayscale(80%) brightness(0.85);
+        cursor: wait;
+      }
     }
 
     // Inline status dot sitting between the rate and the status
@@ -130,21 +169,6 @@
     > .value {
       font-size: 18px;
       line-height: 1.2;
-    }
-  }
-
-  .action-bar {
-    display: flex;
-    margin-bottom: 1.25rem;
-
-    > button {
-      padding: 0.33rem 0.66rem;
-      font-size: 18px;
-      border-radius: 7px;
-    }
-
-    > button + button {
-      margin-left: 0.66rem;
     }
   }
 

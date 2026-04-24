@@ -464,7 +464,7 @@ export default function MMPage () {
         {removeErr && <div className="text-danger mb-2">{removeErr}</div>}
         <div className="d-flex gap-2 justify-content-end">
           <button className="btn btn-secondary" onClick={() => setShowRemoveConfirm(false)}>
-            {t('Cancel')}
+            {t('CANCEL')}
           </button>
           <button className="btn btn-danger" onClick={removeCfg}>
             {t('Remove')}

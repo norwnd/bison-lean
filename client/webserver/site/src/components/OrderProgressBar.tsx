@@ -161,7 +161,7 @@ export function OrderProgressBar ({
               onFocus={() => onHover(matchID)}
               onBlur={() => onHover(null)}
               onClick={() => onClick(matchID)}
-              aria-label={`${t('Match')} ${s.pctLabel}`}
+              aria-label={`${t('STAGE_MATCH')} ${s.pctLabel}`}
             >
               {label}
             </button>

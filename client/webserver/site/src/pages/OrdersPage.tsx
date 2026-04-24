@@ -601,7 +601,7 @@ export default function OrdersPage () {
               className="btn btn-secondary btn-sm"
               onClick={() => setShowDeleteForm(false)}
             >
-              {t('Cancel')}
+              {t('CANCEL')}
             </button>
           </div>
 

@@ -40,7 +40,8 @@ function regularMatches (order: Order): Match[] {
 // 'warning' means no more matches are coming (used by the progress
 // bar to paint an unfilled remainder in neutral).
 export type OrderDisplayStatus = {
-  key: 'Placed' | 'Active' | 'Fulfilled' | 'Completed' | 'Canceled' | 'Revoked',
+  key: 'STATUS_PLACED' | 'STATUS_ACTIVE' | 'STATUS_FULFILLED'
+    | 'STATUS_COMPLETED' | 'STATUS_CANCELED' | 'STATUS_REVOKED',
   color: LaneColor,
 }
 
@@ -67,16 +68,16 @@ export type OrderDisplayStatus = {
 // refund path individually. The header tracks "did the order finish
 // cleanly" rather than "did any value change hands".
 export function orderDisplayStatus (order: Order): OrderDisplayStatus {
-  if (order.status === StatusEpoch) return { key: 'Placed', color: 'warning' }
-  if (order.status === StatusBooked) return { key: 'Active', color: 'warning' }
+  if (order.status === StatusEpoch) return { key: 'STATUS_PLACED', color: 'warning' }
+  if (order.status === StatusBooked) return { key: 'STATUS_ACTIVE', color: 'warning' }
   const regulars = regularMatches(order)
-  if (regulars.some(m => m.active)) return { key: 'Active', color: 'warning' }
-  if (order.status === StatusCanceled) return { key: 'Canceled', color: 'neutral' }
-  if (order.status === StatusRevoked) return { key: 'Revoked', color: 'neutral' }
+  if (regulars.some(m => m.active)) return { key: 'STATUS_ACTIVE', color: 'warning' }
+  if (order.status === StatusCanceled) return { key: 'STATUS_CANCELED', color: 'neutral' }
+  if (order.status === StatusRevoked) return { key: 'STATUS_REVOKED', color: 'neutral' }
   // StatusExecuted + no active regulars: terminal at the swap level.
   const anyRefunded = regulars.some(m => Boolean(m.refund))
-  if (anyRefunded) return { key: 'Completed', color: 'good' }
-  return { key: 'Fulfilled', color: 'good' }
+  if (anyRefunded) return { key: 'STATUS_COMPLETED', color: 'good' }
+  return { key: 'STATUS_FULFILLED', color: 'good' }
 }
 
 // orderIsFinalized returns true when no more matches can land on

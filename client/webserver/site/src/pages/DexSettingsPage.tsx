@@ -630,7 +630,7 @@ export default function DexSettingsPage () {
         </p>
         <div className="d-flex gap-2">
           <button className="btn btn-secondary" onClick={cancelPenaltyCompsUpdate}>
-            {t('Cancel')}
+            {t('CANCEL')}
           </button>
           <button className="btn btn-primary" onClick={confirmPenaltyCompsUpdate}>
             {t('Confirm')}
@@ -649,7 +649,7 @@ export default function DexSettingsPage () {
         )}
         <div className="d-flex gap-2">
           <button className="btn btn-secondary" onClick={() => setShowDisableAccount(false)}>
-            {t('Cancel')}
+            {t('CANCEL')}
           </button>
           <button className="btn btn-danger" onClick={() => toggleAccountStatus(true)}>
             {t('Disable')}

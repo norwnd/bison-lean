@@ -75,18 +75,18 @@ export type StagePaint = 'good' | 'warning' | 'neutral'
 export function matchStageLabels (m: Match, t: TFunc): string[] {
   if (m.side === MatchSideMaker) {
     return [
-      t('Match'),
-      t('Your Swap'),
-      t('Their Swap'),
-      t('Your Redeem'),
+      t('STAGE_MATCH'),
+      t('STAGE_YOUR_SWAP'),
+      t('STAGE_THEIR_SWAP'),
+      t('STAGE_YOUR_REDEEM'),
     ]
   }
   return [
-    t('Match'),
-    t('Their Swap'),
-    t('Your Swap'),
-    t('Their Redeem'),
-    t('Your Redeem'),
+    t('STAGE_MATCH'),
+    t('STAGE_THEIR_SWAP'),
+    t('STAGE_YOUR_SWAP'),
+    t('STAGE_THEIR_REDEEM'),
+    t('STAGE_YOUR_REDEEM'),
   ]
 }
 

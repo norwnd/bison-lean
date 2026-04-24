@@ -988,7 +988,7 @@ export default function SettingsPage () {
             onClick={() => setShowForceSignOut(false)}
             disabled={signOutLoading}
           >
-            {t('Cancel')}
+            {t('CANCEL')}
           </button>
           <button
             className="btn btn-outline-danger flex-grow-1"
