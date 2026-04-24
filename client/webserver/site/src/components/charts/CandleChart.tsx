@@ -39,6 +39,10 @@ const HISTORY_PREFETCH_THRESHOLD = 500
 export const HISTORY_BATCH_SIZE = 1000
 
 const CANDLE_FONT = '12px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+// Smaller font for X-axis date/time labels. The Y-axis gutter needs the
+// full 12px for price/volume legibility, but X-axis dates are compact
+// enough to use 10px without losing readability.
+const X_LABEL_FONT = '10px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 
 export interface CandleReporters {
   mouse: (candle: Candle | null) => void
@@ -90,6 +94,11 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     xLabelsRegion: Region | null
     yLabelsRegion: Region | null
     rect: DOMRect | null
+    // Logical (CSS-pixel) canvas dimensions. The backing-store is
+    // `logicalW * dpr` × `logicalH * dpr`; drawing coords are in logical
+    // pixels after the context transform is scaled by dpr.
+    logicalW: number
+    logicalH: number
     theme: Theme
   }>({
     mousePos: null,
@@ -103,6 +112,8 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     xLabelsRegion: null,
     yLabelsRegion: null,
     rect: null,
+    logicalW: 0,
+    logicalH: 0,
     theme: darkMode ? darkTheme : lightTheme
   })
 
@@ -171,8 +182,17 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     if (!canvas) return
     const parent = canvas.parentElement
     if (!parent) return
-    canvas.width = parent.clientWidth
-    canvas.height = parent.clientHeight
+    // Scale the backing store by devicePixelRatio so canvas text (axis
+    // labels, volume numbers, dates) renders crisp on HiDPI displays.
+    // The context is then scaled by the same factor, so all subsequent
+    // drawing code works in logical/CSS pixels.
+    const dpr = window.devicePixelRatio || 1
+    const logicalW = parent.clientWidth
+    const logicalH = parent.clientHeight
+    canvas.width = Math.round(logicalW * dpr)
+    canvas.height = Math.round(logicalH * dpr)
+    canvas.style.width = `${logicalW}px`
+    canvas.style.height = `${logicalH}px`
     const xLblHeight = 22
     // Initial Y-gutter width is a rough default; render() narrows or
     // widens it after the first pass of makeYLabels measures the actual
@@ -181,10 +201,15 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const plotExtents = new Extents(0, canvas.width - yLblWidth, 0, canvas.height - xLblHeight)
-    const xLblExtents = new Extents(0, canvas.width - yLblWidth, canvas.height - xLblHeight, canvas.height)
-    const yLblExtents = new Extents(canvas.width - yLblWidth, canvas.width, 0, canvas.height - xLblHeight)
+    // Setting canvas.width/height above resets the context transform, so
+    // re-apply the dpr scale on every resize.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    const plotExtents = new Extents(0, logicalW - yLblWidth, 0, logicalH - xLblHeight)
+    const xLblExtents = new Extents(0, logicalW - yLblWidth, logicalH - xLblHeight, logicalH)
+    const yLblExtents = new Extents(logicalW - yLblWidth, logicalW, 0, logicalH - xLblHeight)
     const s = stateRef.current
+    s.logicalW = logicalW
+    s.logicalH = logicalH
     s.plotRegion = new Region(ctx, plotExtents)
     s.xLabelsRegion = new Region(ctx, xLblExtents)
     s.yLabelsRegion = new Region(ctx, yLblExtents)
@@ -208,7 +233,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const candleWidth = data.ms
     const rateStep = market.ratestep
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.clearRect(0, 0, s.logicalW, s.logicalH)
     if (numToShow === 0 || allCandles.length === 0) return
 
     const endIdx = allCandles.length - panOffset
@@ -299,9 +324,9 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     // Adjusts the shared X-max across plot/candle/volume/xLabels regions
     // and the X-min of yLabelsRegion; Y coords are untouched.
     const requiredYLblWidth = Math.max(40, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
-    const currentYLblWidth = canvas.width - s.plotRegion.extents.x.max
+    const currentYLblWidth = s.logicalW - s.plotRegion.extents.x.max
     if (Math.abs(requiredYLblWidth - currentYLblWidth) > 2) {
-      const newPlotMaxX = canvas.width - requiredYLblWidth
+      const newPlotMaxX = s.logicalW - requiredYLblWidth
       s.plotRegion.extents.x.max = newPlotMaxX
       s.candleRegion.extents.x.max = newPlotMaxX
       s.volumeRegion.extents.x.max = newPlotMaxX
@@ -341,7 +366,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     ctx.strokeStyle = theme.axisLabel
     ctx.globalAlpha = 0.25
     ctx.lineWidth = 1
-    drawLine(ctx, s.plotRegion.extents.x.min, divY, canvas.width, divY)
+    drawLine(ctx, s.plotRegion.extents.x.min, divY, s.logicalW, divY)
     ctx.restore()
 
     // Volume bars -- colored per candle with alpha. 15% headroom above the
@@ -468,7 +493,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       }
       if (mouseCandle && mouseCandleCenterX != null) {
         const pillY = s.xLabelsRegion.extents.y.min + s.xLabelsRegion.height() / 2
-        ctx.font = CANDLE_FONT
+        ctx.font = X_LABEL_FONT
         pillLabel(
           ctx, crossX, pillY,
           formatCrosshairTime(mouseCandle.endStamp, candleWidth),
@@ -664,7 +689,7 @@ function plotXLabels (xLabelsRegion: Region, labels: LabelSet, minX: number, max
   xLabelsRegion.plot(extents, (ctx, tools) => {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = CANDLE_FONT
+    ctx.font = X_LABEL_FONT
     ctx.fillStyle = theme.axisLabel
     const [leftEdge, rightEdge] = [tools.x(minX), tools.x(maxX)]
     const centerY = tools.y(0.5)
