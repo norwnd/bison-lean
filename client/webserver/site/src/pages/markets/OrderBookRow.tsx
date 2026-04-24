@@ -15,19 +15,15 @@ export interface OrderBookRowProps {
   qui: UnitInfo
   ratestep: number
   lotsize: number
-  darkMode: boolean
   onClick: () => void
 }
 
-export function OrderBookRow ({ row, sell, bui, qui, ratestep, lotsize, darkMode, onClick }: OrderBookRowProps) {
-  // MP-05: background gradient colors match the pre-migration palette.
-  const buyBg = darkMode ? '#102821' : '#d9f5e1'
-  const sellBg = darkMode ? '#35141D' : '#ffe7e7'
-  const bgColor = sell ? sellBg : buyBg
+export function OrderBookRow ({ row, sell, bui, qui, ratestep, lotsize, onClick }: OrderBookRowProps) {
+  // MP-05 row-weight gradient: the side-specific base color and the
+  // light/dark palette live in markets.scss (`.ob-row.buy/.sell` via
+  // `--ob-row-bg`, themed off `--ob-buy-bg` / `--ob-sell-bg`); only
+  // the per-row fill percentage changes here.
   const bgPct = row.priceRelevance * row.rowWeightRatio * 100
-  const bgStyle: React.CSSProperties = {
-    background: `linear-gradient(to left, ${bgColor} ${bgPct}%, transparent 0%)`
-  }
 
   // MP-01: rate delta color inverts when the order sits on the "wrong" side of
   // the external price, so the operator can see it at a glance.
@@ -37,8 +33,8 @@ export function OrderBookRow ({ row, sell, bui, qui, ratestep, lotsize, darkMode
 
   return (
     <tr
-      className="d-flex justify-content-between px-2 w-100 pointer"
-      style={bgStyle}
+      className={`ob-row ${sell ? 'sell' : 'buy'} d-flex justify-content-between px-2 w-100 pointer`}
+      style={{ ['--ob-row-pct' as string]: `${bgPct}%` }}
       onClick={onClick}
     >
       <td className="d-flex align-items-center text-nowrap pe-2">

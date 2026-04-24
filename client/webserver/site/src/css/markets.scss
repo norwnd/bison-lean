@@ -15,6 +15,12 @@
 body.dark div[data-handler=markets] {
   --flash-invalid-color: rgb(203 94 94 / 80%);
 
+  // MP-05 row-weight gradient colors (dark mode). Paired with the
+  // light-mode values on the base `div[data-handler=markets]` rule
+  // below. Consumed by `.ob-row` via `--ob-row-bg`.
+  --ob-buy-bg: #102821;
+  --ob-sell-bg: #35141D;
+
   .market-chart {
     background-color: #181A20; // Binance Original dark-mode chart bg
   }
@@ -22,6 +28,10 @@ body.dark div[data-handler=markets] {
 
 div[data-handler=markets] {
   --flash-invalid-color: rgb(153 48 43 / 80%);
+  // MP-05 row-weight gradient colors (light mode). Dark-mode overrides
+  // live on `body.dark div[data-handler=markets]` above.
+  --ob-buy-bg: #d9f5e1;
+  --ob-sell-bg: #ffe7e7;
 
   // Transient red-outline flash, triggered from React state to hint at an
   // invalid input. Matches the vanilla highlightOutlineRed animation.
@@ -43,6 +53,23 @@ div[data-handler=markets] {
     tbody#sellRows {
       @include border-top;
     }
+  }
+
+  // MP-05: row-weight gradient. `--ob-row-pct` is the per-row fill
+  // percentage, set inline by OrderBookRow; `--ob-row-bg` picks the
+  // side color from the themed `--ob-buy-bg` / `--ob-sell-bg`
+  // variables (defined above on this scope and on the `body.dark`
+  // variant). Keeping the gradient string in CSS means the TSX only
+  // writes a single number per row, not a full `linear-gradient(...)`.
+  .ob-row {
+    background: linear-gradient(
+      to left,
+      var(--ob-row-bg) var(--ob-row-pct, 0%),
+      transparent 0%
+    );
+
+    &.buy  { --ob-row-bg: var(--ob-buy-bg); }
+    &.sell { --ob-row-bg: var(--ob-sell-bg); }
   }
 
   // MP-61 (resolveOrderVsMMForm half): overlay covers the buy/sell
@@ -552,14 +579,26 @@ div[data-handler=markets] {
 
   #mainContent {
     & > section {
+      // Responsive widths (see /markets page layout):
+      //   - side panels keep their current widths as a *floor* (small
+      //     screens match the pre-responsive layout), grow modestly
+      //     with viewport via 18vw/24vw, and cap at the max so extra
+      //     space past that cap is absorbed by the middle section
+      //     (candle chart + trade forms). The vw percentages mirror
+      //     the previous 18% / 24% flex-basis values.
+      //   - middle uses `flex: 1 1 auto` so it absorbs whatever width
+      //     the clamped sides don't consume. `min-width: 0` is needed
+      //     so flexbox can shrink it below its canvas's intrinsic
+      //     min-content size on narrow viewports.
       &:first-child { // leftmost section
         order: 1;
-        flex-basis: 18%; /* width/height - depending on flex-direction */
+        flex: 0 0 clamp(230px, 18vw, 300px);
       }
 
       &:nth-child(2) { // middle section
         order: 2;
-        flex-basis: 58%; /* width/height - depending on flex-direction */
+        flex: 1 1 auto;
+        min-width: 0;
         margin-top: 1px; // overrides the global `section { margin: 0.15rem 0 }`
 
         & > section {
@@ -613,7 +652,7 @@ div[data-handler=markets] {
 
       &:last-child { // user orders, recent matches
         order: 3;
-        flex-basis: 24%; /* width/height - depending on flex-direction */
+        flex: 0 0 clamp(307px, 24vw, 380px);
       }
     }
 
@@ -839,7 +878,11 @@ div[data-handler=markets] {
 @include media-breakpoint-up(lg) {
   div[data-handler=markets] {
     .ordertable-wrap {
-      height: calc(50% - 15px);
+      // `--ob-mid-section-px` is set inline on `#orderBook` from
+      // `ORDER_BOOK_MID_SECTION_PX` in helpers.ts. Fallback `30px`
+      // matches the TS default so either side can evolve in
+      // isolation.
+      height: calc(50% - var(--ob-mid-section-px, 30px) / 2);
       display: flex;
 
       &.reversible {

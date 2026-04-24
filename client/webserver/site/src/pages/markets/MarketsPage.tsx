@@ -26,7 +26,8 @@ import {
 } from '../../stores/types'
 
 import {
-  ORDER_BOOK_SIDE_MAX, MAX_ACTIVE_ORDERS,
+  ORDER_BOOK_SIDE_MIN, ORDER_BOOK_MID_SECTION_PX, ORDER_BOOK_ROW_HEIGHT_PX,
+  MAX_ACTIVE_ORDERS,
   CANDLE_DUR_24H, MAX_PRICE_DIVERGENCE,
   midGapRate, binOrdersByRateAndEpoch, collectMarkets, deriveWarmupState,
   useLatestRef,
@@ -937,6 +938,27 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Order book display data (memoized from bookRef + bookVersion)
   // -------------------------------------------------------------------------
+  // Viewport-aware per-side row cap. OrderBookPanel reports its
+  // `#orderBook` container element through a callback ref; we observe
+  // its size and raise the cap so taller viewports show more rows.
+  // Small viewports stay at ORDER_BOOK_SIDE_MIN (13) — same as before.
+  const [orderBookEl, setOrderBookEl] = useState<HTMLDivElement | null>(null)
+  const [orderBookSideMax, setOrderBookSideMax] = useState<number>(ORDER_BOOK_SIDE_MIN)
+  useEffect(() => {
+    if (!orderBookEl) return
+    const recompute = () => {
+      const h = orderBookEl.clientHeight
+      if (h <= 0) return
+      const perSide = (h - ORDER_BOOK_MID_SECTION_PX) / 2
+      const count = Math.max(ORDER_BOOK_SIDE_MIN, Math.floor(perSide / ORDER_BOOK_ROW_HEIGHT_PX))
+      setOrderBookSideMax(prev => (prev === count ? prev : count))
+    }
+    recompute()
+    const ro = new ResizeObserver(recompute)
+    ro.observe(orderBookEl)
+    return () => ro.disconnect()
+  }, [orderBookEl])
+
   const orderBookData = useMemo<{ buys: OrderBookDisplayRow[]; sells: OrderBookDisplayRow[] }>(() => {
     const book = bookRef.current
     if (!book || !bui || !qui || !currentMkt || !selected) return { buys: [], sells: [] }
@@ -949,7 +971,7 @@ export default function MarketsPage () {
       if (!bestOrder || !heaviestOrder) return []
 
       const allBins = binOrdersByRateAndEpoch(orders)
-      const bins = allBins.slice(0, ORDER_BOOK_SIDE_MAX)
+      const bins = allBins.slice(0, orderBookSideMax)
 
       return bins.map((bin, idx) => {
         const firstOrder = bin[0]
@@ -1005,7 +1027,7 @@ export default function MarketsPage () {
       buys: buildSide(book.buys, false),
       sells: buildSide(book.sells, true)
     }
-  }, [bookVersion, bui, qui, currentMkt, selected, externalPriceConv, activeOrders])
+  }, [bookVersion, bui, qui, currentMkt, selected, externalPriceConv, activeOrders, orderBookSideMax])
 
   // -------------------------------------------------------------------------
   // Computed market stats
@@ -1217,6 +1239,7 @@ export default function MarketsPage () {
                   fillRateFromBook={fillRateFromBook}
                   isConnected={isConnected}
                   hasBook={!!bookRef.current}
+                  orderBookRef={setOrderBookEl}
                 />
 
                 {/* MIDDLE SECTION: Chart + Buy/Sell forms */}

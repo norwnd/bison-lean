@@ -12,7 +12,28 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-export const ORDER_BOOK_SIDE_MAX = 13
+// Minimum per-side row count in the order book. MarketsPage raises
+// this dynamically to fill the viewport — the measured #orderBook
+// container height divided by the row height sets the real cap. Kept
+// at 13 (the pre-responsive constant) so small viewports still match
+// the old fixed layout exactly.
+export const ORDER_BOOK_SIDE_MIN = 13
+
+// Order-book layout constants shared between MarketsPage's
+// ResizeObserver (JS) and `.ordertable-wrap` height calc (CSS) via the
+// `--ob-mid-section-px` custom property set on `#orderBook` in
+// OrderBookPanel. Kept here so a future tweak updates both sides in
+// lockstep.
+//   * MID_SECTION_PX: vertical space reserved for `#obMidSection`
+//     (the external-price strip between asks and bids). Split evenly
+//     across the two `.ordertable-wrap` sides (`calc(50% - X/2)`).
+//   * ROW_HEIGHT_PX: approx per-row height in `.ordertable-wrap`:
+//     `fs17` + `lh1` + `.compact` padding (0.25rem × 2) ≈ 25px.
+//     Slight over-estimate leaves a thin gap at the bottom instead of
+//     clipping the last row. CSS doesn't read this — only MarketsPage
+//     does — but it lives here so both layout knobs travel together.
+export const ORDER_BOOK_MID_SECTION_PX = 30
+export const ORDER_BOOK_ROW_HEIGHT_PX = 25
 export const MAX_ACTIVE_ORDERS = 8
 export const MAX_COMPLETED_ORDERS = 100
 export const CANDLE_DUR_24H = '24h'

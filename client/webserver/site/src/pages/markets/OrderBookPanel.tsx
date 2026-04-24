@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { formatRateToRateStep, shortSymbol, logoPath } from '../../hooks/useFormatters'
 import { ConnectionStatus } from '../../stores/types'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { useUIStore } from '../../stores/useUIStore'
 import { useMarketPageContext } from './MarketPageContext'
 import { OrderBookRow } from './OrderBookRow'
-import { collectMarkets, type OrderBookDisplayRow } from './helpers'
+import {
+  collectMarkets, ORDER_BOOK_MID_SECTION_PX,
+  type OrderBookDisplayRow
+} from './helpers'
 
 // ---------------------------------------------------------------------------
 // OrderBookPanel -- the leftmost section containing either the market list
@@ -32,6 +34,11 @@ export interface OrderBookPanelProps {
   fillRateFromBook: (msgRate: number) => void
   isConnected: boolean
   hasBook: boolean
+  // Callback ref for the `#orderBook` container. MarketsPage uses a
+  // ResizeObserver on it to drive a viewport-aware row cap (more rows
+  // on taller screens). Fires with `null` when the market-list dock
+  // replaces the order book.
+  orderBookRef?: (el: HTMLDivElement | null) => void
 }
 
 export function OrderBookPanel ({
@@ -43,11 +50,11 @@ export function OrderBookPanel ({
   externalPriceConv,
   fillRateFromBook,
   isConnected,
-  hasBook
+  hasBook,
+  orderBookRef
 }: OrderBookPanelProps) {
   const { t } = useTranslation()
   const { currentMkt, bui, qui } = useMarketPageContext()
-  const darkMode = useUIStore(s => s.darkMode)
   const authFailed = useAuthStore(s => s.authFailed)
   // CL-MP-NARROW-SELECTOR (Fix A): broad `exchanges` subscription lives
   // here (moved down from MarketsPage). `allMarkets` is derived locally
@@ -70,7 +77,7 @@ export function OrderBookPanel ({
   }, [allMarkets, marketSearch])
 
   return (
-    <section className="d-flex align-items-center">
+    <section className="d-flex">
       {/* Market list dock */}
       {showMarketList && (
         <div id="leftMarketDock" className="d-flex flex-stretch-column">
@@ -166,7 +173,18 @@ export function OrderBookPanel ({
 
       {/* Order book (shown when market list is hidden) */}
       {!showMarketList && (
-      <div id="orderBook" className="d-flex flex-stretch-column">
+      <div
+        id="orderBook"
+        className="d-flex flex-stretch-column"
+        ref={orderBookRef}
+        style={{
+          // Drives `.ordertable-wrap { height: calc(50% - var(--ob-mid-section-px)/2) }`
+          // in markets.scss. Single source of truth lives in helpers.ts
+          // so the CSS split and MarketsPage's ResizeObserver stay in
+          // sync through one constant.
+          ['--ob-mid-section-px' as string]: `${ORDER_BOOK_MID_SECTION_PX}px`
+        }}
+      >
         {/* Sell side (asks) - reversed so best ask at bottom */}
         <div className="hoveronly overflow-x-hidden flex-stretch-column ordertable-wrap reversible">
           <table className="compact lh1">
@@ -180,7 +198,6 @@ export function OrderBookPanel ({
                   qui={qui}
                   ratestep={currentMkt.ratestep}
                   lotsize={currentMkt.lotsize}
-                  darkMode={darkMode}
                   onClick={() => fillRateFromBook(row.msgRate)}
                 />
               ))}
@@ -212,7 +229,6 @@ export function OrderBookPanel ({
                   qui={qui}
                   ratestep={currentMkt.ratestep}
                   lotsize={currentMkt.lotsize}
-                  darkMode={darkMode}
                   onClick={() => fillRateFromBook(row.msgRate)}
                 />
               ))}
