@@ -725,7 +725,7 @@ export default function OrderPage () {
 
   // Portion of the overall order a match accounts for, formatted to
   // one decimal for the match-card "Portion" metric. Same math drives
-  // the order-lane progress-bar segment widths — both go through
+  // the order-progress-lane progress-bar segment widths — both go through
   // `matchPortion` so the unit-conversion + zero-guard logic lives in
   // exactly one place (see AccountUtils).
   const matchPortionPct = (m: Match): string => matchPortion(order, m).toFixed(1)
@@ -767,7 +767,7 @@ export default function OrderPage () {
   // might come).
   const status = orderDisplayStatus(order)
 
-  // Per-match segments for the order-lane progress bar. Shape +
+  // Per-match segments for the order-progress-lane progress bar. Shape +
   // ordering rules live in `buildOrderSegments` (see OrderProgress.ts)
   // so this page stays focused on UI wiring.
   const orderSegments = buildOrderSegments(order)
@@ -1024,13 +1024,13 @@ export default function OrderPage () {
           the right.
           Collapses the previous top-of-page `.order-header` (id +
           market/host), `.summary-grid` (Type/Rate/Quantity), and the
-          order-lane's `.lane-header` ("Order") into one baseline:
+          order-progress-lane's `.lane-header` ("Order") into one baseline:
           "{order-type}: [from → to] @ {rate} {dot} {Status} (created
           {Ago}) [Accelerate] [Cancel]". Quantity is implicit in the
           mini-card's from/to amounts; id/host/lane-label are dropped
           — the /order URL already identifies the order. The trailing
           "{Status} (created {Ago})" block absorbs what used to be
-          the order-lane's two flanking stage dots (Created /
+          the order-progress-lane's two flanking stage dots (Created /
           terminal). Action buttons live inline here instead of in
           their own `.action-bar` row so they sit alongside the line
           they act on; `margin-left: auto` on the first `.order-
@@ -1087,7 +1087,7 @@ export default function OrderPage () {
             finalized with an unfilled remainder, a trailing neutral
             segment paints the portion that never matched; until
             then the vessel bg shows through the unfilled space. */}
-        <div className="lane order-lane">
+        <div className="lane order-progress-lane">
           <OrderProgressBar
             segments={orderSegments}
             hoveredMatchID={hoveredMatchID}

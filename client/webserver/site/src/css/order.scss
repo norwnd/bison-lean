@@ -52,7 +52,7 @@
   // the rate, the status and the age suffix so they read as a single
   // left-aligned sentence, with an optional Cancel button pinned to
   // the right via `margin-left: auto`. The "{Status} (created {Ago})"
-  // tail absorbs what used to be the order-lane's two flanking stage
+  // tail absorbs what used to be the order-progress-lane's two flanking stage
   // dots.
   .order-summary-line {
     display: flex;
@@ -183,10 +183,6 @@
   // Connectors render as pseudo-elements so the stage row stays a
   // clean N-column grid.
 
-  .status-diagram {
-    margin-top: 0.65rem;
-  }
-
   .lane {
     padding: 0.75rem 0 0.9rem;
 
@@ -206,6 +202,15 @@
       border-top: 1px dashed var(--border-color);
       padding-top: 1rem;
     }
+  }
+
+  // The order-progress-lane (first and only `.lane` without a preceding sibling)
+  // drops its top padding — the summary-line's `margin-bottom` already
+  // provides the breath above the progress bar. Keeps the base `.lane`
+  // rule symmetric (0.75/0.9rem) for match lanes, which only use the
+  // top padding via the `& + .lane` override (1rem) anyway.
+  .order-progress-lane {
+    padding-top: 0;
   }
 
   // Stage-count grid. All three "columns by stage" containers inside
@@ -331,7 +336,7 @@
 
   // Warning-colored connectors (in-flight stages on the match track,
   // plus the L-stub on the refund divert) are dimmed at rest for the
-  // same reason as the order-lane progress slab: the yellow reads
+  // same reason as the order-progress-lane progress slab: the yellow reads
   // loud against the surrounding neutral line. Dots are left at full
   // saturation since they're small enough to carry it.
   .diagram-stage[data-conn-paint="warning"]::after,

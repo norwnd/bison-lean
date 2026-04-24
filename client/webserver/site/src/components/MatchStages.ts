@@ -31,7 +31,7 @@ import { coinExplorerURL } from './CoinExplorers'
 // The semantic rule for match status is: a protocol status of N means
 // stage N has been *completed* and stage N+1 is the in-progress step
 // (except at the terminal `MatchComplete` / `MatchConfirmed`, where
-// the lane is fully done). This differs from the order-lane semantics
+// the lane is fully done). This differs from the order-progress-lane semantics
 // where `StatusEpoch / Booked / Executed` name the current phase
 // rather than a completed event.
 
@@ -157,7 +157,7 @@ export function matchLaneColor (m: Match): LaneColor {
 }
 
 // SegmentPaint is the outcome-level color for a single match's
-// segment in the order-lane progress bar. Unlike lane-level
+// segment in the order-progress-lane progress bar. Unlike lane-level
 // `LaneColor` (which collapses refunded matches to 'good' because the
 // order itself is still "done"), the progress bar wants to *visually
 // distinguish* a refunded match from a successful one — hence 'bad'

@@ -4,7 +4,7 @@ import { type SegmentPaint, matchSegmentPaint } from './MatchStages'
 import { orderIsFinalized } from './OrderStages'
 
 // OrderProgress.ts collects the pure data helpers behind the
-// /order page's order-lane progress bar. The React component that
+// /order page's order-progress-lane progress bar. The React component that
 // renders the bar (`OrderProgressBar` in OrderPage.tsx) is a thin
 // wrapper over an `OrderSegment[]` built here — keeping the segment
 // math out of the render path means the bar can be unit-tested or

@@ -137,7 +137,7 @@ export function canAccelerateOrder (
 // matchQtyInOrderUnits converts a match's qty into the same units as
 // `order.qty` — base units for limit / market-sell, quote units for
 // market-buy (where order.qty is denominated in the quote). Shared
-// across match-vs-order aggregations (filled, settled, order-lane
+// across match-vs-order aggregations (filled, settled, order-progress-lane
 // progress-bar segment widths, "Portion" metric on the match card)
 // so the unit-conversion rule lives in exactly one place.
 export function matchQtyInOrderUnits (ord: Order, m: Match): number {
