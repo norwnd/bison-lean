@@ -636,11 +636,11 @@ div[data-handler=markets] {
   }
 
   #candleDurBttnBox {
-    // Hover inside the plot area, upper-right. Parent .market-chart is
-    // position:relative, so percentage insets track chart size.
+    // Tucked into the right-side price/volume gutter (canvas yLabelsRegion,
+    // min width 120px), aligned with .candle-ohlcv (top: 5px) on the left.
     position: absolute;
-    top: 4%;
-    right: 10%;
+    top: 5px;
+    right: 5px;
     z-index: 1;
     display: flex;
     gap: 2px;
@@ -648,8 +648,8 @@ div[data-handler=markets] {
     .candle-dur-bttn {
       background-color: transparent;
       border: 1px solid transparent;
-      padding: 2px 6px;
-      font-size: 12px;
+      padding: 3px 8px;
+      font-size: 13px;
       line-height: 1;
       color: var(--text-grey);
       border-radius: 2px;

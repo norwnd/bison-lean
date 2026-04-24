@@ -1,8 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import {
   formatRateAtomToRateStep, formatRateToRateStep,
-  formatFiat, formatCoinAtomToLotSizeBaseCurrency,
-  shortSymbol, logoPath
+  formatFiat, shortSymbol, logoPath
 } from '../../hooks/useFormatters'
 import { useMarketPageContext } from './MarketPageContext'
 
@@ -98,21 +97,13 @@ export function MarketStatsHeader ({
         <div className={`px-2 fs14 border-right${change24 >= 0 ? '' : ' text-danger'}`}>
           {spot ? `${change24 >= 0 ? '+' : ''}${change24.toFixed(1)}%` : '-'}
         </div>
-        {/* 24h volume rendered the same way as the candle chart's
-             volume readout: USD as the primary value, with the base
-             amount + asset symbol in parentheses (grey). Falls back to
-             base amount + asset when no fiat rate is available. vol24
-             is in base atoms. */}
+        {/* 24h volume shown as the USD equivalent only -- the chart's
+             readout keeps the base-amount breakdown; the header stays
+             compact. Falls back to '-' when no fiat rate is available,
+             matching the other header cells. vol24 is in base atoms. */}
         <div className="d-flex justify-content-start align-items-center px-2 border-right fs14">
-          {spot && buiConv
-            ? baseFiatRate > 0
-              ? <>
-                  ${formatFiat(vol24 / buiConv.conversionFactor * baseFiatRate)}
-                  <span className="grey ms-1">({formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)} {shortSymbol(baseSymbol)})</span>
-                </>
-              : <>
-                  {formatCoinAtomToLotSizeBaseCurrency(vol24, bui, currentMkt.lotsize)} <span className="grey">{shortSymbol(baseSymbol)}</span>
-                </>
+          {spot && buiConv && baseFiatRate > 0
+            ? <>${formatFiat(vol24 / buiConv.conversionFactor * baseFiatRate)}</>
             : '-'}
         </div>
         <div className="px-2 fs14 border-right">

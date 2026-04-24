@@ -16,9 +16,9 @@ const DEFAULT_ZOOM_CANDLES = 90
 // Floor for zoom so the chart stays legible when users wheel in hard.
 const MIN_ZOOM_CANDLES = 10
 
-// Wheel-zoom multiplier per tick. ~1.5% per event -- keeps trackpad
+// Wheel-zoom multiplier per tick. ~0.041% per event -- keeps trackpad
 // momentum-scrolls from snapping the viewport in huge jumps.
-const ZOOM_WHEEL_FACTOR = 1.015
+const ZOOM_WHEEL_FACTOR = 1.00041
 
 // Pixels the mouse must move before a mousedown becomes a drag (prevents
 // jitter on a quick click from triggering a pan).
@@ -196,8 +196,8 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const xLblHeight = 22
     // Initial Y-gutter width is a rough default; render() narrows or
     // widens it after the first pass of makeYLabels measures the actual
-    // label text.
-    const yLblWidth = 68
+    // label text. The 120px floor also hosts the duration-buttons row.
+    const yLblWidth = 120
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -322,8 +322,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
 
     // Snap the Y-gutter width to the widest label so prices/volume can't clip.
     // Adjusts the shared X-max across plot/candle/volume/xLabels regions
-    // and the X-min of yLabelsRegion; Y coords are untouched.
-    const requiredYLblWidth = Math.max(40, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
+    // and the X-min of yLabelsRegion; Y coords are untouched. The 120px
+    // floor keeps the gutter wide enough to host the duration-buttons row
+    // (`#candleDurBttnBox`) without it overflowing into the candle plot.
+    const requiredYLblWidth = Math.max(120, Math.ceil(Math.max(yLabels.widest, volLabelWidth)) + 10)
     const currentYLblWidth = s.logicalW - s.plotRegion.extents.x.max
     if (Math.abs(requiredYLblWidth - currentYLblWidth) > 2) {
       const newPlotMaxX = s.logicalW - requiredYLblWidth
@@ -356,17 +358,18 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     plotXGrid(s.plotRegion, xLabels, chartExtents.x.min, chartExtents.x.max, theme)
     plotYGrid(s.candleRegion, yLabels, chartExtents.y.min, chartExtents.y.max, theme)
 
-    // Horizontal divider between candle + volume panes. Runs the full
-    // canvas width (into the right gutter) so price labels above and the
-    // volume label below are visually separated. Intentionally faint --
-    // just slightly more present than the grid so it reads as a divider
-    // without dominating the chart.
-    const divY = s.candleRegion.extents.y.max
+    // Dividers: horizontal between candle + volume panes, and vertical
+    // between the plot area and the right-side price/volume gutter.
+    // Both share the same subtle colour so they read as the same UI
+    // chrome and are visible without dominating the chart.
     ctx.save()
     ctx.strokeStyle = theme.axisLabel
-    ctx.globalAlpha = 0.25
+    ctx.globalAlpha = 0.4
     ctx.lineWidth = 1
+    const divY = s.candleRegion.extents.y.max
     drawLine(ctx, s.plotRegion.extents.x.min, divY, s.logicalW, divY)
+    const divX = s.plotRegion.extents.x.max
+    drawLine(ctx, divX, s.plotRegion.extents.y.min, divX, s.plotRegion.extents.y.max)
     ctx.restore()
 
     // Volume bars -- colored per candle with alpha. 15% headroom above the
@@ -488,6 +491,21 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
         pillLabel(
           ctx, pillX, mousePos.y,
           formatRateAtomToRateStep(priceAtCursor, baseUnitInfo, quoteUnitInfo, rateStep),
+          theme.axisPillBg, theme.axisPillFg
+        )
+      } else if (highVol > 0 && mousePos.y >= s.volumeRegion.extents.y.min && mousePos.y <= s.volumeRegion.extents.y.max) {
+        dashedLine(ctx,
+          s.plotRegion.extents.x.min, mousePos.y,
+          s.plotRegion.extents.x.max, mousePos.y,
+          [4, 4]
+        )
+        const yToolsVol = s.volumeRegion.translator(volDataExtents)
+        const volAtCursor = Math.max(0, yToolsVol.uny(mousePos.y))
+        const pillX = s.yLabelsRegion.extents.x.min + s.yLabelsRegion.width() / 2
+        ctx.font = CANDLE_FONT
+        pillLabel(
+          ctx, pillX, mousePos.y,
+          formatCoinAtomToLotSizeBaseCurrency(volAtCursor, baseUnitInfo, market.lotsize),
           theme.axisPillBg, theme.axisPillFg
         )
       }

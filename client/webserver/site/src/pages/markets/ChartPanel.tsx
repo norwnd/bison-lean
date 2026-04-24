@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { CandleChart, CandleReporters } from '../../components/charts/CandleChart'
 import { Wave } from '../../components/charts/Wave'
 import {
-  atomToConventional, formatCoinAtomToLotSizeBaseCurrency, formatFiat,
+  formatCoinAtomToLotSizeBaseCurrency,
   formatRateAtomToRateStep, shortSymbol
 } from '../../hooks/useFormatters'
 import type { CandlesPayload, Candle, Market, UnitInfo } from '../../stores/types'
@@ -24,7 +24,6 @@ export interface ChartPanelProps {
   mouseCandle: Candle | null
   currentMktId: string
   candleReporters: CandleReporters
-  baseFiatRate: number
 }
 
 export function ChartPanel ({
@@ -36,8 +35,7 @@ export function ChartPanel ({
   chartErrMsg,
   mouseCandle,
   currentMktId,
-  candleReporters,
-  baseFiatRate
+  candleReporters
 }: ChartPanelProps) {
   const { t } = useTranslation()
   const { currentMkt, bui, qui } = useMarketPageContext()
@@ -111,7 +109,7 @@ export function ChartPanel ({
         {readoutCandle && currentMkt && bui && qui && (
           <>
             <OhlcvReadout candle={readoutCandle} market={currentMkt} bui={bui} qui={qui} />
-            <VolumeReadout candle={readoutCandle} market={currentMkt} bui={bui} baseFiatRate={baseFiatRate} />
+            <VolumeReadout candle={readoutCandle} market={currentMkt} bui={bui} />
           </>
         )}
       </div>
@@ -143,27 +141,19 @@ function OhlcvReadout ({ candle, market, bui, qui }: OhlcvReadoutProps) {
 }
 
 // Volume readout rendered over the chart's lower volume section. Neutral
-// color (no candle direction tint). Primary value is the USD equivalent;
-// the base amount and asset are shown in parentheses. Falls back to
-// `Volume: {base} {asset}` when no fiat rate is available.
+// color (no candle direction tint). Shows the base amount + asset symbol.
 interface VolumeReadoutProps {
   candle: Candle
   market: Market
   bui: UnitInfo
-  baseFiatRate: number
 }
 
-function VolumeReadout ({ candle, market, bui, baseFiatRate }: VolumeReadoutProps) {
+function VolumeReadout ({ candle, market, bui }: VolumeReadoutProps) {
   const volStr = formatCoinAtomToLotSizeBaseCurrency(candle.matchVolume, bui, market.lotsize)
   const asset = shortSymbol(market.basesymbol)
-  const fiat = baseFiatRate > 0 ? atomToConventional(candle.matchVolume, bui) * baseFiatRate : 0
   return (
     <div className="candle-volume-readout">
-      <span>
-        {fiat > 0
-          ? <>Volume: ${formatFiat(fiat)} ({volStr} {asset})</>
-          : <>Volume: {volStr} {asset}</>}
-      </span>
+      <span>Volume: {volStr} {asset}</span>
     </div>
   )
 }
