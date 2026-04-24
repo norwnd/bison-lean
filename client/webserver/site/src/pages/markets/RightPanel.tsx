@@ -276,7 +276,7 @@ export function RightPanel ({
       parcelSizeQuoteStr = formatCoinAtomToLotSizeQuoteCurrency(parcelQuoteAtoms, bui, qui, lotsize, ratestep)
     }
 
-    const tradingLimitStr = (parcelLimit * parcelsize).toFixed(2)
+    const tradingLimitStr = Math.floor(parcelLimit * parcelsize).toString()
     const limitUsageStr = parcelLimit > 0
       ? (usedParcels / parcelLimit * 100).toFixed(1)
       : '0'
