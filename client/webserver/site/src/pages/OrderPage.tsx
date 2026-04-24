@@ -1201,7 +1201,7 @@ export default function OrderPage () {
             Every match also renders a Refund divert below the
             "Your Swap" column so the happy-path and refund-path
             outcomes are visible side-by-side from the first render. */}
-        {regularMatches.map((m, matchIdx) => {
+        {regularMatches.map((m) => {
           const hrefs = matchStageHrefs(m, net)
           const views = matchStageCoinViews(m)
           const mini = matchFromTo(m)
@@ -1274,9 +1274,6 @@ export default function OrderPage () {
                   onAnimationEnd={() => setFlash(null)}
                 />
               )}
-              <div className="lane-header">
-                <span className="lane-label">{t('Match')} #{matchIdx + 1}</span>
-              </div>
               <LaneStages stages={matchStages} />
               {/* Mini-card first in DOM so CSS grid auto-flow places
                   it on row 1 col 1 before the coin cells fill columns

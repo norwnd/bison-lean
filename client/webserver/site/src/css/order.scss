@@ -156,22 +156,6 @@
     }
   }
 
-  .lane-header {
-    display: flex;
-    align-items: center;
-    column-gap: 0.6rem;
-    margin-bottom: 0.55rem;
-  }
-
-  .lane-label {
-    font-family: $demi-sans;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-color-secondary);
-    line-height: 1;
-  }
-
   // Stage-count grid. All three "columns by stage" containers (the
   // main-track stage row, the mini-card row, the refund divert row)
   // share the same N-column layout driven by `--stage-count` set on
