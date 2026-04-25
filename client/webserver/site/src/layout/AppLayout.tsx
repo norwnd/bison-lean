@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useWebSocketStore } from '../stores/useWebSocketStore'
 import { useNotificationStore } from '../stores/useNotificationStore'
+import { useActionRequiredStore } from '../stores/useActionRequiredStore'
 import { useMarketStore } from '../stores/useMarketStore'
 import { useMMStore } from '../stores/useMMStore'
 import { useUIStore } from '../stores/useUIStore'
@@ -10,14 +12,20 @@ import { useTrackLastVisitedPage } from '../router/lastVisitedPage'
 import { Header } from './Header'
 import { NewUserBanner } from './NewUserBanner'
 import { PopupNotes } from '../components/notifications/PopupNotes'
+import { ActionRequiredDialog } from '../components/notifications/ActionRequiredDialog'
+import { handleAutoBumpCapped } from '../components/notifications/autoBumpCappedToast'
+import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, WalletNote } from '../stores/types'
 
 export function AppLayout () {
+  const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const fetchUser = useAuthStore(s => s.fetchUser)
   const fetchBuildInfo = useAuthStore(s => s.fetchBuildInfo)
   const connect = useWebSocketStore(s => s.connect)
   const subscribe = useWebSocketStore(s => s.subscribe)
   const notify = useNotificationStore(s => s.notify)
+  const enqueueAction = useActionRequiredStore(s => s.enqueue)
+  const resolveAction = useActionRequiredStore(s => s.resolve)
   const darkMode = useUIStore(s => s.darkMode)
 
   const {
@@ -103,6 +111,30 @@ export function AppLayout () {
         case 'runstats': handleRunStatsNote(note); break
         case 'epochreport': handleEpochReportNote(note); break
         case 'cexproblems': handleCEXProblemsNote(note); break
+        // walletnote is the wallet-emitter wrapper. We demux by the
+        // payload's `route` field to feed action-required prompts into
+        // the dialog queue and to promote selected data notes (e.g.
+        // autoBumpCapped) into user-visible toasts.
+        case 'walletnote': {
+          const wn = note as WalletNote
+          switch (wn.payload.route) {
+            case 'actionRequired':
+              enqueueAction(wn.payload as ActionRequiredNote)
+              break
+            case 'actionResolved':
+              resolveAction((wn.payload as ActionResolvedNote).uniqueID)
+              break
+            case 'autoBumpCapped': {
+              const cw = wn.payload as CustomWalletNote
+              const inner = cw.payload as AutoBumpCappedNote
+              const asset = useAuthStore.getState().assets[cw.assetID]
+              const assetName = asset?.name || `asset ${cw.assetID}`
+              handleAutoBumpCapped(inner, cw.assetID, assetName, t)
+              break
+            }
+          }
+          break
+        }
       }
     })
   }, [user])
@@ -122,6 +154,7 @@ export function AppLayout () {
         <Outlet />
       </main>
       <PopupNotes />
+      <ActionRequiredDialog />
     </>
   )
 }

@@ -34,6 +34,19 @@ export async function getJSON (addr: string): Promise<any> {
   return requestJSON('GET', addr)
 }
 
+// postTakeAction wires a wallet action-required response back through
+// /api/takeaction. `action` is the per-action-type JSON body the wallet
+// expects (e.g. `{txID, bump:true, newFees}` for tooCheap, `{recover:true}`
+// for missingNonces). Returns the standard APIResponse — caller should
+// `checkResponse(res)` and surface `res.msg` on failure.
+export async function postTakeAction (
+  assetID: number,
+  actionID: string,
+  action: any,
+): Promise<APIResponse> {
+  return postJSON('/api/takeaction', { assetID, actionID, action })
+}
+
 export function checkResponse (resp: APIResponse): boolean {
   return resp.requestSuccessful && resp.ok
 }

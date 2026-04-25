@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getJSON, postJSON } from '../services/api'
 import { useNotificationStore } from './useNotificationStore'
+import { useActionRequiredStore } from './useActionRequiredStore'
 import { applyRateStepMagnifyingFactors } from './rateStepConfig'
 import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
 
@@ -106,6 +107,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
       mmStatus: resp.mmStatus,
       ...(changed ? { authFailed: nextFailed } : {}),
     })
+    // Seed the action-required queue from the server's
+    // `User.actions[]` backlog. Core persists the latest unresolved
+    // actionrequired per uniqueID across restarts and replays them on
+    // /api/user; without seeding, a stuck-tx prompt that fired before
+    // the page loaded would be silently dropped until the wallet
+    // re-emits on its next checkPendingTxs tick.
+    useActionRequiredStore.getState().seed(user.actions || [])
     return user
   }
 
@@ -196,6 +204,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const noteStore = useNotificationStore.getState()
       noteStore.setNotes([])
       noteStore.setPokes([])
+      // Same for the action-required queue: any prompt left over from
+      // the previous session would otherwise stay open across logout.
+      useActionRequiredStore.getState().reset()
       return { ok: true }
     },
 
