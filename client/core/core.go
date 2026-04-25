@@ -3015,10 +3015,19 @@ func (c *Core) loadXCWallet(dbWallet *db.Wallet) (*xcWallet, error) {
 	for _, option := range walletDef.ConfigOpts {
 		defaultValues[strings.ToLower(option.Key)] = option.DefaultValue
 	}
-	settings := dbWallet.Settings
+	// settings is a defensive copy of dbWallet.Settings — transient
+	// mutations below (e.g. the SpecialSettingActivelyUsed injection)
+	// must not leak into the durable DB row via a shared map reference.
+	// Default backfills are still written through to dbWallet.Settings
+	// so callers that subsequently db.UpdateWallet(dbWallet) persist them.
+	settings := make(map[string]string, len(dbWallet.Settings)+len(defaultValues))
+	for k, v := range dbWallet.Settings {
+		settings[k] = v
+	}
 	for k, v := range defaultValues {
 		if _, has := settings[k]; !has {
 			settings[k] = v
+			dbWallet.Settings[k] = v
 		}
 	}
 
@@ -3036,7 +3045,6 @@ func (c *Core) loadXCWallet(dbWallet *db.Wallet) (*xcWallet, error) {
 
 		settings[asset.SpecialSettingActivelyUsed] =
 			strconv.FormatBool(c.assetHasActiveOrders(dbWallet.AssetID))
-		defer delete(settings, asset.SpecialSettingActivelyUsed)
 
 		w, err = asset.OpenWallet(assetID, walletCfg, log, c.net)
 	} else {
@@ -3531,7 +3539,18 @@ func (c *Core) WalletSettings(assetID uint32) (map[string]string, error) {
 	if err != nil {
 		return nil, codedError(dbErr, err)
 	}
-	return dbWallet.Settings, nil
+	// Strip core-injected "special_*" flags (see asset.SpecialSettingActivelyUsed)
+	// — internal plumbing, not user-facing config. A persistence bug in older
+	// builds could have written one of these into the DB; filter on read so it
+	// never reaches API consumers.
+	settings := make(map[string]string, len(dbWallet.Settings))
+	for k, v := range dbWallet.Settings {
+		if strings.HasPrefix(k, "special_") {
+			continue
+		}
+		settings[k] = v
+	}
+	return settings, nil
 }
 
 // ChangeAppPass updates the application password to the provided new password
@@ -3710,14 +3729,18 @@ func (c *Core) ReconfigureWallet(appPW, newWalletPW []byte, form *WalletForm) er
 	// See if the wallet offers a quick path.
 	if configurer, is := oldWallet.Wallet.(asset.LiveReconfigurer); is && oldWallet.walletType == walletDef.Type && oldWallet.connected() {
 		form.Config[asset.SpecialSettingActivelyUsed] = strconv.FormatBool(c.assetHasActiveOrders(dbWallet.AssetID))
-		defer delete(form.Config, asset.SpecialSettingActivelyUsed)
 
-		if restart, err := configurer.Reconfigure(c.ctx, &asset.WalletConfig{
+		restart, err := configurer.Reconfigure(c.ctx, &asset.WalletConfig{
 			Type:     form.Type,
 			Settings: form.Config,
 			DataDir:  c.assetDataDirectory(assetID),
 			TorProxy: c.cfg.TorProxy,
-		}, oldWallet.currentDepositAddress()); err != nil {
+		}, oldWallet.currentDepositAddress())
+		// dbWallet.Settings aliases form.Config; drop the internal flag now
+		// that Reconfigure has consumed it, before any DB write below or
+		// fall-through to the restart path can persist it.
+		delete(form.Config, asset.SpecialSettingActivelyUsed)
+		if err != nil {
 			return fmt.Errorf("Reconfigure: %v", err)
 		} else if !restart {
 			// Config was updated without a need to restart.

@@ -10,6 +10,8 @@ import { FormOverlay } from '../components/common/FormOverlay'
 import { DepositAddress } from '../components/common/DepositAddress'
 import { CopyButton } from '../components/common/CopyButton'
 import { NewWalletForm } from '../components/common/NewWalletForm'
+import { WalletConfigForm } from '../components/common/WalletConfigForm'
+import type { WalletConfigFormHandle } from '../components/common/WalletConfigForm'
 import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
   formatCoinAtom, formatBestWeCan, formatFiat, atomToConventional,
@@ -17,13 +19,13 @@ import {
   shortSymbol, logoPath
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
-import { filled } from '../components/AccountUtils'
+import { filled, haveActiveOrders } from '../components/AccountUtils'
 import BridgingPopup from '../components/bridging/BridgingPopup'
 import { allBridgePaths } from '../components/bridging/bridgeApi'
 import { ROUTES } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
 import type {
-  SupportedAsset, WalletState,
+  SupportedAsset, WalletState, WalletDefinition,
   WalletTransaction, TxHistoryResult, Order, UnitInfo,
   CoreNote, TicketStakingStatus, VotingServiceProvider,
   Exchange, Spot,
@@ -2130,11 +2132,33 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
 }) {
   const { t } = useTranslation()
   const fetchUser = useAuthStore(s => s.fetchUser)
-  const [config, setConfig] = useState<Record<string, string>>({})
+  const exchanges = useAuthStore(s => s.user?.exchanges)
+  const subformRef = useRef<WalletConfigFormHandle>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  // pendingConfig holds the fetched settings until the WalletConfigForm
+  // is mounted (it lives inside the `!loading` gate, so the ref is null
+  // during the fetch). A separate effect (below) flushes it via the
+  // imperative handle once the form has rendered.
+  const [pendingConfig, setPendingConfig] = useState<Record<string, string> | null>(null)
+
+  // Resolve the wallet definition matching the wallet's current type.
+  // Tokens have a single `definition`; non-token assets pick from
+  // `info.availablewallets`. The reconfig modal does not support
+  // switching wallet types, so this is computed once per (asset, type).
+  const walletDef = useMemo<WalletDefinition | undefined>(() => {
+    if (asset.token) return asset.token.definition
+    return asset.info?.availablewallets.find(d => d.type === wallet.type)
+  }, [asset.info, asset.token, wallet.type])
+  const configOpts = walletDef?.configopts ?? []
+  // disablewhenactive options must be locked while orders are in flight,
+  // matching legacy `app.ts:haveActiveOrders` semantics.
+  const activeOrders = useMemo(
+    () => haveActiveOrders(exchanges, asset.id),
+    [exchanges, asset.id]
+  )
 
   // WP-19: trait-gated visibility for the "Other Actions" section.
   // Mirrors vanilla `wallets.ts` `showReconfig()` L2298-2305. The
@@ -2151,23 +2175,39 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   const isTokenApprover = (wallet.traits & traitTokenApprover) !== 0 && !wallet.disabled
   const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0
 
-  // Load wallet settings
+  // Fetch the wallet's saved settings. The actual handoff to
+  // WalletConfigForm happens in the post-mount effect below — calling
+  // setLoadedConfig inline here would no-op because the form (and its
+  // ref) only mount after `loading` flips false.
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       setLoading(true)
       const res = await postJSON('/api/walletsettings', { assetID: asset.id })
       if (cancelled) return
-      setLoading(false)
       if (!checkResponse(res)) {
+        setLoading(false)
         setError(res.msg || 'Failed to load settings')
         return
       }
-      setConfig(res.map ?? {})
+      setPendingConfig(res.map ?? {})
+      setLoading(false)
     }
     load()
     return () => { cancelled = true }
   }, [asset.id])
+
+  // Flush fetched settings into WalletConfigForm via its imperative
+  // handle. Effects run after commit, so by the time this fires the
+  // form (rendered on the same commit that flipped `loading` to false)
+  // is mounted and the ref is populated. The schema-driven form
+  // ignores any keys not declared in configOpts — including stray
+  // special_* flags — so internal plumbing can't surface here.
+  useEffect(() => {
+    if (!pendingConfig || !subformRef.current) return
+    subformRef.current.setLoadedConfig(pendingConfig)
+    setPendingConfig(null)
+  }, [pendingConfig])
 
   const handleLockUnlock = useCallback(async () => {
     setError('')
@@ -2235,6 +2275,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
     setError('')
     setSuccess('')
     setSaving(true)
+    const config = subformRef.current?.getConfigMap(asset.id) ?? {}
     const res = await postJSON('/api/reconfigurewallet', {
       assetID: asset.id,
       config,
@@ -2247,7 +2288,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
     }
     await fetchUser()
     setSuccess(t('SETTINGS_SAVED'))
-  }, [asset.id, config, fetchUser, t, wallet.type])
+  }, [asset.id, fetchUser, t, wallet.type])
 
   return (
     <div>
@@ -2268,18 +2309,18 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
             <span className="text-secondary">{t('WALLET_TYPE')}:</span> {wallet.type || 'Default'}
           </div>
 
-          {/* Config key-value pairs */}
-          {Object.entries(config).map(([key, val]) => (
-            <div key={key} className="mb-2">
-              <label className="form-label fs12 text-secondary mb-0">{key}</label>
-              <input
-                type="text"
-                className="form-control form-control-sm"
-                value={val}
-                onChange={e => setConfig(prev => ({ ...prev, [key]: e.target.value }))}
-              />
-            </div>
-          ))}
+          {/* Schema-driven config form. Renders only options declared in
+              the wallet's WalletDefinition.configopts, so internally-injected
+              "special_*" flags (or any other server-side bookkeeping) cannot
+              appear as user-editable fields. */}
+          <WalletConfigForm
+            ref={subformRef}
+            assetID={asset.id}
+            configOpts={configOpts}
+            sectionize={true}
+            activeOrders={activeOrders}
+            showFileSelector={!walletDef?.seeded && !asset.token}
+          />
 
           {error && <div className="text-danger fs14 mb-2">{error}</div>}
           {success && <div className="text-success fs14 mb-2">{success}</div>}

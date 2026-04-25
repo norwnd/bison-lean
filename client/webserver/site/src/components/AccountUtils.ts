@@ -1,4 +1,5 @@
 import {
+  Exchange,
   ExchangeAuth, Order, Market,
   OrderTypeLimit, OrderTypeMarket, OrderTypeCancel,
   ImmediateTiF, StandingTiF,
@@ -101,6 +102,29 @@ export function hasActiveMatches (order: Order): boolean {
   if (!order.matches) return false
   for (const match of order.matches) {
     if (match.active) return true
+  }
+  return false
+}
+
+// haveActiveOrders reports whether the user has any active orders involving
+// `assetID` as base or quote across all DEX exchanges. An order is "active"
+// while it's pre-execution (status < StatusExecuted) or has unsettled matches.
+// Mirrors vanilla `app.ts` `haveActiveOrders()` so reconfig-form gating of
+// `disablewhenactive` config options matches the legacy site behavior.
+export function haveActiveOrders (
+  exchanges: Record<string, Exchange> | undefined,
+  assetID: number
+): boolean {
+  if (!exchanges) return false
+  for (const xc of Object.values(exchanges)) {
+    if (!xc.markets) continue
+    for (const market of Object.values(xc.markets)) {
+      if (!market.orders) continue
+      for (const ord of market.orders) {
+        if ((ord.baseID === assetID || ord.quoteID === assetID) &&
+          (ord.status < StatusExecuted || hasActiveMatches(ord))) return true
+      }
+    }
   }
   return false
 }

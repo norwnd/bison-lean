@@ -417,6 +417,10 @@ const (
 	// core that lets the wallet know that it is being actively used. A use
 	// case is by the bitcoin SPV wallet to decide whether or not it is safe
 	// to do a full rescan.
+	//
+	// Settings in the "special_" namespace are core-side plumbing and never
+	// user-facing. Core.WalletSettings strips any key with this prefix on
+	// read, so any new flag added here will be filtered automatically.
 	SpecialSettingActivelyUsed = "special_activelyUsed"
 )
 

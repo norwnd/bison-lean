@@ -327,7 +327,8 @@ func TestWalletSettings(t *testing.T) {
 	tCore := rig.core
 	rig.db.wallet = &db.Wallet{
 		Settings: map[string]string{
-			"abc": "123",
+			"abc":                            "123",
+			asset.SpecialSettingActivelyUsed: "true",
 		},
 	}
 	var assetID uint32 = 54321
@@ -348,7 +349,8 @@ func TestWalletSettings(t *testing.T) {
 	}
 	rig.db.walletErr = nil
 
-	// success
+	// success — user-facing settings pass through, internally-injected
+	// special_* flags are filtered out.
 	returnedSettings, err := tCore.WalletSettings(assetID)
 	if err != nil {
 		t.Fatalf("WalletSettings error: %v", err)
@@ -356,6 +358,9 @@ func TestWalletSettings(t *testing.T) {
 
 	if len(returnedSettings) != 1 || returnedSettings["abc"] != "123" {
 		t.Fatalf("returned wallet settings are not correct: %v", returnedSettings)
+	}
+	if _, leaked := returnedSettings[asset.SpecialSettingActivelyUsed]; leaked {
+		t.Fatalf("special_ flag leaked into WalletSettings output: %v", returnedSettings)
 	}
 }
 
