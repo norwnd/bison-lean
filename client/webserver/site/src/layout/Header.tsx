@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/useAuthStore'
 import { ROUTES } from '../router/routes'
+import { NotificationBell } from '../components/notifications/NotificationBell'
 
 export function Header () {
   const { t } = useTranslation()
@@ -51,6 +52,7 @@ export function Header () {
             <span className="ico-robot fs32 lh1" />
           </div>
         )}
+        <NotificationBell />
         <div
           className={`header-btn${burgerActive ? ' active' : ''}`}
           onClick={burgerActive ? undefined : go(burgerTarget)}

@@ -16,30 +16,14 @@ import type { Exchange } from '../stores/types'
 import { PrepaidBondID, DCRAssetID } from '../stores/types'
 import { formatCoinAtom } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
+import {
+  desktopNtfnTypeLabels as noteTypes,
+  loadDesktopNtfnSettings as loadNtfnSettings,
+  saveDesktopNtfnSettings as saveNtfnSettings,
+  fireSystemNotification,
+} from '../services/notifier'
 
 type RegStep = 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
-
-// Desktop notification settings stored in localStorage.
-const ntfnSettingsKey = () => `desktop_notifications-${window.location.host}`
-
-const noteTypes: Record<string, string> = {
-  order: 'Orders',
-  match: 'Matches',
-  bondpost: 'Bonds',
-  conn: 'Connections',
-}
-
-function loadNtfnSettings (): Record<string, boolean> {
-  try {
-    const raw = window.localStorage.getItem(ntfnSettingsKey())
-    if (raw) return JSON.parse(raw) as Record<string, boolean>
-  } catch { /* ignore */ }
-  return { browserNtfnEnabled: false, order: true, match: true, bondpost: true, conn: true }
-}
-
-function saveNtfnSettings (settings: Record<string, boolean>) {
-  window.localStorage.setItem(ntfnSettingsKey(), JSON.stringify(settings))
-}
 
 export default function SettingsPage () {
   const { t } = useTranslation()
@@ -354,7 +338,14 @@ export default function SettingsPage () {
     const updated = { ...ntfnSettings, browserNtfnEnabled: next }
     setNtfnSettings(updated)
     saveNtfnSettings(updated)
-  }, [ntfnSettings])
+    // Mirrors dev2 `BrowserNotifier.requestNtfnPermission` — fire a
+    // confirmation immediately so the user sees the OS/browser surface
+    // the moment they enable the toggle. Toggling off stays silent.
+    if (next) {
+      fireSystemNotification(t('DESKTOP_NOTIFICATIONS_ENABLED'))
+        .catch(err => console.error('confirmation notification failed:', err))
+    }
+  }, [ntfnSettings, t])
 
   const toggleNtfnType = useCallback((noteType: string) => {
     const updated = { ...ntfnSettings, [noteType]: !ntfnSettings[noteType] }

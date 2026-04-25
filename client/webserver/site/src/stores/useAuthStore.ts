@@ -152,12 +152,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
       // `user`/`assets`/`exchanges` state, then deliver the pre-login
       // notification backlog.
       applyUserResponse(resp)
-      // Vanilla reverses the notes backlog before passing it to
-      // `setNotes()` so chronologically older entries sit at lower indices
-      // — matching `prependNoteElement`'s push-append order. `pokes` are
-      // not reversed in vanilla.
-      const notes: CoreNote[] = (resp.notes || []).slice().reverse()
-      const pokes: CoreNote[] = resp.pokes || []
+      // Server convention (matching dev2 expectations): `notes` arrive
+      // newest-first, `pokes` arrive oldest-first. The store invariant
+      // is "index 0 is newest" (notify() prepends new arrivals), so we
+      // store notes as-is and reverse pokes. Dev2 didn't reverse pokes
+      // explicitly because its `setPokes()` walked the array calling
+      // `prependPokeElement` — that inversion is gone in React, so we
+      // do the reverse here instead.
+      const notes: CoreNote[] = resp.notes || []
+      const pokes: CoreNote[] = (resp.pokes || []).slice().reverse()
       const noteStore = useNotificationStore.getState()
       noteStore.setNotes(notes)
       noteStore.setPokes(pokes)

@@ -280,11 +280,22 @@ z-index: 1000;
     color: var(--popup-notes-color);
     padding: 4px 10px;
     margin: 3px 0 0;
+    // Mirrors dev2 `app.ts notify()` (L1287) which fades out each popup
+    // over the last 500ms of its 6s lifetime via `Doc.animate(500, ...)`.
+    // Keyframes hold opacity 1 for 91.66% (5500ms / 6000ms) then linearly
+    // fade to 0 for the final 500ms; the store's removePopup setTimeout
+    // matches the 6s duration so DOM removal coincides with the fade end.
+    animation: popup-note-fade 6s linear forwards;
   }
 
   .note-indicator {
     margin-bottom: 2px;
   }
+}
+
+@keyframes popup-note-fade {
+  0%, 91.66% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 [data-unit] {
@@ -347,14 +358,96 @@ z-index: 1000;
 }
 
 #noteBox {
-  width: 425px;
+  // Anchored top-right (right edge set inline via JS to align with the
+  // bell button's right edge, so bell + hamburger remain visible to the
+  // right of the dropdown), extends left to mid-viewport (50vw) and
+  // down to 65vh (leaving the bottom 35% of the viewport for the page
+  // beneath). The dropdown's own header (tabs + close icon) is sized to
+  // 55px so it visually continues the page header.
+  top: 0;
+  left: 50vw;
+  // CSS fallback right-anchor (used until the JS-computed inline `right`
+  // takes effect — e.g. on the very first render before bellRef.current
+  // is set). Inline right wins over this rule once computed.
+  right: 0;
+  height: 65vh;
+  max-height: 65vh; // overrides the 90% in the shared #profileBox/#noteBox rule
+  // The shared rule applies a 1px border on every side; drop the top
+  // edge so the dropdown's `.header > div` border-bottom lands exactly
+  // at y=55 (matching the page header's border-bottom) rather than y=56.
+  border-top: none;
+  // Sit above #header (z-index: 100); without this bump the dropdown
+  // header would render under the page header.
+  z-index: 101;
 
-  div.note.firstview {
-    background-color: var(--tertiary-bg);
+  // Mobile/narrow viewports: full-screen layout — 50vw is too narrow
+  // to be useful below the Bootstrap `sm` breakpoint (~576px). Use
+  // `!important` to override the JS-set inline `right` on mobile.
+  @include media-breakpoint-down(sm) {
+    left: 0;
+    right: 0 !important;
+    height: 100vh;
+    max-height: 100vh;
   }
 
-  div.note:not(:last-child) {
-    @include border-bottom;
+  // Header row (tabs + close icon) — match the page #header's 55px
+  // height so the dropdown reads as a continuation of the top bar.
+  & > .header {
+    height: 55px;
+    min-height: 55px;
+  }
+
+  // Position the close icon centered within the now-taller header.
+  & > .icon {
+    top: 18px;
+  }
+
+  div.note {
+    // Anchor for the absolute-positioned `.note-time` below.
+    position: relative;
+    // Vertical + left padding (Bootstrap utility classes set their own
+    // !important padding, so the right gutter for the absolute time is
+    // owned here, where nothing fights us). ~72px fits the widest
+    // realistic age string (e.g. " 9y 11m") at fs13 with a small gap.
+    padding: 0.5rem 72px 0.5rem 0.5rem;
+    // Long unbreakable tokens (URLs, 8-char order/coin hashes) are
+    // common in core note details — let them break mid-string instead
+    // of forcing horizontal overflow.
+    overflow-wrap: anywhere;
+
+    &.firstview {
+      background-color: var(--tertiary-bg);
+    }
+
+    &:not(:last-child) {
+      @include border-bottom;
+    }
+
+    // Subject column inside the inner d-flex row needs `min-width: 0`
+    // so it shrinks below intrinsic content size (otherwise long
+    // subjects push the row past the available width).
+    .flex-grow-1 {
+      min-width: 0;
+    }
+
+    // Time floats at top-right of the note, out of the text flow, so
+    // wrapped content never collides with it. Subtle styling keeps it
+    // out of the way visually.
+    .note-time {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 13px;
+      color: var(--text-grey);
+      white-space: nowrap;
+    }
+  }
+
+  // Belt-and-suspenders: defensively clip any horizontal overflow from
+  // third-party content in note details.
+  #noteList,
+  #pokeList {
+    overflow-x: hidden;
   }
 }
 

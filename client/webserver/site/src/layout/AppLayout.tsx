@@ -9,6 +9,7 @@ import { useUIStore } from '../stores/useUIStore'
 import { useTrackLastVisitedPage } from '../router/lastVisitedPage'
 import { Header } from './Header'
 import { NewUserBanner } from './NewUserBanner'
+import { PopupNotes } from '../components/notifications/PopupNotes'
 
 export function AppLayout () {
   const user = useAuthStore(s => s.user)
@@ -120,6 +121,7 @@ export function AppLayout () {
       <main id="main" className="flex-grow-1 position-relative d-flex flex-column" style={{ minHeight: 0 }}>
         <Outlet />
       </main>
+      <PopupNotes />
     </>
   )
 }
