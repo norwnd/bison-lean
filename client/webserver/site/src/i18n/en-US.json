@@ -291,8 +291,6 @@
   "NO_PASS_ERROR_MSG": "password cannot be empty",
   "NO_APP_PASS_ERROR_MSG": "app password cannot be empty",
   "PASSWORD_NOT_MATCH": "passwords do not match",
-  "HIDE_ADDITIONAL_SETTINGS": "hide additional settings",
-  "SHOW_ADDITIONAL_SETTINGS": "show additional settings",
   "BUY": "Buy",
   "SELL": "Sell",
   "VERSION_NOT_SUPPORTED": "{{ asset }} (v{{version}}) is not supported",

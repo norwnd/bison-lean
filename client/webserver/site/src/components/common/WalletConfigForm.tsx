@@ -100,7 +100,6 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
   const [, setCurrentAssetID] = useState(assetID)
   const [configOpts, setConfigOpts] = useState<ConfigOption[]>(propConfigOpts)
   const [hasActiveOrders, setHasActiveOrders] = useState(activeOrders)
-  const [showOther, setShowOther] = useState(false)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -128,8 +127,6 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
       primaryElements.push(el)
     }
   }
-
-  const hasDefaultedOpts = defaultedElements.length > 0 || loadedElements.length > 0
 
   // --- Element value setters ---
 
@@ -251,7 +248,6 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
       setCurrentAssetID(newAssetID)
       setConfigOpts(newConfigOpts)
       setHasActiveOrders(newActiveOrders)
-      setShowOther(false)
       setError('')
       setLoadedKeys(new Set())
       const elems: ConfigElement[] = []
@@ -415,22 +411,8 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
         <div className="fs15 text-danger mb-2">{error}</div>
       )}
 
-      {/* Show/hide additional settings toggle */}
-      {sectionize && hasDefaultedOpts && (
-        <div className="mb-2">
-          <button
-            type="button"
-            className="btn btn-sm btn-link p-0"
-            onClick={() => setShowOther(prev => !prev)}
-          >
-            <span className="me-1">{showOther ? '\u25BC' : '\u25B6'}</span>
-            {showOther ? t('HIDE_ADDITIONAL_SETTINGS') : t('SHOW_ADDITIONAL_SETTINGS')}
-          </button>
-        </div>
-      )}
-
-      {/* Other settings section (defaulted options + loaded options) */}
-      {showOther && (
+      {/* Defaulted + loaded options always rendered — no collapse toggle. */}
+      {(loadedElements.length > 0 || defaultedElements.length > 0) && (
         <div className="other-settings">
           {loadedElements.length > 0 && (
             <>
