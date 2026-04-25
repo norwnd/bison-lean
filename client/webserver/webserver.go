@@ -129,6 +129,7 @@ type clientCore interface {
 	Wallets() []*core.WalletState
 	WalletState(assetID uint32) *core.WalletState
 	WalletSettings(uint32) (map[string]string, error)
+	WalletProviders(uint32) ([]asset.ProviderInfo, error)
 	ReconfigureWallet([]byte, []byte, *core.WalletForm) error
 	ToggleWalletStatus(assetID uint32, disable bool) error
 	ChangeAppPass([]byte, []byte) error
@@ -556,6 +557,7 @@ func New(cfg *Config) (*WebServer, error) {
 			apiAuth.Post("/reconfigurewallet", s.apiReconfig)
 			apiAuth.Post("/changeapppass", s.apiChangeAppPass)
 			apiAuth.Post("/walletsettings", s.apiWalletSettings)
+			apiAuth.Post("/walletproviders", s.apiWalletProviders)
 			apiAuth.Post("/togglewalletstatus", s.apiToggleWalletStatus)
 			apiAuth.Post("/orders", s.apiOrders)
 			apiAuth.Post("/order", s.apiOrder)

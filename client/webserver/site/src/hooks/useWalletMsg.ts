@@ -20,7 +20,8 @@ type TFn = (key: string, opts?: Record<string, string>) => string
  *   2. one wallet missing     → CREATE_ASSET_WALLET_MSG
  *   3. a wallet is disabled   → ENABLE_ASSET_WALLET_MSG (user-blocking)
  *   4. a wallet is connecting → CONNECTING_WALLET       (transient)
- *   5. otherwise              → '' (empty string)
+ *   5. trade-safety blocked   → TRADE_DISABLED_PROVIDERS (RPC redundancy too low)
+ *   6. otherwise              → '' (empty string)
  *
  * "Disabled" means the user has explicitly turned the wallet off and must
  * take action. "Connecting" (`!running && !disabled`) is the transient boot
@@ -29,6 +30,12 @@ type TFn = (key: string, opts?: Record<string, string>) => string
  * window (which is what the old code did via `disabled || !running`) was
  * misleading; the wallet is already enabled and just hasn't finished
  * dialing yet.
+ *
+ * "Trade-safety blocked" applies to RPC-multiplexed wallets (eth/polygon)
+ * when fewer than min(2, total) providers are healthy. Set by Core via
+ * the ProviderHealthNote → handleProviderHealth flow; the wallet's
+ * Trade()/MultiTrade() endpoints also enforce this, so the UI gate is
+ * a UX hint, not a hard guarantee.
  *
  * Disabled-on-either-side wins over connecting-on-either-side so that an
  * explicitly-disabled wallet always surfaces its actionable message, even
@@ -55,6 +62,13 @@ export function tradePairWalletMsg (
   if (quoteWallet.disabled) return t('ENABLE_ASSET_WALLET_MSG', { asset: qs })
   if (!baseWallet.running) return t('CONNECTING_WALLET', { asset: bs })
   if (!quoteWallet.running) return t('CONNECTING_WALLET', { asset: qs })
+  // RPC-multiplexed wallets (eth/polygon) report tradeSafe=false when
+  // their provider redundancy threshold isn't met. Surface that here so
+  // the buy/sell button is grayed out with a tooltip explaining why.
+  // Non-RPC-multiplexed wallets always have tradeSafe=true, so this is
+  // a no-op for them.
+  if (baseWallet.tradeSafe === false) return t('TRADE_DISABLED_PROVIDERS', { asset: bs })
+  if (quoteWallet.tradeSafe === false) return t('TRADE_DISABLED_PROVIDERS', { asset: qs })
   return ''
 }
 

@@ -223,6 +223,14 @@ var originLocale = map[Topic]translation{
 		subject:  "Wallet Password Updated",
 		template: "Password for %s wallet has been updated.",
 	},
+	TopicWalletProviderRedundancyLost: {
+		subject:  "Wallet provider redundancy issue",
+		template: "Your %s wallet is below the trade-safety threshold: %s. New trades are blocked until at least 2 providers are reachable. Check the wallet's provider list in settings.",
+	},
+	TopicWalletProviderRedundancyRestore: {
+		subject:  "Wallet provider redundancy restored",
+		template: "Your %s wallet has enough healthy providers again. Trading is unblocked.",
+	},
 	TopicMarketSuspendScheduled: {
 		subject:  "Market suspend scheduled",
 		template: "Market %s at %s is now scheduled for suspension at %v",

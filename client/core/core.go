@@ -2261,6 +2261,11 @@ func (c *Core) connectAndUpdateWalletResumeTrades(w *xcWallet, resumeTrades bool
 		c.log.Warnf("Could not update balances for %s wallet: %v", unbip(assetID), err)
 	}
 
+	// Seed initial trade-safety state from the wallet so it's correct
+	// even before the first ProviderHealthNote arrives. For wallets that
+	// don't implement MultiProviderWallet this is unconditionally true.
+	w.refreshTradeSafety()
+
 	c.notify(newWalletStateNote(w.state()))
 	return nil
 }
@@ -2989,6 +2994,23 @@ func (c *Core) loadXCWallet(dbWallet *db.Wallet) (*xcWallet, error) {
 		disabled:     dbWallet.Disabled,
 		syncStatus:   &asset.SyncStatus{},
 		pendingTxs:   make(map[string]*asset.WalletTransaction),
+		// tradeSafe defaults to true so two distinct cases are handled
+		// correctly even before the wallet has a chance to report its
+		// actual state:
+		//
+		//   1. Non-MultiProviderWallet wallets (BTC, DCR, …) — they
+		//      have no provider-redundancy notion, so true is the
+		//      correct steady state. xcWallet.isTradeSafe() also
+		//      type-asserts and short-circuits to true for these,
+		//      so the stored field is just a paranoia default for
+		//      the WalletState payload exposed to the UI.
+		//   2. MultiProviderWallet wallets (eth/polygon/…) — they
+		//      override this in connectAndUpdateWalletResumeTrades
+		//      via refreshTradeSafety the moment the wallet connects.
+		//      The window where the default applies is brief (between
+		//      construction and connect) and the wallet isn't usable
+		//      for trading during that window anyway.
+		tradeSafe: true,
 	}
 
 	token := asset.TokenInfo(assetID)
@@ -3551,6 +3573,21 @@ func (c *Core) WalletSettings(assetID uint32) (map[string]string, error) {
 		settings[k] = v
 	}
 	return settings, nil
+}
+
+// WalletProviders returns the per-RPC-provider status snapshot for a
+// MultiProviderWallet (eth/polygon-style). Returns an empty slice for
+// wallets that don't multiplex RPC traffic.
+func (c *Core) WalletProviders(assetID uint32) ([]asset.ProviderInfo, error) {
+	wallet, found := c.wallet(assetID)
+	if !found {
+		return nil, newError(missingWalletErr, "%d -> %s wallet not found", assetID, unbip(assetID))
+	}
+	mp, ok := wallet.Wallet.(asset.MultiProviderWallet)
+	if !ok {
+		return nil, nil
+	}
+	return mp.ProviderInfo(), nil
 }
 
 // ChangeAppPass updates the application password to the provided new password
@@ -7279,6 +7316,18 @@ func (c *Core) prepareTradeRequest(pw []byte, form *TradeForm) (result *tradeReq
 	wallets, assetConfigs, dc, mktConf, err := c.prepareForTradeRequestPrep(pw, form.Base, form.Quote, form.Host, form.Sell)
 	if err != nil {
 		return nil, err
+	}
+
+	// Trade-safety gate: refuse new placements when either wallet is
+	// below the provider-redundancy threshold (min(2, total) healthy).
+	// This is the final core-side safeguard; the UI is expected to
+	// disable the trade form already, but a stale UI shouldn't bypass
+	// the check. In-flight matches are unaffected.
+	if safe, reason := wallets.fromWallet.isTradeSafe(); !safe {
+		return nil, newError(walletErr, "%s wallet is not safe to trade: %s", unbip(wallets.fromWallet.AssetID), reason)
+	}
+	if safe, reason := wallets.toWallet.isTradeSafe(); !safe {
+		return nil, newError(walletErr, "%s wallet is not safe to trade: %s", unbip(wallets.toWallet.AssetID), reason)
 	}
 
 	// Prevent placing new orders when there are too many active matches.
@@ -11255,8 +11304,42 @@ func (c *Core) handleWalletNotification(ni asset.WalletNotification) {
 			return
 		}
 		w.processWalletTransactions([]*asset.WalletTransaction{n.Transaction})
+	case *asset.ProviderHealthNote:
+		c.handleProviderHealth(n)
 	}
 	c.notify(newWalletNote(ni))
+}
+
+// handleProviderHealth processes a trade-safety transition emitted by an
+// RPC-multiplexed wallet. It updates the cached state on xcWallet, fires
+// a user-visible notification (warning on lost redundancy, success on
+// restored), and emits a WalletStateNote so the UI can re-render any
+// affordances that depend on TradeSafe.
+func (c *Core) handleProviderHealth(n *asset.ProviderHealthNote) {
+	w, found := c.wallet(n.AssetID)
+	if !found {
+		return
+	}
+	w.setTradeSafe(n.Safe, n.Reason)
+
+	symbol := unbip(n.AssetID)
+	// Use db.Poke severity for both transitions: the events are inherently
+	// transient (live state-change toasts) and persisting them causes
+	// stale notifications to replay on next login even when the asset
+	// wallet correctly suppresses re-emission. The wallet's connect-time
+	// probe is the source of truth — if the wallet is genuinely unsafe at
+	// startup, a fresh "lost" notification fires right then; an old
+	// persisted one would just be confusing at best.
+	if n.Safe {
+		subj, details := c.formatDetails(TopicWalletProviderRedundancyRestore, symbol)
+		c.notify(newWalletConfigNote(TopicWalletProviderRedundancyRestore, subj, details, db.Poke, w.state()))
+	} else {
+		subj, details := c.formatDetails(TopicWalletProviderRedundancyLost, symbol, n.Reason)
+		c.notify(newWalletConfigNote(TopicWalletProviderRedundancyLost, subj, details, db.Poke, w.state()))
+	}
+	// WalletStateNote so any open UI surface (wallet page, market view's
+	// trade form gating) re-reads the updated TradeSafe field.
+	c.notify(newWalletStateNote(w.state()))
 }
 
 // queueTipChange records the latest tip for the asset and ensures a tipChange

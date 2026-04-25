@@ -596,12 +596,14 @@ type WalletConfigNote struct {
 }
 
 const (
-	TopicWalletConfigurationUpdated Topic = "WalletConfigurationUpdated"
-	TopicWalletPasswordUpdated      Topic = "WalletPasswordUpdated"
-	TopicWalletPeersWarning         Topic = "WalletPeersWarning"
-	TopicWalletTypeDeprecated       Topic = "WalletTypeDeprecated"
-	TopicWalletPeersUpdate          Topic = "WalletPeersUpdate"
-	TopicBondWalletNotConnected     Topic = "BondWalletNotConnected"
+	TopicWalletConfigurationUpdated      Topic = "WalletConfigurationUpdated"
+	TopicWalletPasswordUpdated           Topic = "WalletPasswordUpdated"
+	TopicWalletPeersWarning              Topic = "WalletPeersWarning"
+	TopicWalletTypeDeprecated            Topic = "WalletTypeDeprecated"
+	TopicWalletPeersUpdate               Topic = "WalletPeersUpdate"
+	TopicBondWalletNotConnected          Topic = "BondWalletNotConnected"
+	TopicWalletProviderRedundancyLost    Topic = "WalletProviderRedundancyLost"
+	TopicWalletProviderRedundancyRestore Topic = "WalletProviderRedundancyRestored"
 )
 
 func newWalletConfigNote(topic Topic, subject, details string, severity db.Severity, walletState *WalletState) *WalletConfigNote {

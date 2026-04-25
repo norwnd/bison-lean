@@ -74,6 +74,13 @@ type xcWallet struct {
 	hookedUp   bool
 	syncStatus *asset.SyncStatus
 	disabled   bool
+	// tradeSafe / tradeSafeReason mirror the underlying wallet's
+	// MultiProviderWallet state. Updated when a ProviderHealthNote
+	// arrives or proactively at connect time (see refreshTradeSafety).
+	// For wallets that don't implement asset.MultiProviderWallet, this
+	// is always true.
+	tradeSafe       bool
+	tradeSafeReason string
 
 	pendingTxsMtx sync.RWMutex
 	pendingTxs    map[string]*asset.WalletTransaction
@@ -287,25 +294,37 @@ func (w *xcWallet) state() *WalletState {
 		feeState = feeStateI.(*FeeState)
 	}
 
+	// Match the isTradeSafe() semantics: only the MultiProviderWallet
+	// branch consults the stored fields; other wallets are unconditionally
+	// safe so we don't surface stale zero-value state.
+	tradeSafe := true
+	var tradeSafeReason string
+	if _, ok := w.Wallet.(asset.MultiProviderWallet); ok {
+		tradeSafe = w.tradeSafe
+		tradeSafeReason = w.tradeSafeReason
+	}
+
 	state := &WalletState{
-		Symbol:       unbip(w.AssetID),
-		AssetID:      w.AssetID,
-		Open:         len(w.encPass) == 0 || len(w.pw) > 0,
-		Running:      w.connector.Load().Running(),
-		Balance:      w.balance,
-		Address:      w.address,
-		Encrypted:    len(w.encPass) > 0,
-		PeerCount:    peerCount,
-		Synced:       w.syncStatus.Synced,
-		SyncProgress: w.syncStatus.BlockProgress(),
-		SyncStatus:   w.syncStatus,
-		WalletType:   w.walletType,
-		Class:        winfo.BlockchainClass,
-		Traits:       w.traits,
-		Disabled:     w.disabled,
-		Approved:     tokenApprovals,
-		FeeState:     feeState,
-		PendingTxs:   w.pendingTxsCopy(),
+		Symbol:          unbip(w.AssetID),
+		AssetID:         w.AssetID,
+		Open:            len(w.encPass) == 0 || len(w.pw) > 0,
+		Running:         w.connector.Load().Running(),
+		Balance:         w.balance,
+		Address:         w.address,
+		Encrypted:       len(w.encPass) > 0,
+		PeerCount:       peerCount,
+		Synced:          w.syncStatus.Synced,
+		SyncProgress:    w.syncStatus.BlockProgress(),
+		SyncStatus:      w.syncStatus,
+		WalletType:      w.walletType,
+		Class:           winfo.BlockchainClass,
+		Traits:          w.traits,
+		Disabled:        w.disabled,
+		Approved:        tokenApprovals,
+		FeeState:        feeState,
+		PendingTxs:      w.pendingTxsCopy(),
+		TradeSafe:       tradeSafe,
+		TradeSafeReason: tradeSafeReason,
 	}
 	w.mtx.RUnlock()
 
@@ -323,6 +342,44 @@ func (w *xcWallet) setBalance(bal *WalletBalance) {
 	w.mtx.Lock()
 	w.balance = bal
 	w.mtx.Unlock()
+}
+
+// setTradeSafe records the wallet's trade-safety state. Called when a
+// ProviderHealthNote arrives or at connect time when refreshTradeSafety
+// proactively polls a MultiProviderWallet.
+func (w *xcWallet) setTradeSafe(safe bool, reason string) {
+	w.mtx.Lock()
+	w.tradeSafe = safe
+	w.tradeSafeReason = reason
+	w.mtx.Unlock()
+}
+
+// refreshTradeSafety polls the underlying wallet for its current
+// trade-safety state. For wallets that don't implement
+// MultiProviderWallet, the wallet is unconditionally trade-safe.
+// Called during wallet-connect setup so the initial state is correct
+// before any ProviderHealthNote transitions arrive.
+func (w *xcWallet) refreshTradeSafety() {
+	mp, ok := w.Wallet.(asset.MultiProviderWallet)
+	if !ok {
+		w.setTradeSafe(true, "")
+		return
+	}
+	safe, reason := mp.TradeSafe()
+	w.setTradeSafe(safe, reason)
+}
+
+// isTradeSafe reports whether the wallet is currently safe for new
+// trade placement. Wallets that don't implement MultiProviderWallet
+// (i.e. non-RPC-multiplexed wallets) have no redundancy notion and
+// are always treated as safe.
+func (w *xcWallet) isTradeSafe() (bool, string) {
+	if _, ok := w.Wallet.(asset.MultiProviderWallet); !ok {
+		return true, ""
+	}
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
+	return w.tradeSafe, w.tradeSafeReason
 }
 
 // setDisabled sets the wallet disabled field.

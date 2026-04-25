@@ -250,6 +250,14 @@ export interface WalletState {
   bridgeApproved?: Record<string, ApprovalStatus>
   feeState?: FeeState
   pendingTxs: Record<string, WalletTransaction>
+  // tradeSafe is set by RPC-multiplexed wallets (eth/polygon) to
+  // signal whether their provider-redundancy threshold is met.
+  // false → block new-trade UI affordances. For non-RPC-multiplexed
+  // wallets this is always true. Optional in the type because older
+  // builds didn't surface it; the cascade in tradePairWalletMsg
+  // explicitly checks for `=== false` to avoid false-positive blocks.
+  tradeSafe?: boolean
+  tradeSafeReason?: string
 }
 
 export interface WalletInfo {

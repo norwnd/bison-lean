@@ -4,6 +4,7 @@ import { postJSON, checkResponse } from '../../services/api'
 import type { ConfigOption } from '../../stores/types'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { logoPath } from '../../hooks/useFormatters'
+import { ProviderList } from './ProviderList'
 
 // --- Utility helpers (ported from forms.ts) ---
 
@@ -286,6 +287,23 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     const isHidden = hiddenFields.includes(opt.key)
     const isDisabled = Boolean(opt.disablewhenactive && hasActiveOrders)
     const regAssetSymbol = opt.regAsset !== undefined ? assets[opt.regAsset]?.symbol : undefined
+
+    // Special case: the "providers" option is rendered as an editable
+    // list of RPC endpoints with per-provider health status. Defaults
+    // (hardcoded in the wallet) appear first as non-deletable rows;
+    // user-added entries are deletable. Health is fetched from
+    // /api/walletproviders and refreshed periodically.
+    if (opt.key === 'providers' && !isHidden) {
+      return (
+        <ProviderList
+          key={el.id}
+          assetID={assetID}
+          value={el.value}
+          onChange={(v) => updateElement(el.id, { value: v })}
+          disabled={isDisabled}
+        />
+      )
+    }
 
     const label = (
       <label htmlFor={el.id} title={opt.description || undefined}>

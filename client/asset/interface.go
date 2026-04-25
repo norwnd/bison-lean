@@ -1114,6 +1114,43 @@ type FeeRater interface {
 	FeeRateSwap() (rate uint64, tooLow bool)
 }
 
+// ProviderInfo is a snapshot of one RPC provider's status, exposed by
+// wallets that fan their RPC traffic across multiple endpoints (e.g.
+// EVM wallets backed by a multi-RPC client). The webserver UI uses
+// this to render per-provider health and the redundancy banner.
+type ProviderInfo struct {
+	// URL is the full RPC endpoint URL.
+	URL string `json:"url"`
+	// IsDefault is true for providers from the wallet's hardcoded
+	// default list. Defaults are immutable from the user's perspective
+	// (always present, can't be deleted from the UI).
+	IsDefault bool `json:"isDefault"`
+	// Healthy is the outcome of the most recent probe; only meaningful
+	// if Probed is true.
+	Healthy bool `json:"healthy"`
+	// Probed is true once at least one probe has run for this provider.
+	Probed bool `json:"probed"`
+	// LastProbed is when the most recent probe ran.
+	LastProbed time.Time `json:"lastProbed"`
+	// LastErr is empty when Healthy is true (or when no probe has run).
+	LastErr string `json:"lastErr,omitempty"`
+}
+
+// MultiProviderWallet is implemented by wallets that fan their RPC
+// traffic across multiple endpoints and can report per-endpoint status.
+// The trade-safety gate (block new trades when fewer than min(2, total)
+// providers are healthy) and the per-provider UI status surface both
+// use this interface.
+type MultiProviderWallet interface {
+	// ProviderInfo returns the current status of every active provider,
+	// in stable order (defaults first, then user-added).
+	ProviderInfo() []ProviderInfo
+	// TradeSafe reports whether the redundancy threshold is met. When
+	// safe is false, reason is a short human-readable explanation
+	// suitable for surfacing to the user.
+	TradeSafe() (safe bool, reason string)
+}
+
 // FundsMixingStats describes the current state of a wallet's funds mixer.
 type FundsMixingStats struct {
 	// Enabled is true if the wallet is configured for funds mixing. The wallet
@@ -2156,6 +2193,16 @@ type CustomWalletNote struct {
 	Payload any `json:"payload"`
 }
 
+// ProviderHealthNote is emitted by MultiProviderWallet implementations
+// when their trade-safety state changes (safe ↔ unsafe transition).
+// Implementations only emit on transitions, not on every probe cycle.
+type ProviderHealthNote struct {
+	baseWalletNotification
+	Safe      bool           `json:"safe"`
+	Reason    string         `json:"reason,omitempty"`
+	Providers []ProviderInfo `json:"providers"`
+}
+
 type ActionTaker interface {
 	// TakeAction processes a response to an ActionRequired wallet notification.
 	TakeAction(actionID string, payload []byte) error
@@ -2205,6 +2252,22 @@ func (e *WalletEmitter) Data(route string, payload any) {
 			AssetID: e.assetID,
 			Route:   route,
 		}, Payload: payload,
+	})
+}
+
+// ProviderHealth sends a ProviderHealthNote when the wallet's
+// trade-safety state has changed. Implementations should only call
+// this on safe ↔ unsafe transitions, not on every probe cycle, so
+// the user doesn't get spammed with redundant notifications.
+func (e *WalletEmitter) ProviderHealth(safe bool, reason string, providers []ProviderInfo) {
+	e.emit(&ProviderHealthNote{
+		baseWalletNotification: baseWalletNotification{
+			AssetID: e.assetID,
+			Route:   "providerHealth",
+		},
+		Safe:      safe,
+		Reason:    reason,
+		Providers: providers,
 	})
 }
 

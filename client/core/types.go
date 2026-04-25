@@ -137,6 +137,15 @@ type WalletState struct {
 	BridgeApproved map[string]asset.ApprovalStatus     `json:"bridgeApproved"`
 	FeeState       *FeeState                           `json:"feeState"`
 	PendingTxs     map[string]*asset.WalletTransaction `json:"pendingTxs"`
+	// TradeSafe is set by MultiProviderWallet implementations to
+	// signal whether the wallet has enough healthy RPC providers to
+	// safely place a new trade. UI should disable trade-placement
+	// affordances when false. For wallets that are not RPC-multiplexed
+	// (i.e. don't implement asset.MultiProviderWallet), this is always
+	// true. TradeSafeReason carries a short user-facing message when
+	// TradeSafe is false.
+	TradeSafe       bool   `json:"tradeSafe"`
+	TradeSafeReason string `json:"tradeSafeReason,omitempty"`
 }
 
 // FeeState is information about the current network transaction fees and

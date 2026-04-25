@@ -1193,6 +1193,30 @@ func (s *WebServer) apiWalletSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// apiWalletProviders returns the per-RPC-provider health snapshot for an
+// RPC-multiplexed wallet (eth/polygon). The UI uses this to render the
+// provider list with per-row green/red status dots.
+func (s *WebServer) apiWalletProviders(w http.ResponseWriter, r *http.Request) {
+	form := &struct {
+		AssetID uint32 `json:"assetID"`
+	}{}
+	if !readPost(w, r, form) {
+		return
+	}
+	providers, err := s.core.WalletProviders(form.AssetID)
+	if err != nil {
+		s.writeAPIError(w, fmt.Errorf("error fetching wallet providers: %w", err))
+		return
+	}
+	writeJSON(w, &struct {
+		OK        bool                 `json:"ok"`
+		Providers []asset.ProviderInfo `json:"providers"`
+	}{
+		OK:        true,
+		Providers: providers,
+	})
+}
+
 // apiToggleWalletStatus updates the wallet's status.
 func (s *WebServer) apiToggleWalletStatus(w http.ResponseWriter, r *http.Request) {
 	form := new(walletStatusForm)

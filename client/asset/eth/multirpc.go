@@ -58,14 +58,25 @@ const (
 	receiptCacheExpiration       = time.Hour
 	unconfirmedReceiptExpiration = time.Minute
 	tipCapSuggestionExpiration   = time.Hour
-	brickedFailCount             = 100
-	providerDelimiter            = " "
+	// brickedFailCount is the number of consecutive failures above which
+	// failed() returns true even after the failQuarantine window expires.
+	// failCount is reset to 0 by setTip() on the next successful response
+	// (or by the periodic health probe via clearFailed()), so this is
+	// "consecutive failures since last success", not a lifetime counter.
+	// Anything above this threshold is treated as bricked-until-explicit-recovery.
+	brickedFailCount  = 100
+	providerDelimiter = " "
 	// Infura and Rivet (basic plans) seem to have a 15 second delay for 1)
 	// initializing websocket connection, or 2) the first eth_chainId request on
 	// HTTPS, but not for other requests.
 	// TODO: Keep a file mapping provider URL to retrieved chain IDs, and skip
 	// the eth_chainId request after verified for the first time?
 	defaultRequestTimeout = time.Second * 10
+	// providerProbeInterval is how often the health-check loop probes
+	// each active provider. Probes are independent of normal RPC traffic
+	// and refresh per-provider health state used by the trade-safety
+	// gate and UI status surface.
+	providerProbeInterval = time.Second * 30
 )
 
 var (
@@ -122,6 +133,20 @@ type provider struct {
 		failStamp    time.Time
 		failCount    int
 		wsHeaderSeen atomic.Bool
+	}
+
+	// health tracks the last periodic health-probe outcome for this
+	// provider. Populated by multiRPCClient's health-check loop. Independent
+	// from the runtime tip.failStamp quarantine: failStamp is set by real
+	// in-flight RPC failures and decays over failQuarantine; health is
+	// refreshed on a fixed cadence and reflects whether the provider is
+	// currently reachable.
+	health struct {
+		sync.RWMutex
+		probed     bool      // true after the first probe completes
+		healthy    bool      // last probe outcome (only meaningful if probed)
+		lastProbed time.Time // when the most recent probe ran
+		lastErr    error     // nil when last probe succeeded
 	}
 }
 
@@ -182,6 +207,58 @@ func (p *provider) failed() bool {
 	p.tip.Lock()
 	defer p.tip.Unlock()
 	return p.tip.failCount > brickedFailCount || time.Since(p.tip.failStamp) < failQuarantine
+}
+
+// recordProbe stores the outcome of a periodic health probe. err == nil
+// means the provider is currently reachable.
+func (p *provider) recordProbe(err error) {
+	p.health.Lock()
+	p.health.probed = true
+	p.health.healthy = err == nil
+	p.health.lastProbed = time.Now()
+	p.health.lastErr = err
+	p.health.Unlock()
+}
+
+// isHealthy returns whether the most recent probe succeeded. Returns false
+// when no probe has run yet (treat unknown as unhealthy for gating purposes).
+func (p *provider) isHealthy() bool {
+	p.health.RLock()
+	defer p.health.RUnlock()
+	return p.health.probed && p.health.healthy
+}
+
+// healthSnapshot returns a point-in-time copy of the last probe outcome.
+func (p *provider) healthSnapshot() (probed, healthy bool, lastProbed time.Time, lastErr error) {
+	p.health.RLock()
+	defer p.health.RUnlock()
+	return p.health.probed, p.health.healthy, p.health.lastProbed, p.health.lastErr
+}
+
+// clearFailed clears any in-flight runtime quarantine on this provider.
+// Called by the periodic health-check loop after a successful probe so we
+// have an explicit recovery signal rather than waiting for failQuarantine
+// to expire.
+func (p *provider) clearFailed() {
+	p.tip.Lock()
+	if p.tip.failCount > 0 || !p.tip.failStamp.IsZero() {
+		p.tip.failStamp = time.Time{}
+		p.tip.failCount = 0
+	}
+	p.tip.Unlock()
+}
+
+// probeAlive performs a fresh round-trip to the provider, bypassing the
+// header cache, to verify that it's currently reachable. Used by the
+// periodic health-check loop. Successful probe refreshes p.tip as a
+// side effect.
+func (p *provider) probeAlive(ctx context.Context, log dex.Logger) error {
+	hdr, err := p.ec.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+	p.setTip(hdr, log)
+	return nil
 }
 
 // bestHeader get the best known header from the provider, cached if available,
@@ -394,9 +471,45 @@ type multiRPCClient struct {
 
 	finalizeConfs uint64
 
+	// defaultEndpoints is the immutable list of provider URLs hardcoded
+	// for this chain (e.g. Polygon's public RPC list). It is set once at
+	// construction and never modified. The user can add their own provider
+	// URLs on top of these via wallet config, but cannot remove defaults.
+	// Used by the trade-safety threshold and for UI to mark these as
+	// non-deletable. Lookup via defaultEndpointSet.
+	defaultEndpoints   []string
+	defaultEndpointSet map[string]struct{}
+
+	// emit is the wallet emitter used to push trade-safety transition
+	// notifications to core. May be nil for test/dev callers — set via
+	// setEmitter after construction.
+	emit *asset.WalletEmitter
+
+	// tradeSafetyMtx guards lastTradeSafe / haveEmittedLost.
+	// lastTradeSafe is the previously-emitted state used for transition
+	// detection; nil until first determination, non-nil thereafter.
+	// haveEmittedLost records whether a "redundancy lost" notification
+	// has been pushed in this session — gates the "restored" emission
+	// so a transient unsafe blip (especially one that fires before the
+	// UI has subscribed to the notification feed at session start)
+	// doesn't surface as an orphan "restored" toast with no prior
+	// "lost" to flip from.
+	tradeSafetyMtx  sync.Mutex
+	lastTradeSafe   *bool
+	haveEmittedLost bool
+
 	providerMtx sync.RWMutex
 	endpoints   []string
 	providers   []*provider
+	// deadEndpointErrs tracks the most recent connect-attempt error
+	// for endpoints in m.endpoints that aren't currently in m.providers.
+	// Populated by runHealthProbes' recovery pass; consumed by
+	// providerInfo to surface a meaningful tooltip in the UI. Not
+	// strictly required (a generic "failed to connect" works too) but
+	// helps the user diagnose without going to the wallet log.
+	// Guarded by providerMtx alongside providers/endpoints.
+	deadEndpointErrs     map[string]string
+	deadEndpointProbedAt time.Time
 
 	// When we send transactions close together, we'll want to use the same
 	// provider.
@@ -415,8 +528,19 @@ type multiRPCClient struct {
 
 var _ ethFetcher = (*multiRPCClient)(nil)
 
+// newMultiRPCClient constructs a multiRPCClient.
+//
+// defaults is the immutable hardcoded provider list for this chain (e.g.
+// Polygon's public RPC list). endpoints is the full active set actually used
+// for RPC traffic — it must be a superset of defaults (caller is responsible
+// for merging defaults with any user-added entries and deduping). Tracking
+// defaults separately is what lets the UI prevent users from deleting them
+// and lets the future trade-safety threshold know which providers are
+// "always-on". For test/dev callers without a user/default distinction,
+// passing defaults == endpoints is fine.
 func newMultiRPCClient(
 	dir string,
+	defaults []string,
 	endpoints []string,
 	log dex.Logger,
 	cfg *params.ChainConfig,
@@ -430,15 +554,23 @@ func newMultiRPCClient(
 		return nil, fmt.Errorf("error parsing credentials from %q: %w", dir, err)
 	}
 
+	defaultSet := make(map[string]struct{}, len(defaults))
+	for _, ep := range defaults {
+		defaultSet[ep] = struct{}{}
+	}
+
 	m := &multiRPCClient{
-		net:           net,
-		cfg:           cfg,
-		log:           log,
-		creds:         creds,
-		chainID:       cfg.ChainID,
-		endpoints:     endpoints,
-		finalizeConfs: finalizeConfs,
-		torProxy:      torProxy,
+		net:                net,
+		cfg:                cfg,
+		log:                log,
+		creds:              creds,
+		chainID:            cfg.ChainID,
+		defaultEndpoints:   defaults,
+		defaultEndpointSet: defaultSet,
+		endpoints:          endpoints,
+		finalizeConfs:      finalizeConfs,
+		torProxy:           torProxy,
+		deadEndpointErrs:   make(map[string]string),
 	}
 	m.receipts.cache = make(map[common.Hash]*receiptRecord)
 	m.receipts.lastClean = time.Now()
@@ -692,18 +824,36 @@ func (m *multiRPCClient) connect(ctx context.Context) (err error) {
 	m.providers = providers
 	m.providerMtx.Unlock()
 
+	// connectProviders ran chain ID + header probes per endpoint. Seed
+	// per-provider health state from those successes so the trade-safety
+	// gate and UI status surface reflect reality before the first periodic
+	// probe runs.
 	var connections int
 	for _, p := range m.providerList() {
-		if _, err := p.bestHeader(ctx, m.log); err != nil {
-			m.log.Errorf("Failed to synchrnoize header from %s: %v", p.host, err)
-		} else {
-			connections++
-		}
+		p.recordProbe(nil)
+		connections++
 	}
 	// TODO: Require at least two if all connections are non-local.
 	if connections == 0 {
 		return fmt.Errorf("no connections established")
 	}
+
+	// Record any configured endpoints that didn't make it into the live
+	// pool — these are the dead-on-startup ones (e.g. an auth-disabled
+	// public RPC). Marking them Probed=true now means the UI shows them
+	// with a red dot immediately rather than the grey "not probed"
+	// state until the first periodic probe runs.
+	m.recordDeadEndpoints()
+
+	// Emit initial trade-safety state. If the threshold isn't met at
+	// startup the user gets an immediate notification instead of waiting
+	// for the first periodic probe.
+	m.maybeEmitProviderHealthChange()
+
+	// Start the periodic health-check loop. It runs until ctx is cancelled
+	// (which also tears down the providers below), so no separate stop
+	// signal is needed.
+	go m.healthCheckLoop(ctx)
 
 	go func() {
 		<-ctx.Done()
@@ -792,6 +942,27 @@ func createAndCheckProviders(ctx context.Context, walletDir string, endpoints []
 	return nil
 }
 
+// sameEndpoints reports whether two endpoint lists contain the same
+// URLs (set-equality). Order-insensitive — provider order in the pool
+// doesn't change behavior, so reordering is treated as no-change.
+// Duplicates aren't expected (mergeProviderLists dedupes) so a length
+// check is sufficient before the per-element compare.
+func sameEndpoints(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aCopy := append([]string(nil), a...)
+	bCopy := append([]string(nil), b...)
+	sort.Strings(aCopy)
+	sort.Strings(bCopy)
+	for i := range aCopy {
+		if aCopy[i] != bCopy[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // failedProviders builds string message that describes provider endpoints we
 // tried to connect to but didn't succeed.
 func failedProviders(succeeded []*provider, tried []string) string {
@@ -812,14 +983,58 @@ func failedProviders(succeeded []*provider, tried []string) string {
 }
 
 func (m *multiRPCClient) reconfigure(ctx context.Context, endpoints []string, compat *CompatibilityData, walletDir string, defaultProviders bool) error {
-	if err := createAndCheckProviders(ctx, walletDir, endpoints, m.chainID, compat, m.net, m.log, !defaultProviders, m.torProxy); err != nil {
-		return fmt.Errorf("create and check providers: %v", err)
+	// Reconfigure is invoked by ETHWallet.Reconfigure on ANY wallet config
+	// change (e.g. gasFeeLimit), not just provider edits. If the endpoint
+	// set is unchanged, skip the compliance check and the reconnect —
+	// the existing pool is already correct, and the periodic health
+	// probe will continue maintaining its state. This avoids hitting
+	// the network on every settings save and avoids the failure mode
+	// where a single broken endpoint blocks unrelated config edits.
+	m.providerMtx.RLock()
+	unchanged := sameEndpoints(m.endpoints, endpoints)
+	m.providerMtx.RUnlock()
+	if unchanged {
+		return nil
 	}
 
-	// TODO: If endpoints haven't change, do nothing.
+	// Reconfigure is intentionally lenient: any compliance or connect
+	// failure here is downgraded to a log warning rather than an error.
+	// Rationale:
+	//
+	//   - The user is the most likely fixer of broken-provider state.
+	//     Blocking a save means they can't iterate (e.g. they typed a
+	//     URL wrong, want to save and re-edit) and can't fix unrelated
+	//     settings (e.g. gasFeeLimit) when one provider has gone bad.
+	//   - The new periodic health-probe loop (see healthCheckLoop)
+	//     continuously surfaces per-provider liveness via the UI status
+	//     dot + tradeSafe gate. A broken provider doesn't disappear
+	//     into ambiguity — the user sees it red.
+	//   - The trade-safety gate (TradeSafe()) is the real guard for
+	//     whether a wallet is currently usable for new orders. It runs
+	//     against live probe state, not the one-shot validation we did
+	//     here. So losing the strict gate here doesn't open a window
+	//     where a user trades against zero providers.
+	if err := createAndCheckProviders(ctx, walletDir, endpoints, m.chainID, compat, m.net, m.log, !defaultProviders, m.torProxy); err != nil {
+		m.log.Warnf("provider compliance check during reconfigure (non-fatal): %v", err)
+	}
+
+	// connectProviders returns providers that successfully responded to
+	// chain-ID + header probes. A total failure (zero successful
+	// providers) is logged but not propagated — see the rationale above.
+	// In normal operation defaults are always present in the active set,
+	// so reaching the zero-providers state requires every default plus
+	// every user-added provider to be down at the moment of reconfigure.
 	providers, err := connectProviders(ctx, endpoints, m.log, m.chainID, m.net, m.torProxy)
 	if err != nil {
-		return err
+		m.log.Warnf("connect providers during reconfigure (non-fatal): %v", err)
+		providers = nil
+	}
+
+	// connectProviders already validated each endpoint (chain ID + header)
+	// for the providers it returned. Seed health state so the trade-safety
+	// gate and UI reflect reality before the first periodic probe runs.
+	for _, p := range providers {
+		p.recordProbe(nil)
 	}
 
 	m.providerMtx.Lock()
@@ -831,7 +1046,300 @@ func (m *multiRPCClient) reconfigure(ctx context.Context, endpoints []string, co
 	for _, p := range oldProviders {
 		p.shutdown()
 	}
+
+	// New endpoint set → record dead-endpoint status (UI shows red
+	// dots immediately rather than grey-until-first-probe) and
+	// re-evaluate trade-safety. If the user just removed/added a
+	// provider that pushes us across the safe threshold, fire a
+	// notification.
+	m.recordDeadEndpoints()
+	m.maybeEmitProviderHealthChange()
 	return nil
+}
+
+// runHealthProbes probes every active provider in parallel, recording
+// the outcome on each provider. A successful probe also clears any
+// in-flight runtime quarantine — the probe is the explicit recovery
+// signal so we don't have to wait for failQuarantine to expire.
+//
+// After live probes, runHealthProbes also attempts to (re)connect to
+// any endpoints in m.endpoints that aren't currently in the live pool.
+// This is the recovery path for endpoints that failed at connect /
+// reconfigure time (e.g. a default RPC that was returning auth errors
+// at startup). Newly-recovered providers are added to m.providers so
+// the UI status flips green automatically without requiring a manual
+// reconfigure.
+func (m *multiRPCClient) runHealthProbes(ctx context.Context) {
+	live := m.providerList()
+	var wg sync.WaitGroup
+	for _, p := range live {
+		wg.Add(1)
+		go func(p *provider) {
+			defer wg.Done()
+			probeCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+			defer cancel()
+			err := p.probeAlive(probeCtx, m.log)
+			p.recordProbe(err)
+			if err == nil {
+				p.clearFailed()
+				return
+			}
+			m.log.Tracef("health probe failed for %q: %v", p.host, err)
+		}(p)
+	}
+	wg.Wait()
+
+	// Recovery pass: figure out which configured endpoints aren't in
+	// the live pool, and try to bring them online.
+	m.providerMtx.RLock()
+	endpoints := append([]string(nil), m.endpoints...)
+	livePool := make([]*provider, len(m.providers))
+	copy(livePool, m.providers)
+	m.providerMtx.RUnlock()
+
+	liveSet := make(map[string]bool, len(livePool))
+	for _, p := range livePool {
+		liveSet[p.endpointAddr] = true
+	}
+	var dead []string
+	for _, ep := range endpoints {
+		if !liveSet[ep] {
+			dead = append(dead, ep)
+		}
+	}
+
+	if len(dead) > 0 {
+		// connectProviders is best-effort: returns providers that
+		// succeeded, errors only when all fail. A bulk attempt is
+		// fine because each endpoint has its own dial timeout inside
+		// addEndpoint.
+		recovered, err := connectProviders(ctx, dead, m.log, m.chainID, m.net, m.torProxy)
+		if err != nil {
+			m.log.Tracef("dead-endpoint recovery: all %d attempts failed: %v", len(dead), err)
+			recovered = nil
+		}
+		for _, p := range recovered {
+			p.recordProbe(nil)
+		}
+		// Add recovered providers, filtering for race safety: a
+		// concurrent reconfigure could have removed an endpoint we
+		// just recovered, in which case we shut down the orphaned
+		// provider rather than leaking it into the live pool.
+		m.providerMtx.Lock()
+		current := make(map[string]bool, len(m.endpoints))
+		for _, e := range m.endpoints {
+			current[e] = true
+		}
+		for _, p := range recovered {
+			if current[p.endpointAddr] {
+				m.providers = append(m.providers, p)
+				m.log.Infof("recovered previously-dead RPC provider: %s", p.endpointAddr)
+			} else {
+				p.shutdown()
+			}
+		}
+		m.providerMtx.Unlock()
+	}
+
+	// Refresh dead-endpoint timestamp + per-URL error map. recordDead-
+	// Endpoints iterates m.endpoints/m.providers under the lock, so it
+	// handles whatever set the recovery pass produced (and any concurrent
+	// reconfigure changes) correctly.
+	m.recordDeadEndpoints()
+}
+
+// recordDeadEndpoints updates deadEndpointErrs / deadEndpointProbedAt
+// based on the current diff between m.endpoints and m.providers, without
+// attempting to (re)connect any of them. Used after connect/reconfigure
+// just verified the live pool, so we can mark currently-failed endpoints
+// as Probed=true (red dot) immediately rather than waiting for the next
+// periodic probe to flip them out of grey "not probed yet". Newly-live
+// endpoints get their dead-error entry cleared.
+func (m *multiRPCClient) recordDeadEndpoints() {
+	m.providerMtx.Lock()
+	defer m.providerMtx.Unlock()
+	liveSet := make(map[string]bool, len(m.providers))
+	for _, p := range m.providers {
+		liveSet[p.endpointAddr] = true
+	}
+	m.deadEndpointProbedAt = time.Now()
+	for ep := range m.deadEndpointErrs {
+		if liveSet[ep] {
+			delete(m.deadEndpointErrs, ep)
+		}
+	}
+	for _, ep := range m.endpoints {
+		if liveSet[ep] {
+			continue
+		}
+		if _, ok := m.deadEndpointErrs[ep]; !ok {
+			m.deadEndpointErrs[ep] = "failed to connect (see wallet log for details)"
+		}
+	}
+}
+
+// healthCheckLoop periodically probes every provider's liveness on a
+// fixed cadence (providerProbeInterval). It runs until ctx is cancelled.
+// The first probe runs after one tick — connect() seeds health state at
+// startup so we don't need an immediate probe here.
+func (m *multiRPCClient) healthCheckLoop(ctx context.Context) {
+	t := time.NewTicker(providerProbeInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			m.runHealthProbes(ctx)
+			m.maybeEmitProviderHealthChange()
+		}
+	}
+}
+
+// setEmitter configures the wallet emitter used to push trade-safety
+// transition notifications. Called by the parent wallet after construction.
+// Safe to leave nil for test/dev callers — emission is a no-op when nil.
+func (m *multiRPCClient) setEmitter(emit *asset.WalletEmitter) {
+	m.emit = emit
+}
+
+// tradeSafe reports whether the wallet has enough healthy providers to
+// safely place a new trade. The threshold is min(2, total). When unsafe,
+// reason is a short human-readable explanation suitable for UI display.
+// In-flight operations (existing matches, balance, redeem, refund) are
+// NOT gated by this — only new trade placement is, since a tx that fails
+// to broadcast on every provider would be the worst case for a brand-new
+// trade but is a recoverable annoyance for already-running matches.
+func (m *multiRPCClient) tradeSafe() (safe bool, reason string) {
+	var healthy, total int
+	for _, p := range m.providerList() {
+		total++
+		if p.isHealthy() {
+			healthy++
+		}
+	}
+	threshold := 2
+	if total < threshold {
+		threshold = total
+	}
+	if total > 0 && healthy >= threshold {
+		return true, ""
+	}
+	return false, fmt.Sprintf("only %d of %d configured providers are reachable; need %d for trade safety", healthy, total, threshold)
+}
+
+// providerInfo returns a snapshot of every configured endpoint's status,
+// in the order they appear in m.endpoints (defaults first, then
+// user-added). Includes endpoints that failed to connect at startup
+// or after reconfigure — surfacing those as "unhealthy" rather than
+// hiding them is what lets the UI show, e.g., a default that's
+// currently rejecting our auth (red dot, default badge).
+func (m *multiRPCClient) providerInfo() []asset.ProviderInfo {
+	m.providerMtx.RLock()
+	endpoints := append([]string(nil), m.endpoints...)
+	live := make([]*provider, len(m.providers))
+	copy(live, m.providers)
+	deadProbedAt := m.deadEndpointProbedAt
+	deadErr := make(map[string]string, len(m.deadEndpointErrs))
+	for k, v := range m.deadEndpointErrs {
+		deadErr[k] = v
+	}
+	m.providerMtx.RUnlock()
+
+	liveByURL := make(map[string]*provider, len(live))
+	for _, p := range live {
+		liveByURL[p.endpointAddr] = p
+	}
+
+	out := make([]asset.ProviderInfo, 0, len(endpoints))
+	for _, ep := range endpoints {
+		_, isDefault := m.defaultEndpointSet[ep]
+		if p, ok := liveByURL[ep]; ok {
+			probed, healthy, lastProbed, lastErr := p.healthSnapshot()
+			var errStr string
+			if lastErr != nil {
+				errStr = lastErr.Error()
+			}
+			out = append(out, asset.ProviderInfo{
+				URL:        ep,
+				IsDefault:  isDefault,
+				Healthy:    healthy,
+				Probed:     probed,
+				LastProbed: lastProbed,
+				LastErr:    errStr,
+			})
+			continue
+		}
+		// Dead endpoint: configured but not in the live pool. Marked
+		// as unhealthy. Probed=true is true once any recovery attempt
+		// has happened (deadProbedAt is non-zero); before then,
+		// Probed=false signals "we know about it but haven't yet
+		// tested it" — UI shows a grey dot.
+		errStr := deadErr[ep]
+		if errStr == "" {
+			errStr = "failed to connect"
+		}
+		out = append(out, asset.ProviderInfo{
+			URL:        ep,
+			IsDefault:  isDefault,
+			Healthy:    false,
+			Probed:     !deadProbedAt.IsZero(),
+			LastProbed: deadProbedAt,
+			LastErr:    errStr,
+		})
+	}
+	return out
+}
+
+// maybeEmitProviderHealthChange emits a ProviderHealthNote when the
+// trade-safety state changes in a way the user actually cares about.
+// Idempotent — safe to call after every probe cycle.
+//
+// Emission rules:
+//
+//   - "Lost" fires whenever we transition into unsafe (including the
+//     initial determination, if the wallet starts unsafe). The user
+//     needs to know about a real problem ASAP.
+//   - "Restored" fires only when transitioning back to safe AND we
+//     previously emitted "lost" in this session. This guards against
+//     two failure modes:
+//       1. A wallet that starts safe shouldn't fire a "restored"
+//          success on its initial determination — there's no prior
+//          unsafe state for it to recover from.
+//       2. A transient unsafe blip whose "lost" fired before the UI
+//          subscribed to the notification feed (the UI subscribes
+//          after some startup steps) shouldn't produce an orphan
+//          "restored" toast on the subsequent flip back to safe — a
+//          notification with no precedent is confusing noise.
+//   - Internal state (lastTradeSafe, the WalletState's TradeSafe field
+//     that gates the buy/sell form, etc.) updates on every transition
+//     regardless. Only the user-visible toast is gated.
+func (m *multiRPCClient) maybeEmitProviderHealthChange() {
+	safe, reason := m.tradeSafe()
+	m.tradeSafetyMtx.Lock()
+	initialDetermination := m.lastTradeSafe == nil
+	changed := initialDetermination || *m.lastTradeSafe != safe
+	m.lastTradeSafe = &safe
+	var emitLost, emitRestored bool
+	if changed {
+		if !safe {
+			emitLost = true
+			m.haveEmittedLost = true
+		} else if m.haveEmittedLost {
+			emitRestored = true
+		}
+	}
+	m.tradeSafetyMtx.Unlock()
+
+	if m.emit == nil {
+		return
+	}
+	switch {
+	case emitLost:
+		m.emit.ProviderHealth(false, reason, m.providerInfo())
+	case emitRestored:
+		m.emit.ProviderHealth(true, reason, m.providerInfo())
+	}
 }
 
 func (m *multiRPCClient) cachedReceipt(txHash common.Hash) *types.Receipt {
@@ -1120,13 +1628,20 @@ func (m *multiRPCClient) withAll(
 			atLeastOne = true // return nil err unless a later "propagated" error says to
 			continue
 		}
-		var discarded bool
-		for i, f := range acceptabilityFilters {
+		// discarded is true iff every acceptability filter said discard.
+		// "All filters agree it's non-fatal" is the only way to treat the
+		// error as benign — any single filter that says fail/propagate
+		// gets to act. Initialize to true; flip false on the first
+		// non-discard. With no filters configured, discarded stays
+		// false (the default-to-error path), matching prior behavior.
+		discarded := len(acceptabilityFilters) > 0
+		for _, f := range acceptabilityFilters {
 			discard, propagate, fail := f(err)
-			discarded = discard && (discarded || i == 0)
-			if discard {
+			if !discard {
+				discarded = false
+			} else {
 				m.log.Tracef("non-fatal provider error: %v (%T / %T)", err, err, errors.Unwrap(err))
-				continue // or maybe break since what is the use case of conflicting filters?
+				continue
 			}
 			if fail {
 				p.setFailed()

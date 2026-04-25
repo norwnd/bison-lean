@@ -154,8 +154,13 @@ var (
 			Description: "Specify one or more RPC providers. For infrastructure " +
 				"providers, prefer using wss address. Only url-based authentication " +
 				"is supported. For a local node, use the filepath to an IPC file.",
-			Repeatable:   providerDelimiter,
-			RepeatN:      2,
+			// Stored as a single space-separated string. The wallet
+			// settings UI renders this via the ProviderList component
+			// (per-row list with status dots, defaults pinned at top,
+			// user-added rows deletable + add affordance), which
+			// handles multi-row presentation itself — so we don't need
+			// the Repeatable/RepeatN mechanism that would otherwise
+			// produce duplicate ProviderList renders.
 			DefaultValue: "",
 		},
 		{
@@ -430,6 +435,8 @@ var _ asset.TokenApprover = (*TokenWallet)(nil)
 var _ asset.ContractDeployer = (*ETHWallet)(nil)
 var _ asset.ContractGasTester = (*ETHWallet)(nil)
 var _ asset.EmergencyGaslessRedeemer = (*ETHWallet)(nil)
+var _ asset.MultiProviderWallet = (*ETHWallet)(nil)
+var _ asset.MultiProviderWallet = (*TokenWallet)(nil)
 
 type baseWallet struct {
 	// The asset subsystem starts with Connect(ctx). This ctx will be initialized
@@ -1904,6 +1911,39 @@ func getWalletDir(dataDir string, network dex.Network) string {
 	return filepath.Join(dataDir, network.String())
 }
 
+// mergeProviderLists returns the union of defaults and userAdded with
+// stable ordering (defaults first), trimmed and deduplicated by exact
+// URL match. Empty entries are dropped. Defaults are always included
+// in the result — user-added entries that exactly duplicate a default
+// are silently skipped.
+func mergeProviderLists(defaults, userAdded []string) []string {
+	seen := make(map[string]struct{}, len(defaults)+len(userAdded))
+	merged := make([]string, 0, len(defaults)+len(userAdded))
+	for _, ep := range defaults {
+		ep = strings.TrimSpace(ep)
+		if ep == "" {
+			continue
+		}
+		if _, dup := seen[ep]; dup {
+			continue
+		}
+		seen[ep] = struct{}{}
+		merged = append(merged, ep)
+	}
+	for _, ep := range userAdded {
+		ep = strings.TrimSpace(ep)
+		if ep == "" {
+			continue
+		}
+		if _, dup := seen[ep]; dup {
+			continue
+		}
+		seen[ep] = struct{}{}
+		merged = append(merged, ep)
+	}
+	return merged
+}
+
 func migrateLegacyTxDB(legacyDBPath string, newDB txDB, log dex.Logger) error {
 	if _, err := os.Stat(legacyDBPath); err != nil {
 		return nil
@@ -1950,15 +1990,26 @@ func (w *ETHWallet) Connect(ctx context.Context) (_ *sync.WaitGroup, err error) 
 	case walletTypeRPC:
 		w.settingsMtx.RLock()
 		defer w.settingsMtx.RUnlock()
-		endpoints := w.defaultProviders
+		// Active endpoint pool = defaults (always present, immutable) ∪
+		// user-added (mutable, persisted in settings). Defaults can never
+		// be removed by the user — they're the safety floor for the
+		// trade-redundancy threshold.
+		var userAdded []string
 		if providerDef, found := w.settings[providersKey]; found && len(providerDef) > 0 {
-			endpoints = strings.Split(providerDef, " ")
+			userAdded = strings.Split(providerDef, " ")
 		}
-		rpcCl, err := newMultiRPCClient(w.dir, endpoints, w.log.SubLogger("RPC"), w.chainCfg, w.finalizeConfs, w.net, w.torProxy)
+		endpoints := mergeProviderLists(w.defaultProviders, userAdded)
+		rpcCl, err := newMultiRPCClient(w.dir, w.defaultProviders, endpoints, w.log.SubLogger("RPC"), w.chainCfg, w.finalizeConfs, w.net, w.torProxy)
 		if err != nil {
 			return nil, err
 		}
 		rpcCl.finalizeConfs = w.finalizeConfs
+		// Wire the wallet emitter so the multi-RPC client can push
+		// trade-safety transitions to core. Only set when emit is
+		// non-nil — bypass for synthetic test wallets.
+		if w.emit != nil {
+			rpcCl.setEmitter(w.emit)
+		}
 		cl = rpcCl
 	default:
 		return nil, fmt.Errorf("unknown wallet type %q", w.walletType)
@@ -2359,17 +2410,19 @@ func (w *ETHWallet) Reconfigure(ctx context.Context, cfg *asset.WalletConfig, cu
 
 	if rpc, is := w.node.(*multiRPCClient); is {
 		walletDir := getWalletDir(w.dir, w.net)
-		providerDef := cfg.Settings[providersKey]
-		var defaultProviders bool
-		var endpoints []string
-		if len(providerDef) > 0 {
-			endpoints = strings.Split(providerDef, " ")
-		} else {
-			endpoints = w.defaultProviders
-			defaultProviders = true
+		var userAdded []string
+		if providerDef := cfg.Settings[providersKey]; len(providerDef) > 0 {
+			userAdded = strings.Split(providerDef, " ")
 		}
+		// Defaults are always part of the active set; user-added entries
+		// merge on top. Pass defaultProviders=true so createAndCheckProviders
+		// runs in lenient mode — defaults are always present so we never
+		// want to fail reconfigure for the want of an unknown provider.
+		// User-added typos are caught asynchronously by the periodic
+		// health probe and surfaced in the UI status, not at save time.
+		endpoints := mergeProviderLists(w.defaultProviders, userAdded)
 
-		if err := rpc.reconfigure(ctx, endpoints, w.compat, walletDir, defaultProviders); err != nil {
+		if err := rpc.reconfigure(ctx, endpoints, w.compat, walletDir, true); err != nil {
 			return false, err
 		}
 	}
@@ -2427,6 +2480,30 @@ func (eth *baseWallet) wallet(assetID uint32) *assetWallet {
 
 func (eth *baseWallet) GasFeeLimit() uint64 {
 	return atomic.LoadUint64(&eth.gasFeeLimitV)
+}
+
+// ProviderInfo satisfies asset.MultiProviderWallet. It surfaces the
+// per-provider health snapshot from the multi-RPC client. Returns an
+// empty slice if the wallet is not RPC-multiplexed (which currently
+// only happens for the disabled walletTypeGeth path).
+func (eth *baseWallet) ProviderInfo() []asset.ProviderInfo {
+	rpc, ok := eth.node.(*multiRPCClient)
+	if !ok {
+		return nil
+	}
+	return rpc.providerInfo()
+}
+
+// TradeSafe satisfies asset.MultiProviderWallet. Reports whether the
+// wallet has enough healthy providers to safely place a new trade. For
+// non-RPC-multiplexed wallets (currently impossible — walletTypeGeth is
+// disabled), trade-safety isn't applicable and we return safe=true.
+func (eth *baseWallet) TradeSafe() (safe bool, reason string) {
+	rpc, ok := eth.node.(*multiRPCClient)
+	if !ok {
+		return true, ""
+	}
+	return rpc.tradeSafe()
 }
 
 type genBridgeTxResult struct {
@@ -3537,7 +3614,7 @@ func (w *assetWallet) swapGas(n int, contractVer uint32, feeRateGwei uint64) (on
 		}
 		nSwapGas = uint64(nFull) * fullGas
 	}
-	if nRemain := n & maxSwapsPerTx; nRemain > 0 {
+	if nRemain := n % maxSwapsPerTx; nRemain > 0 {
 		remainGas := g.SwapN(nRemain)
 		if remainGasEst, err := w.estimateInitGas(w.ctx, nRemain, contractVer); err != nil {
 			w.log.Errorf("(%d) error estimating swap gas for remainder: %v", w.assetID, err)
@@ -9300,7 +9377,7 @@ func quickNode(ctx context.Context, walletDir string, contractVer uint32,
 		return nil, nil, fmt.Errorf("error creating initiator wallet: %v", err)
 	}
 
-	cl, err := newMultiRPCClient(walletDir, providers, log, wParams.ChainCfg, 3, net, "")
+	cl, err := newMultiRPCClient(walletDir, providers, providers, log, wParams.ChainCfg, 3, net, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("error opening initiator rpc client: %v", err)
 	}
