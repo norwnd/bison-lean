@@ -3104,10 +3104,6 @@ func (w *assetWallet) maxOrder(lotSize uint64, maxFeeRate uint64, initAssetVer,
 	refundCost := g.Refund*maxFeeRate + g.refundL1Fee
 	oneFee := g.oneGas*maxFeeRate + g.swapL1Fee + g.redeemL1Fee
 	feeReservesPerLot := oneFee + refundCost
-	// this doesn't work because server additionally validates at his own discretion whether
-	// a client has enough of base assets to fund his order:
-	//// statistically, 1-lot orders are rare - hence we can increase allowed lots here by x20
-	//feeReservesPerLot := (oneFee + refundCost) / 20 // integer division is fine here
 	var lots uint64
 	if feeWallet == nil {
 		lots = balance.Available / (lotSize + feeReservesPerLot)
