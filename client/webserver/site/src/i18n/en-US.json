@@ -319,7 +319,7 @@
   "ORDER_PROGRESS_SR_FILLED": "{{matches}} match(es), 100% filled",
   "ORDER_PROGRESS_SR_ACTIVE": "{{matches}} match(es), {{filled}}% filled, {{remainder}}% awaiting",
   "ORDER_PROGRESS_SR_FINALIZED": "{{matches}} match(es), {{filled}}% filled, {{remainder}}% never matched",
-  "WAITING_FOR_FIRST_MATCH": "Waiting for first match…",
+  "WAITING_FOR_FIRST_MATCH": "waiting for matches...",
   "INVALID_CERTIFICATE": "Invalid Certificate",
   "TAKER": "Taker",
   "MAKER": "Maker",

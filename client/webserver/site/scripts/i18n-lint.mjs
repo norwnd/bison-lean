@@ -11,8 +11,12 @@
 // CL-I18N-NAMING. This lint is the guard rail.
 //
 // Dynamic `t(variable)` call sites can't be resolved by static
-// scanning. They're listed in `i18n-lint-allowlist.json` alongside
-// the set of keys those dynamic paths may construct. If the allowlist
+// scanning. They're allowlisted by file in `i18n-lint-allowlist.json`
+// — `dynamicCallSites` is a `"file": expectedCount` map (per-file
+// counts rather than per-line so the allowlist doesn't churn on
+// every edit, while still catching a NEW dynamic call sneaking into
+// an already-allowlisted file via count mismatch) — alongside the
+// set of keys those dynamic paths may construct. If the allowlist
 // declares a key that isn't present in en-US.json, that's treated as
 // a missing-key violation too.
 //
@@ -43,7 +47,15 @@ const json = JSON.parse(readFileSync(jsonPath, 'utf8'))
 const jsonKeys = new Set(Object.keys(json))
 
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'))
-const allowlistCallSites = new Set(allowlist.dynamicCallSites ?? [])
+// `dynamicCallSites` maps each source file containing dynamic
+// `t(variable)` calls to the expected count of such calls in that
+// file. Per-file counts (rather than per-line allowlisting) keep the
+// allowlist stable across line-shifting edits but still catch
+// regressions: adding a new dynamic call to an already-allowlisted
+// file bumps the actual count above the expected, and that mismatch
+// fails the lint.
+/** @type {Record<string, number>} */
+const allowlistDynamicCounts = allowlist.dynamicCallSites ?? {}
 // `referencedKeys` is an object of { groupName: string[] } — groups are
 // decorative (they let humans see which dynamic site owns which keys).
 // The linter flattens them into a single set.
@@ -179,13 +191,46 @@ for (const file of sourceFiles) {
   }
 }
 
+// Group actual dynamic sites by source file (path before the `:line`
+// suffix). Used both by --list-dynamic mode and by the count-mismatch
+// validation below.
+/** @type {Record<string, {site: string, sample: string}[]>} */
+const dynamicSitesByFile = {}
+for (const ds of dynamicSites) {
+  const file = ds.site.slice(0, ds.site.lastIndexOf(':'))
+  ;(dynamicSitesByFile[file] ??= []).push(ds)
+}
+
 // --- listDynamic mode: print then exit 0 ---
 if (listDynamic) {
-  console.log(`# dynamic t() call sites (${dynamicSites.length})`)
-  for (const { site, sample } of dynamicSites) {
-    const marked = allowlistCallSites.has(site) ? ' (allowlisted)' : ' (NEW — add to allowlist)'
-    console.log(`  ${site}${marked}`)
-    console.log(`      ${sample}`)
+  // Print sites grouped by file with the per-file count, formatted as a
+  // copy-pasteable JSON snippet for the `dynamicCallSites` map. Sites
+  // are listed below each file so the user can see what the count
+  // covers when refreshing the allowlist.
+  const fileCount = Object.keys(dynamicSitesByFile).length
+  console.log(`# dynamic t() call sites: ${dynamicSites.length} sites across ${fileCount} files`)
+  console.log('# Copy the JSON below into `dynamicCallSites` in i18n-lint-allowlist.json:\n')
+  console.log('  "dynamicCallSites": {')
+  const files = Object.keys(dynamicSitesByFile).sort()
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    const sites = dynamicSitesByFile[file]
+    const trailing = i === files.length - 1 ? '' : ','
+    console.log(`    ${JSON.stringify(file)}: ${sites.length}${trailing}`)
+  }
+  console.log('  }')
+  console.log('\n# Site detail (file:line + source line):')
+  for (const file of files) {
+    const sites = dynamicSitesByFile[file]
+    const expected = allowlistDynamicCounts[file] ?? 0
+    const note = expected === sites.length
+      ? '[allowlisted]'
+      : `[MISMATCH — allowlist expects ${expected}, found ${sites.length}]`
+    console.log(`  ${file} ${note}`)
+    for (const { site, sample } of sites) {
+      console.log(`    ${site}`)
+      console.log(`        ${sample}`)
+    }
   }
   process.exit(0)
 }
@@ -213,14 +258,30 @@ const missingAllowlist = [...allowlistReferencedKeys]
   .filter(k => !jsonKeys.has(k))
   .sort()
 
-/** allowlist call sites that don't match any dynamic t(var) found in source */
-const staleAllowlistSites = [...allowlistCallSites]
-  .filter(s => !dynamicSites.some(d => d.site === s))
-  .sort()
-
-/** dynamic t(var) sites that aren't in the allowlist */
-const unknownDynamicSites = dynamicSites
-  .filter(d => !allowlistCallSites.has(d.site))
+/**
+ * Per-file dynamic-call-count mismatches between the allowlist and
+ * what the static scan actually found. Three cases roll into this:
+ *   - file in allowlist with no actual dynamic calls (stale entry —
+ *     calls were removed without updating the allowlist)
+ *   - file with actual dynamic calls but absent from the allowlist
+ *     (a new dynamic call site that hasn't been registered)
+ *   - file in both but with a different count (e.g. a second dynamic
+ *     call was added to a file that already had one)
+ * @type {{file: string, expected: number, actual: number, sites: {site: string, sample: string}[]}[]}
+ */
+const dynamicCountMismatches = []
+const allDynamicFiles = new Set([
+  ...Object.keys(allowlistDynamicCounts),
+  ...Object.keys(dynamicSitesByFile),
+])
+for (const file of [...allDynamicFiles].sort()) {
+  const expected = allowlistDynamicCounts[file] ?? 0
+  const sites = dynamicSitesByFile[file] ?? []
+  const actual = sites.length
+  if (expected !== actual) {
+    dynamicCountMismatches.push({ file, expected, actual, sites })
+  }
+}
 
 // --- report ---
 let failed = false
@@ -243,20 +304,17 @@ if (missingAllowlist.length > 0) {
   for (const k of missingAllowlist) console.error(`  ${k}`)
 }
 
-if (unknownDynamicSites.length > 0) {
+if (dynamicCountMismatches.length > 0) {
   failed = true
-  console.error(`\nUNKNOWN DYNAMIC CALL SITES (${unknownDynamicSites.length}) — dynamic t(variable) constructs not declared in the allowlist:`)
-  for (const { site, sample } of unknownDynamicSites) {
-    console.error(`  ${site}`)
-    console.error(`      ${sample}`)
+  console.error(`\nDYNAMIC CALL COUNT MISMATCHES (${dynamicCountMismatches.length}) — file's dynamic t(variable) count differs from \`dynamicCallSites\` in the allowlist:`)
+  for (const { file, expected, actual, sites } of dynamicCountMismatches) {
+    console.error(`  ${file}  (allowlist expects ${expected}, found ${actual})`)
+    for (const { site, sample } of sites) {
+      console.error(`      ${site}: ${sample}`)
+    }
   }
-  console.error('\nEach such site must either be converted to a literal t(\'KEY\') call or registered in scripts/i18n-lint-allowlist.json with the full set of keys it may construct.')
-}
-
-if (staleAllowlistSites.length > 0) {
-  failed = true
-  console.error(`\nSTALE ALLOWLIST ENTRIES (${staleAllowlistSites.length}) — allowlist lists call sites that no longer exist in source:`)
-  for (const s of staleAllowlistSites) console.error(`  ${s}`)
+  console.error('\nEach dynamic site must either be converted to a literal t(\'KEY\') call or its file registered in scripts/i18n-lint-allowlist.json with the right per-file count + the full set of keys the dynamic path may construct.')
+  console.error('Refresh via `node scripts/i18n-lint.mjs --list-dynamic` (prints a copy-pasteable JSON snippet).')
 }
 
 if (failed) {
@@ -264,4 +322,4 @@ if (failed) {
   process.exit(1)
 }
 
-console.log(`i18n-lint: OK  (${jsonKeys.size} keys, ${staticKeys.size} static refs, ${dynamicSites.length} dynamic sites all allowlisted)`)
+console.log(`i18n-lint: OK  (${jsonKeys.size} keys, ${staticKeys.size} static refs, ${dynamicSites.length} dynamic sites across ${Object.keys(dynamicSitesByFile).length} files all allowlisted)`)

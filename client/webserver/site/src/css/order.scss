@@ -502,7 +502,7 @@
   // No `overflow: hidden` on the container so hovered segments can
   // scale up on the Y axis without being clipped.
   .order-progress-segments {
-    --segment-height: 28px;
+    --segment-height: 36px;
     --vessel-radius: 4px;
     // `--vessel-bg` is the solid (opaque) vessel fill: just the
     // faintest neutral tint on top of `--body-bg`. Exposed as a
@@ -514,6 +514,13 @@
     isolation: isolate;
     display: flex;
     height: var(--segment-height);
+    // 80% of the lane's width, centered. The 20% gutter on each
+    // side stays empty by design — gives the bar more visual
+    // weight (especially with the bumped 36px girth) without
+    // becoming a giant slab spanning the whole page. `margin: auto`
+    // works because `.lane.order-progress-lane` is block-level.
+    width: 80%;
+    margin: 0 auto;
 
     &::before {
       content: '';
@@ -523,6 +530,62 @@
       border-radius: var(--vessel-radius);
       background-color: var(--vessel-bg);
       z-index: -1;
+    }
+  }
+
+  // Quartile reference scale rendered as a row directly beneath
+  // the bar (rather than overlaid on it). Borrowed from the
+  // ruler/axis pattern under linear gauges and audio meters: a
+  // thin horizontal line + 5 ticks at 0/25/50/75/100% with text
+  // labels below each tick. Lives outside the bar so it doesn't
+  // compete with the segments / fill texture / inline % labels for
+  // visual real estate — the bar is data, the scale is reference.
+  // Width matches the bar's `80%` exactly so the 0% / 100% ticks
+  // land flush with the vessel's left / right edges.
+  // Layout: container is `position: relative` with a fixed height
+  // (axis line + tick + label all stacked); each `.scale-tick` is
+  // `position: absolute` at `left: X%` then translated `-50%` in
+  // X so the label is centered ON its X-coordinate (vs.
+  // flex-spaced, which would left-align the 0% label and
+  // right-align the 100%). The horizontal axis line is painted by
+  // the container's `::before`, the short vertical tick mark above
+  // each label by the span's own `::before`.
+  .order-progress-scale {
+    position: relative;
+    width: 80%;
+    height: 1.4rem;
+    margin: 0.4rem auto 0;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background-color: var(--text-color-secondary);
+    }
+
+    .order-progress-scale-tick {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      padding-top: 8px;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--text-color-secondary);
+      white-space: nowrap;
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 1px;
+        height: 5px;
+        background-color: var(--text-color-secondary);
+      }
     }
   }
 

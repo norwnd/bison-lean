@@ -32,11 +32,12 @@ import { type OrderSegment } from './OrderProgress'
 // Empty-state copy:
 //   * When the order is active and has zero matches (the bar is a
 //     single `empty` segment at full width) the inline "0.0%" label
-//     is swapped for a friendlier "Waiting for first match…" string.
-//     The numeric label carries no information in that case — the
-//     vessel IS the zero — so the space is better spent explaining
-//     the state to the user. The SR summary still reports "0 match(es),
-//     0% filled, 100% awaiting" via the hidden describedby span.
+//     is augmented with a parenthesized hint: "0.0% (waiting for
+//     matches...)". The numeric label is preserved for consistency
+//     with the populated states; the suffix gives the user context
+//     for why the bar is empty rather than leaving them to guess.
+//     The SR summary still reports "0 match(es), 0% filled, 100%
+//     awaiting" via the hidden describedby span.
 export function OrderProgressBar ({
   segments, hoveredMatchID, onHover, onClick,
 }: {
@@ -83,14 +84,16 @@ export function OrderProgressBar ({
   }
 
   // Empty-state shortcut: active order with zero matches renders as
-  // a single full-width `empty` segment. Replace the useless "0.0%"
-  // label with a human-readable "Waiting for first match…" string.
-  // Gated on matchCount===0 so a 100%-empty bar from some future
-  // edge case (no matches but orderIsFinalized somehow produced an
-  // empty instead of neutral) still reads sensibly — and so that
-  // normal multi-segment bars with a trailing empty keep their
-  // trailing "0.0%" label (which DOES carry information: remaining
-  // capacity not yet matched).
+  // a single full-width `empty` segment. Append a parenthesized
+  // hint to the "0.0%" label so it reads "0.0% (waiting for
+  // matches...)" — gives the user context for why nothing has
+  // filled in. Gated on matchCount===0 so a 100%-empty bar from
+  // some future edge case (no matches but orderIsFinalized somehow
+  // produced an empty instead of neutral) still reads sensibly —
+  // and so that normal multi-segment bars with a trailing empty
+  // keep their plain trailing "0.0%" label (which already carries
+  // information: remaining capacity not yet matched, no hint
+  // needed since the populated portion of the bar is self-evident).
   const isWaitingForFirstMatch = matchCount === 0 && segments.length === 1 && segments[0].paint === 'empty'
 
   // Colored segments inside the vessel container. Each match-backed
@@ -117,7 +120,7 @@ export function OrderProgressBar ({
         {segments.map((s) => {
           const matchID = s.matchID
           const waitingLabel = isWaitingForFirstMatch && s.paint === 'empty'
-          const labelText = waitingLabel ? t('WAITING_FOR_FIRST_MATCH') : s.pctLabel
+          const labelText = waitingLabel ? `${s.pctLabel} (${t('WAITING_FOR_FIRST_MATCH')})` : s.pctLabel
           // Wrapping the label in its own span lets `.paint-empty`
           // paint a matching-vessel background on just that span so
           // the dashed line underneath is masked where the "0.0%"
@@ -167,6 +170,30 @@ export function OrderProgressBar ({
             </button>
           )
         })}
+      </div>
+      {/*
+        Quartile scale row beneath the bar. Mirrors the bar's 80%
+        width so its 0% / 100% endpoints land flush with the
+        vessel's left / right edges; ticks at 25 / 50 / 75% give
+        users a glanceable reference for fill level without
+        cluttering the bar itself with overlay marks. `aria-hidden`
+        because the visually-hidden summary span at the top of the
+        component already conveys filled/awaiting % to assistive
+        tech in a richer single sentence — reading "0% 25% 50% 75%
+        100%" verbatim adds nothing. Each label is absolutely
+        positioned at its X% via `left`; the centering offset and
+        the tick mark above it live in CSS.
+      */}
+      <div className="order-progress-scale" aria-hidden="true">
+        {[0, 25, 50, 75, 100].map((pct) => (
+          <span
+            key={pct}
+            className="order-progress-scale-tick"
+            style={{ left: `${pct}%` }}
+          >
+            {pct}%
+          </span>
+        ))}
       </div>
     </>
   )
