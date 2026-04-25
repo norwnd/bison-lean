@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"decred.org/dcrdex/client/asset"
-	"decred.org/dcrdex/client/asset/broadcast"
 	"decred.org/dcrdex/dex"
 	"decred.org/dcrdex/dex/config"
 	"decred.org/dcrdex/dex/encode"
@@ -133,7 +132,38 @@ const (
 	// unverified on-chain before we halt broadcasting of new txs.
 	maxUnindexedTxs = 10
 	peerCountTicker = 5 * time.Second // no rpc calls here
+
 )
+
+// autoBumpPolicy parameterizes the auto fee-bump scheduler for stuck
+// redeem/refund slots. Per-wallet so each asset can tune its own values.
+type autoBumpPolicy struct {
+	// StartAge: a slot's original must be at least this old before auto-bump
+	// kicks in. Buys time for the user (or natural network conditions) to
+	// resolve the stuck tx without escalation.
+	StartAge time.Duration
+	// Interval: minimum time between consecutive auto-bumps on the same slot.
+	Interval time.Duration
+	// RatePct: each auto-bump multiplies the latest candidate's GasFeeCap
+	// and GasTipCap by RatePct/100 (e.g., 120 = 1.2×). Must be >= 110 to
+	// clear Ethereum's replacement-by-fee rule.
+	RatePct int
+	// MaxMult: the hard cap, expressed as a multiple of the original
+	// candidate's GasFeeCap. Once a proposed bump would exceed
+	// original × MaxMult, the scheduler stops bumping the slot and emits
+	// a one-shot warning.
+	MaxMult int
+}
+
+// defaultAutoBumpPolicy is the conservative default used when a wallet hasn't
+// configured its own. 4h before the first auto-bump, then ×1.2 every 15m up
+// to 10× the original.
+var defaultAutoBumpPolicy = autoBumpPolicy{
+	StartAge: 4 * time.Hour,
+	Interval: 15 * time.Minute,
+	RatePct:  120,
+	MaxMult:  10,
+}
 
 var (
 	walletOpts = []*asset.ConfigOption{
@@ -481,13 +511,37 @@ type baseWallet struct {
 	wallets    map[uint32]*assetWallet
 
 	nonceMtx            sync.RWMutex
-	pendingTxs          []*extendedWalletTx
+	slots               []*nonceSlot
 	confirmedNonceAt    *big.Int
 	nextNonceAt         *big.Int
 	recoveryRequestSent bool
 
 	relayMtx      sync.RWMutex
 	pendingRelays map[common.Hash]*extendedWalletTx
+
+	// opMtx guards opLog (the operation registry plus its tx-hash → OpKey
+	// reverse index). It is acquired before nonceMtx when both are needed.
+	// Probes (RPC calls) MUST run with opMtx released.
+	opMtx sync.Mutex
+	opLog *opLog
+
+	// probeCache caches positive on-chain probe results (effect achieved).
+	// Positive results are terminal — once a swap is SSRedeemed/SSRefunded
+	// the chain doesn't reverse it (modulo reorgs), so entries don't expire
+	// by time. They DO get evicted FIFO once the cache holds more than
+	// probeCacheMaxEntries — bounding memory for long-lived wallets.
+	// Negative and unknown results are not cached.
+	probeCache struct {
+		sync.Mutex
+		achieved map[OpKey]struct{}
+		order    []OpKey // insertion order for FIFO eviction
+	}
+
+	// autoBumpCfg is the policy applied by the auto fee-bump scheduler to
+	// this wallet's stuck redeem/refund slots. Defaults to
+	// defaultAutoBumpPolicy; populated at construction time and may be
+	// overridden per-asset.
+	autoBumpCfg autoBumpPolicy
 
 	balances struct {
 		sync.Mutex
@@ -567,23 +621,7 @@ type assetWallet struct {
 	// changed.
 	pendingTxCheckBal *big.Int
 
-	// swapSeen tracks input keys that have been seen by Swap. A cache hit
-	// means this is a retry, and the AlreadyInitialized on-chain check
-	// should be performed. On the first call (cache miss), we skip the
-	// check to avoid unnecessary RPC calls.
-	swapSeen *broadcast.Cache[*ethSwapSeen]
-
-	// redeemSeen tracks redemption keys that have been seen by Redeem. A
-	// cache hit means this is a retry, and the on-chain SSRedeemed check
-	// should be performed.
-	redeemSeen *broadcast.Cache[*ethSwapSeen]
 }
-
-type ethSwapSeen struct {
-	timestamp time.Time
-}
-
-func (e *ethSwapSeen) Stamp() time.Time { return e.timestamp }
 
 // ETHWallet implements some Ethereum-specific methods.
 type ETHWallet struct {
@@ -1865,6 +1903,7 @@ func NewEVMWallet(cfg *EVMWalletConfig) (w *ETHWallet, err error) {
 		multiBalanceAddress: cfg.MultiBalAddress,
 		maxTxFeeGwei:        cfg.MaxTxFeeGwei,
 		isOpStack:           cfg.IsOpStack,
+		autoBumpCfg:         defaultAutoBumpPolicy,
 	}
 
 	var maxSwapGas, maxRedeemGas uint64
@@ -1893,8 +1932,6 @@ func NewEVMWallet(cfg *EVMWalletConfig) (w *ETHWallet, err error) {
 		ui:                 dexeth.UnitInfo,
 		pendingTxCheckBal:  new(big.Int),
 		wi:                 cfg.WalletInfo,
-		swapSeen:           broadcast.NewCache[*ethSwapSeen](),
-		redeemSeen:         broadcast.NewCache[*ethSwapSeen](),
 	}
 
 	aw.wallets = map[uint32]*assetWallet{
@@ -2079,10 +2116,7 @@ func (w *ETHWallet) Connect(ctx context.Context) (_ *sync.WaitGroup, err error) 
 			pendingTxs = append(pendingTxs, tx)
 		}
 	}
-
-	sort.Slice(pendingTxs, func(i, j int) bool {
-		return pendingTxs[i].Nonce.Cmp(pendingTxs[j].Nonce) < 0
-	})
+	slots := buildSlots(pendingTxs)
 
 	// Initialize the best block.
 	bestHdr, err := w.node.bestHeader(ctx)
@@ -2100,7 +2134,7 @@ func (w *ETHWallet) Connect(ctx context.Context) (_ *sync.WaitGroup, err error) 
 	w.startingBlocks.Store(bestHdr.Number.Uint64())
 
 	w.nonceMtx.Lock()
-	w.pendingTxs = pendingTxs
+	w.slots = slots
 	w.confirmedNonceAt = confirmedNonce
 	w.nextNonceAt = nextNonce
 	w.nonceMtx.Unlock()
@@ -2108,6 +2142,10 @@ func (w *ETHWallet) Connect(ctx context.Context) (_ *sync.WaitGroup, err error) 
 	w.relayMtx.Lock()
 	w.pendingRelays = pendingRelays
 	w.relayMtx.Unlock()
+
+	if err := w.loadOpLog(); err != nil {
+		return nil, fmt.Errorf("error loading opLog: %w", err)
+	}
 
 	w.setRelayer(ctx)
 
@@ -2534,16 +2572,16 @@ type transactionGenerator func(nonce *big.Int) (*genTxResult, error)
 func (w *assetWallet) withNonce(ctx context.Context, f transactionGenerator) (err error) {
 	w.nonceMtx.Lock()
 	defer w.nonceMtx.Unlock()
-	if err = nonceIsSane(w.pendingTxs, w.nextNonceAt); err != nil {
+	if err = nonceIsSane(w.slots, w.nextNonceAt); err != nil {
 		return err
 	}
 	nonce := func() *big.Int {
 		n := new(big.Int).Set(w.confirmedNonceAt)
-		for _, pendingTx := range w.pendingTxs {
-			if pendingTx.Nonce.Cmp(n) < 0 {
+		for _, slot := range w.slots {
+			if slot.Nonce.Cmp(n) < 0 {
 				continue
 			}
-			if pendingTx.Nonce.Cmp(n) == 0 {
+			if slot.Nonce.Cmp(n) == 0 {
 				n.Add(n, big.NewInt(1))
 			} else {
 				break
@@ -2584,7 +2622,9 @@ func (w *assetWallet) withNonce(ctx context.Context, f transactionGenerator) (er
 		et := w.extendedTx(genTxResult)
 		et.Confirms = &asset.Confirms{Target: uint32(w.finalizeConfs)}
 		et.Timestamp = uint64(time.Now().Unix())
-		w.pendingTxs = append(w.pendingTxs, et)
+		// nonce() guarantees n does not match any existing slot's nonce, so
+		// we always create a new slot here.
+		w.slots = insertSlotSorted(w.slots, newNonceSlot(et))
 		if n.Cmp(w.nextNonceAt) >= 0 {
 			w.nextNonceAt.Add(n, big.NewInt(1))
 		}
@@ -2595,38 +2635,41 @@ func (w *assetWallet) withNonce(ctx context.Context, f transactionGenerator) (er
 	return nil
 }
 
-// nonceIsSane performs sanity checks on pending txs.
-func nonceIsSane(pendingTxs []*extendedWalletTx, pendingNonceAt *big.Int) error {
-	if len(pendingTxs) == 0 && pendingNonceAt == nil {
-		return errors.New("no pending txs and no best nonce")
+// nonceIsSane performs sanity checks on the slot list.
+func nonceIsSane(slots []*nonceSlot, pendingNonceAt *big.Int) error {
+	if len(slots) == 0 && pendingNonceAt == nil {
+		return errors.New("no pending slots and no best nonce")
 	}
 	var lastNonce uint64
 	var numNotIndexed, confirmedTip int
-	for i, pendingTx := range pendingTxs {
-		if !pendingTx.savedToDB {
-			return errors.New("tx database problem detected")
+	for i, slot := range slots {
+		for _, c := range slot.Candidates {
+			if !c.savedToDB {
+				return errors.New("tx database problem detected")
+			}
 		}
-		nonce := pendingTx.Nonce.Uint64()
+		nonce := slot.Nonce.Uint64()
 		if nonce < lastNonce {
-			return fmt.Errorf("pending txs not sorted")
+			return fmt.Errorf("slots not sorted")
 		}
-		if pendingTx.Confirmed || pendingTx.BlockNumber != 0 {
+		// A slot is "consumed" once any candidate has a receipt — its nonce
+		// is on-chain. All earlier slots must also be consumed; if not,
+		// something is wrong with our tracking.
+		if slot.consumed() {
 			if confirmedTip != i {
-				return fmt.Errorf("confirmed tx sequence error. pending tx %s is confirmed but older txs were not", pendingTx.ID)
-
+				return fmt.Errorf("confirmed slot sequence error. slot at nonce %s is confirmed but older slots were not", slot.Nonce)
 			}
 			confirmedTip = i + 1
 			continue
 		}
 		lastNonce = nonce
-		age := pendingTx.age()
-		// Only allow a handful of txs that we haven't seen on-chain yet.
-		if age > stateUpdateTick*10 {
+		// Only allow a handful of slots whose candidates none are indexed.
+		if !slot.anyIndexed() && slot.original().age() > stateUpdateTick*10 {
 			numNotIndexed++
 		}
 	}
 	if numNotIndexed >= maxUnindexedTxs {
-		return fmt.Errorf("%d unindexed txs has reached the limit of %d", numNotIndexed, maxUnindexedTxs)
+		return fmt.Errorf("%d unindexed slots has reached the limit of %d", numNotIndexed, maxUnindexedTxs)
 	}
 	return nil
 }
@@ -2923,8 +2966,6 @@ func (w *ETHWallet) OpenTokenWallet(tokenCfg *asset.TokenConfig) (asset.Wallet, 
 		},
 		tokenAddr:         netToken.Address,
 		pendingTxCheckBal: new(big.Int),
-		swapSeen:          broadcast.NewCache[*ethSwapSeen](),
-		redeemSeen:        broadcast.NewCache[*ethSwapSeen](),
 	}
 
 	w.baseWallet.walletsMtx.Lock()
@@ -3891,81 +3932,77 @@ func (w *ETHWallet) Swap(ctx context.Context, swaps *asset.Swaps) ([]asset.Recei
 		return fail("Swap: failed to get network tip cap: %w", err)
 	}
 
-	// Only check on-chain state on retry (cache hit) to avoid unnecessary
-	// RPC calls on the first attempt.
-	cacheKey := broadcast.CoinIDsCacheKey(swaps.Inputs)
-	if _, seen := w.swapSeen.Get(cacheKey); seen {
-		allInitiated := true
-		for _, contract := range swaps.Contracts {
-			initiated, _, _, err := w.AlreadyInitialized(swaps.AssetVersion, contract)
-			if err != nil {
-				w.log.Warnf("AlreadyInitialized check error: %v", err)
-				allInitiated = false
-				break
-			}
-			if !initiated {
-				allInitiated = false
-				break
-			}
+	key := swapKey(swaps.Contracts)
+	contractAddr := w.versionedContracts[contractVer].String()
+	buildReceipts := func(txHash common.Hash) []asset.Receipt {
+		receipts := make([]asset.Receipt, 0, n)
+		for _, swap := range swaps.Contracts {
+			receipts = append(receipts, &swapReceipt{
+				expiration:   time.Unix(int64(swap.LockTime), 0),
+				value:        swap.Value,
+				txHash:       txHash,
+				locator:      acToLocator(contractVer, swap, dexeth.GweiToWei(swap.Value), w.addr),
+				contractVer:  contractVer,
+				contractAddr: contractAddr,
+			})
 		}
-		if allInitiated {
-			w.log.Infof("All %d swaps already initiated on-chain, returning cached results", n)
-			// The zero txHash is safe here because downstream swap
-			// confirmation uses contract state via the locator, not txHash.
-			zeroHash := common.Hash{}
-			receipts := make([]asset.Receipt, 0, n)
-			for _, swap := range swaps.Contracts {
-				receipts = append(receipts, &swapReceipt{
-					expiration:   time.Unix(int64(swap.LockTime), 0),
-					value:        swap.Value,
-					txHash:       zeroHash,
-					locator:      acToLocator(contractVer, swap, dexeth.GweiToWei(swap.Value), w.addr),
-					contractVer:  contractVer,
-					contractAddr: w.versionedContracts[contractVer].String(),
-				})
-			}
-			var change asset.Coin
-			if swaps.LockChange {
-				w.unlockFunds(swapVal+fees, initiationReserve)
-				change = w.createFundingCoin(reservedVal - swapVal - fees)
-			} else {
-				w.unlockFunds(reservedVal, initiationReserve)
-			}
-			// fees is an estimate (gasLimit * feeRate), not actual tx fees.
-			return receipts, change, fees, nil
-		}
+		return receipts
 	}
+	settleReserves := func() asset.Coin {
+		if swaps.LockChange {
+			w.unlockFunds(swapVal+fees, initiationReserve)
+			return w.createFundingCoin(reservedVal - swapVal - fees)
+		}
+		w.unlockFunds(reservedVal, initiationReserve)
+		return nil
+	}
+
+	// Probe-first idempotency. If all swaps are already SSInitiated on-chain,
+	// return synthetic receipts without rebroadcasting.
+	if achieved, _, _ := w.probeSwapOnChain(ctx, swaps.Contracts, contractVer); achieved {
+		w.log.Infof("All %d swaps already initiated on-chain (probe). Returning synthetic.", n)
+		w.opMtx.Lock()
+		op := w.opLog.findOrCreate(key, OpSwap)
+		if op.State != OpStateConfirmed {
+			op.State = OpStateConfirmed
+			op.ConfirmedAt = time.Now().Unix()
+			op.ContractVer = contractVer
+			_ = w.txDB.storeOp(op)
+		}
+		w.opMtx.Unlock()
+		return buildReceipts(common.Hash{}), settleReserves(), fees, nil
+	}
+
+	// Active-attempt path: if there's an in-flight Swap for this set of
+	// secret hashes, return the canonical hash without rebroadcasting.
+	w.opMtx.Lock()
+	op := w.opLog.findOrCreate(key, OpSwap)
+	if hash := op.canonicalCoinID(); hash != (common.Hash{}) {
+		w.opMtx.Unlock()
+		return buildReceipts(hash), settleReserves(), fees, nil
+	}
+	w.opMtx.Unlock()
+
 	tx, err := w.initiate(ctx, w.assetID, swaps.Contracts, gasLimit, maxFeeRate, tipRate, contractVer)
 	if err != nil {
 		return fail("Swap: initiate error: %w", err)
 	}
-
-	// Mark as seen only after successful initiation to avoid unnecessary
-	// on-chain checks on retry after permanent failures.
-	w.swapSeen.Put(cacheKey, &ethSwapSeen{timestamp: time.Now()})
-
 	txHash := tx.Hash()
-	receipts := make([]asset.Receipt, 0, n)
-	for _, swap := range swaps.Contracts {
-		receipts = append(receipts, &swapReceipt{
-			expiration:   time.Unix(int64(swap.LockTime), 0),
-			value:        swap.Value,
-			txHash:       txHash,
-			locator:      acToLocator(contractVer, swap, dexeth.GweiToWei(swap.Value), w.addr),
-			contractVer:  contractVer,
-			contractAddr: w.versionedContracts[contractVer].String(),
-		})
-	}
 
-	var change asset.Coin
-	if swaps.LockChange {
-		w.unlockFunds(swapVal+fees, initiationReserve)
-		change = w.createFundingCoin(reservedVal - swapVal - fees)
-	} else {
-		w.unlockFunds(reservedVal, initiationReserve)
-	}
+	w.opMtx.Lock()
+	op = w.opLog.findOrCreate(key, OpSwap)
+	op.ContractVer = contractVer
+	op.Attempts = append(op.Attempts, &Attempt{
+		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
+		Outcome:    AttemptPending,
+		Candidates: []common.Hash{txHash},
+		CreatedAt:  time.Now().Unix(),
+	})
+	w.opLog.indexCandidate(txHash, key)
+	_ = w.txDB.storeOp(op)
+	w.opMtx.Unlock()
 
-	return receipts, change, fees, nil
+	return buildReceipts(txHash), settleReserves(), fees, nil
 }
 
 // acToLocator converts the asset.Contract to a version-specific locator.
@@ -4053,85 +4090,74 @@ func (w *TokenWallet) Swap(ctx context.Context, swaps *asset.Swaps) ([]asset.Rec
 
 	contractAddr := w.netToken.SwapContracts[contractVer].Address.String()
 
-	// Only check on-chain state on retry (cache hit) to avoid unnecessary
-	// RPC calls on the first attempt.
-	cacheKey := broadcast.CoinIDsCacheKey(swaps.Inputs)
-	if _, seen := w.swapSeen.Get(cacheKey); seen {
-		allInitiated := true
-		for _, contract := range swaps.Contracts {
-			initiated, _, _, err := w.AlreadyInitialized(swaps.AssetVersion, contract)
-			if err != nil {
-				w.log.Warnf("AlreadyInitialized check error: %v", err)
-				allInitiated = false
-				break
-			}
-			if !initiated {
-				allInitiated = false
-				break
-			}
+	key := swapKey(swaps.Contracts)
+	buildReceipts := func(txHash common.Hash) []asset.Receipt {
+		receipts := make([]asset.Receipt, 0, n)
+		for _, swap := range swaps.Contracts {
+			receipts = append(receipts, &swapReceipt{
+				expiration:   time.Unix(int64(swap.LockTime), 0),
+				value:        swap.Value,
+				txHash:       txHash,
+				locator:      acToLocator(contractVer, swap, w.evmify(swap.Value), w.addr),
+				contractVer:  contractVer,
+				contractAddr: contractAddr,
+			})
 		}
-		if allInitiated {
-			w.log.Infof("All %d token swaps already initiated on-chain, returning cached results", n)
-			// The zero txHash is safe here because downstream swap
-			// confirmation uses contract state via the locator, not txHash.
-			zeroHash := common.Hash{}
-			receipts := make([]asset.Receipt, 0, n)
-			for _, swap := range swaps.Contracts {
-				receipts = append(receipts, &swapReceipt{
-					expiration:   time.Unix(int64(swap.LockTime), 0),
-					value:        swap.Value,
-					txHash:       zeroHash,
-					locator:      acToLocator(contractVer, swap, w.evmify(swap.Value), w.addr),
-					contractVer:  contractVer,
-					contractAddr: contractAddr,
-				})
-			}
-			var change asset.Coin
-			if swaps.LockChange {
-				w.unlockFunds(swapVal, initiationReserve)
-				w.parent.unlockFunds(fees, initiationReserve)
-				change = w.createTokenFundingCoin(reservedVal-swapVal, reservedParent-fees)
-			} else {
-				w.unlockFunds(reservedVal, initiationReserve)
-				w.parent.unlockFunds(reservedParent, initiationReserve)
-			}
-			// fees is an estimate (gasLimit * feeRate), not actual tx fees.
-			return receipts, change, fees, nil
-		}
+		return receipts
 	}
+	settleReserves := func() asset.Coin {
+		if swaps.LockChange {
+			w.unlockFunds(swapVal, initiationReserve)
+			w.parent.unlockFunds(fees, initiationReserve)
+			return w.createTokenFundingCoin(reservedVal-swapVal, reservedParent-fees)
+		}
+		w.unlockFunds(reservedVal, initiationReserve)
+		w.parent.unlockFunds(reservedParent, initiationReserve)
+		return nil
+	}
+
+	if achieved, _, _ := w.probeSwapOnChain(ctx, swaps.Contracts, contractVer); achieved {
+		w.log.Infof("All %d token swaps already initiated on-chain (probe). Returning synthetic.", n)
+		w.opMtx.Lock()
+		op := w.opLog.findOrCreate(key, OpSwap)
+		if op.State != OpStateConfirmed {
+			op.State = OpStateConfirmed
+			op.ConfirmedAt = time.Now().Unix()
+			op.ContractVer = contractVer
+			_ = w.txDB.storeOp(op)
+		}
+		w.opMtx.Unlock()
+		return buildReceipts(common.Hash{}), settleReserves(), fees, nil
+	}
+
+	w.opMtx.Lock()
+	op := w.opLog.findOrCreate(key, OpSwap)
+	if hash := op.canonicalCoinID(); hash != (common.Hash{}) {
+		w.opMtx.Unlock()
+		return buildReceipts(hash), settleReserves(), fees, nil
+	}
+	w.opMtx.Unlock()
+
 	tx, err := w.initiate(ctx, w.assetID, swaps.Contracts, gasLimit, maxFeeRate, tipRate, contractVer)
 	if err != nil {
 		return fail("Swap: initiate error: %w", err)
 	}
-
-	// Mark as seen only after successful initiation to avoid unnecessary
-	// on-chain checks on retry after permanent failures.
-	w.swapSeen.Put(cacheKey, &ethSwapSeen{timestamp: time.Now()})
-
 	txHash := tx.Hash()
-	receipts := make([]asset.Receipt, 0, n)
-	for _, swap := range swaps.Contracts {
-		receipts = append(receipts, &swapReceipt{
-			expiration:   time.Unix(int64(swap.LockTime), 0),
-			value:        swap.Value,
-			txHash:       txHash,
-			locator:      acToLocator(contractVer, swap, w.evmify(swap.Value), w.addr),
-			contractVer:  contractVer,
-			contractAddr: contractAddr,
-		})
-	}
 
-	var change asset.Coin
-	if swaps.LockChange {
-		w.unlockFunds(swapVal, initiationReserve)
-		w.parent.unlockFunds(fees, initiationReserve)
-		change = w.createTokenFundingCoin(reservedVal-swapVal, reservedParent-fees)
-	} else {
-		w.unlockFunds(reservedVal, initiationReserve)
-		w.parent.unlockFunds(reservedParent, initiationReserve)
-	}
+	w.opMtx.Lock()
+	op = w.opLog.findOrCreate(key, OpSwap)
+	op.ContractVer = contractVer
+	op.Attempts = append(op.Attempts, &Attempt{
+		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
+		Outcome:    AttemptPending,
+		Candidates: []common.Hash{txHash},
+		CreatedAt:  time.Now().Unix(),
+	})
+	w.opLog.indexCandidate(txHash, key)
+	_ = w.txDB.storeOp(op)
+	w.opMtx.Unlock()
 
-	return receipts, change, fees, nil
+	return buildReceipts(txHash), settleReserves(), fees, nil
 }
 
 // nextContractNonce returns the next available EIP-712 contract nonce,
@@ -4498,7 +4524,7 @@ func (w *ETHWallet) gaslessRedeem(ctx context.Context, form *asset.RedeemForm, r
 // different contract addresses with multiple transactions. (buck: what would
 // the difference from calling Redeem repeatedly?)
 func (w *ETHWallet) Redeem(ctx context.Context, form *asset.RedeemForm) ([]dex.Bytes, asset.Coin, uint64, error) {
-	return w.assetWallet.Redeem(ctx, form, nil, nil)
+	return w.assetWallet.Redeem(ctx, form)
 }
 
 // GaslessRedeem redeems swaps using an EIP-712 signed relay to avoid needing
@@ -4557,7 +4583,7 @@ func (w *ETHWallet) GaslessRedeem(ctx context.Context, form *asset.RedeemForm) (
 			return fail(fmt.Errorf("relay failed: %v; fallback failed: %w", relayErr, lockErr))
 		}
 		defer w.unlockFunds(reserve, redemptionReserve)
-		txs, coin, fees, redeemErr := w.assetWallet.Redeem(ctx, form, nil, nil)
+		txs, coin, fees, redeemErr := w.assetWallet.Redeem(ctx, form)
 		if redeemErr != nil {
 			return fail(fmt.Errorf("relay failed: %v; fallback redeem failed: %w", relayErr, redeemErr))
 		}
@@ -4570,7 +4596,7 @@ func (w *ETHWallet) GaslessRedeem(ctx context.Context, form *asset.RedeemForm) (
 
 	// We did have enough funds so we can pay for the redemption
 	// ourselves.
-	txs, coin, fees, err := w.assetWallet.Redeem(ctx, form, nil, nil)
+	txs, coin, fees, err := w.assetWallet.Redeem(ctx, form)
 	if err != nil {
 		// On OP Stack chains, the L1 data fee can make the actual tx
 		// cost much higher than the L2 gas estimate used by lockFunds.
@@ -4598,7 +4624,7 @@ func (w *ETHWallet) GaslessRedeem(ctx context.Context, form *asset.RedeemForm) (
 // Redeem sends the redemption transaction, which may contain more than one
 // redemption.
 func (w *TokenWallet) Redeem(ctx context.Context, form *asset.RedeemForm) ([]dex.Bytes, asset.Coin, uint64, error) {
-	return w.assetWallet.Redeem(ctx, form, w.parent, nil)
+	return w.assetWallet.Redeem(ctx, form)
 }
 
 // validateRedemptions checks that all redemptions use the same contract version
@@ -4629,7 +4655,7 @@ func (w *assetWallet) validateRedemptions(ctx context.Context, redemptions []*as
 		copy(secret[:], redemption.Secret)
 		redeemable, err := w.isRedeemable(ctx, locator, secret, ver)
 		if err != nil {
-			return 0, 0, fmt.Errorf("Redeem: failed to check if swap is redeemable: %w", err)
+			return 0, 0, fmt.Errorf("failed to check if swap is redeemable: %w", err)
 		}
 		if !redeemable {
 			// Check if the swap was already redeemed (e.g. by an
@@ -4673,25 +4699,24 @@ func (w *assetWallet) validateRedemptions(ctx context.Context, redemptions []*as
 }
 
 // Redeem sends the redemption transaction, which may contain more than one
-// redemption. The nonceOverride parameter is used to specify a specific nonce
-// to be used for the redemption transaction. It is needed when resubmitting a
-// redemption with a fee too low to be mined.
-func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm, feeWallet *assetWallet, nonceOverride *uint64) ([]dex.Bytes, asset.Coin, uint64, error) {
+// redemption. The call is idempotent at the operation layer: repeat calls
+// with the same redemption set short-circuit either via the on-chain probe
+// (effect already achieved) or by returning the canonical coin ID of an
+// existing in-flight Attempt.
+func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm) ([]dex.Bytes, asset.Coin, uint64, error) {
 	fail := func(err error) ([]dex.Bytes, asset.Coin, uint64, error) {
 		return nil, nil, 0, err
 	}
 
 	n := uint64(len(form.Redemptions))
-
 	if n == 0 {
 		return fail(errors.New("Redeem: must be called with at least 1 redemption"))
 	}
 
-	syntheticResult := func(contractVer uint32, redeemedValue uint64) ([]dex.Bytes, asset.Coin, uint64, error) {
-		zeroHash := common.Hash{}
+	syntheticResult := func(contractVer uint32, redeemedValue uint64, txHash common.Hash) ([]dex.Bytes, asset.Coin, uint64, error) {
 		txs := make([]dex.Bytes, n)
 		for i := range txs {
-			txs[i] = zeroHash[:]
+			txs[i] = txHash[:]
 		}
 		g := w.gases(contractVer)
 		var fees uint64
@@ -4699,52 +4724,89 @@ func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm, feeWal
 			fees = g.RedeemN(int(n)) * form.FeeSuggestion
 		}
 		outputCoin := &coin{
-			txHash: zeroHash,
+			txHash: txHash,
 			value:  redeemedValue,
 		}
 		return txs, outputCoin, fees, nil
 	}
 
-	// Only check on-chain state on retry (cache hit) to avoid unnecessary
-	// RPC calls on the first attempt.
-	redeemCacheKey := broadcast.RedeemCacheKey(form.Redemptions)
-	if _, seen := w.redeemSeen.Get(redeemCacheKey); seen {
-		allRedeemed := true
+	key := redeemKey(form.Redemptions)
+
+	// Step 1: probe on-chain. If the effect is achieved (all swaps SSRedeemed)
+	// we mark the Op Confirmed and return a synthetic success. This is the
+	// idempotency safety net that catches emergency gasless redemptions and
+	// retries of operations whose tx already mined.
+	achieved, unknown, _ := w.probeRedeemOnChain(ctx, form.Redemptions)
+	if achieved {
 		var contractVer uint32
 		var redeemedValue uint64
-		for i, redemption := range form.Redemptions {
-			ver, locator, err := dexeth.DecodeContractData(redemption.Spends.Contract)
-			if err != nil {
-				w.log.Warnf("Redeem recovery: invalid contract data: %v", err)
-				allRedeemed = false
-				break
+		for i, r := range form.Redemptions {
+			ver, locator, decErr := dexeth.DecodeContractData(r.Spends.Contract)
+			if decErr != nil {
+				continue
 			}
 			if i == 0 {
 				contractVer = ver
 			}
-			status, vector, err := w.statusAndVector(ctx, locator, ver)
-			if err != nil {
-				w.log.Warnf("Redeem recovery: status check error: %v", err)
-				allRedeemed = false
-				break
+			if _, vec, sErr := w.statusAndVector(ctx, locator, ver); sErr == nil && vec != nil {
+				redeemedValue += w.atomize(vec.Value)
 			}
-			if status.Step != dexeth.SSRedeemed {
-				allRedeemed = false
-				break
-			}
-			redeemedValue += w.atomize(vector.Value)
 		}
-		if allRedeemed {
-			w.log.Infof("All %d redemptions already redeemed on-chain, returning cached results", n)
-			return syntheticResult(contractVer, redeemedValue)
+		w.opMtx.Lock()
+		op := w.opLog.findOrCreate(key, OpRedeem)
+		if op.State != OpStateConfirmed {
+			op.State = OpStateConfirmed
+			op.ConfirmedAt = time.Now().Unix()
+			op.RedeemedValue = redeemedValue
+			op.ContractVer = contractVer
+			_ = w.txDB.storeOp(op)
 		}
+		w.opMtx.Unlock()
+		w.log.Infof("Redemption already complete on-chain (probe). Returning synthetic result.")
+		return syntheticResult(contractVer, redeemedValue, common.Hash{})
 	}
+	if unknown {
+		// Per the design: unknown means we cannot safely broadcast a
+		// duplicate. Block and let core retry later.
+		return fail(fmt.Errorf("Redeem: cannot determine on-chain state, retry later"))
+	}
+
+	// Step 2: if there's an active Attempt for this Op, return its canonical
+	// coin ID without rebroadcasting. The wallet's rebroadcast loop and the
+	// auto-bump scheduler keep the existing tx live.
+	w.opMtx.Lock()
+	op := w.opLog.findOrCreate(key, OpRedeem)
+	if hash := op.canonicalCoinID(); hash != (common.Hash{}) {
+		contractVer := op.ContractVer
+		redeemedValue := op.RedeemedValue
+		w.opMtx.Unlock()
+		w.log.Infof("Redeem: returning canonical coin ID %s for in-flight op", hash)
+		txs, outputCoin, fees, _ := syntheticResult(contractVer, redeemedValue, hash)
+		return txs, outputCoin, fees, nil
+	}
+	w.opMtx.Unlock()
+
+	// Step 3: validate, broadcast, register the Attempt + Candidate.
 	contractVer, redeemedValue, err := w.validateRedemptions(ctx, form.Redemptions)
 	if errors.Is(err, asset.ErrSwapRedeemed) {
-		// Already redeemed on-chain (e.g. emergency gasless redeem).
-		// Return synthetic success so core advances the match state.
-		w.log.Infof("Redemption already complete on-chain. Returning synthetic result.")
-		return syntheticResult(contractVer, redeemedValue)
+		// Defensive race-window fallback. The probe above is the primary
+		// detection — but if its result was negative due to RPC staleness or
+		// caching across providers, validateRedemptions's own status() call
+		// can catch a SSRedeemed swap that we'd otherwise broadcast a
+		// duplicate against. Don't remove this branch without changing the
+		// probe to match validate's freshness guarantee.
+		w.log.Infof("Redemption already complete on-chain (validate). Returning synthetic result.")
+		w.opMtx.Lock()
+		opCached := w.opLog.findOrCreate(key, OpRedeem)
+		if opCached.State != OpStateConfirmed {
+			opCached.State = OpStateConfirmed
+			opCached.ConfirmedAt = time.Now().Unix()
+			opCached.RedeemedValue = redeemedValue
+			opCached.ContractVer = contractVer
+			_ = w.txDB.storeOp(opCached)
+		}
+		w.opMtx.Unlock()
+		return syntheticResult(contractVer, redeemedValue, common.Hash{})
 	}
 	if err != nil {
 		return fail(fmt.Errorf("Redeem: failed to validate redemptions: %w", err))
@@ -4756,34 +4818,6 @@ func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm, feeWal
 	}
 	gasLimit := g.Redeem * n
 
-	/* We could get a gas estimate via RPC, but this will reveal the secret key
-	   before submitting the redeem transaction. This is not OK for maker.
-	   Disable for now.
-
-	if gasEst, err := w.estimateRedeemGas(w.ctx, secrets, locators, contractVer); err != nil {
-		return fail(fmt.Errorf("error getting redemption estimate: %w", err))
-	} else if gasEst > gasLimit {
-		// This is sticky. We only reserved so much for redemption, so accepting
-		// a gas limit higher than anticipated could potentially mess us up. On
-		// the other hand, we don't want to simply reject the redemption.
-		// Let's see if it looks like we can cover the fee. If so go ahead, up
-		// to a limit.
-		candidateLimit := gasEst * 11 / 10 // Add 10% for good measure.
-		// Cannot be more than double.
-		if candidateLimit > gasLimit*2 {
-			return fail(fmt.Errorf("cannot recover from excessive gas estimate %d > 2 * %d", candidateLimit, gasLimit))
-		}
-		additionalFundsNeeded := (candidateLimit - gasLimit) * form.FeeSuggestion
-		if bal.Available < additionalFundsNeeded {
-			return fail(fmt.Errorf("no balance available for gas overshoot recovery. %d < %d", bal.Available, additionalFundsNeeded))
-		}
-		w.log.Warnf("live gas estimate %d exceeded expected max value %d. using higher limit %d for redemption", gasEst, gasLimit, candidateLimit)
-		gasLimit = candidateLimit
-	}
-	*/
-
-	// Fetch up-to-date fee rate, we'll want to use it instead of form.FeeSuggestion since
-	// it better reflects current networking conditions.
 	maxFee, tipRate, _, err := w.recommendedMaxFeeRate(w.ctx)
 	if err != nil {
 		return fail(fmt.Errorf("Error fetching recommended max fee rate: %w", err))
@@ -4794,26 +4828,33 @@ func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm, feeWal
 		return fail(fmt.Errorf("Redeem: redeem error: %w", err))
 	}
 
-	// Mark as seen only after successful redemption to avoid unnecessary
-	// on-chain checks on retry after permanent failures.
-	w.redeemSeen.Put(redeemCacheKey, &ethSwapSeen{timestamp: time.Now()})
-
 	txHash := tx.Hash()
 
-	txs := make([]dex.Bytes, len(form.Redemptions))
+	// Register the Op + Attempt + Candidate so subsequent calls short-circuit.
+	w.opMtx.Lock()
+	op = w.opLog.findOrCreate(key, OpRedeem)
+	op.RedeemedValue = redeemedValue
+	op.ContractVer = contractVer
+	op.Attempts = append(op.Attempts, &Attempt{
+		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
+		Outcome:    AttemptPending,
+		Candidates: []common.Hash{txHash},
+		CreatedAt:  time.Now().Unix(),
+	})
+	w.opLog.indexCandidate(txHash, key)
+	_ = w.txDB.storeOp(op)
+	w.opMtx.Unlock()
+
+	txs := make([]dex.Bytes, n)
 	for i := range txs {
 		txs[i] = txHash[:]
 	}
-
 	outputCoin := &coin{
 		txHash: txHash,
 		value:  redeemedValue,
 	}
-
-	// This is still a fee estimate. The actual gas cost will be returned in the
-	// receipt.
 	_, redeemL1, _ := w.l1FeesForOps(contractVer)
-	fees := g.RedeemN(len(form.Redemptions))*form.FeeSuggestion + redeemL1*n
+	fees := g.RedeemN(int(n))*form.FeeSuggestion + redeemL1*n
 	return txs, outputCoin, fees, nil
 }
 
@@ -5509,18 +5550,23 @@ func (w *assetWallet) completeBridgeFollowUp(ctx context.Context, data []byte, i
 func (w *assetWallet) getLatestBridgeCompletion(initiationTxID string) (*extendedWalletTx, error) {
 	// Check if the completion is still pending
 	w.nonceMtx.RLock()
-	for _, tx := range w.pendingTxs {
-		if tx.Type == asset.CompleteBridge {
-			if tx.BridgeCounterpartTx == nil || len(tx.BridgeCounterpartTx.IDs) < 1 {
-				w.log.Warnf("bridge completion transaction %s has no counterpart transaction", tx.ID)
-				continue
-			}
-			if tx.BridgeCounterpartTx.IDs[0] == initiationTxID {
-				return tx, nil
-			}
+	var found *extendedWalletTx
+	eachCandidate(w.slots, func(tx *extendedWalletTx) {
+		if found != nil || tx.Type != asset.CompleteBridge {
+			return
 		}
-	}
+		if tx.BridgeCounterpartTx == nil || len(tx.BridgeCounterpartTx.IDs) < 1 {
+			w.log.Warnf("bridge completion transaction %s has no counterpart transaction", tx.ID)
+			return
+		}
+		if tx.BridgeCounterpartTx.IDs[0] == initiationTxID {
+			found = tx
+		}
+	})
 	w.nonceMtx.RUnlock()
+	if found != nil {
+		return found, nil
+	}
 
 	// If not pending, check if it's in the DB
 	completions, err := w.txDB.getBridgeCompletions(initiationTxID)
@@ -6226,24 +6272,60 @@ func (w *assetWallet) Refund(ctx context.Context, _, contract dex.Bytes, feeRate
 		return nil, fmt.Errorf("Refund: failed to decode contract: %w", err)
 	}
 
+	key := refundKey(locator)
+	zeroHash := common.Hash{}
+
+	// Phase 7: probe-first idempotency. If the swap is already SSRefunded,
+	// mark the Op Confirmed and return a synthetic zero-hash result.
+	if achieved, _, _ := w.probeRefundOnChain(ctx, locator, contractVer); achieved {
+		w.opMtx.Lock()
+		op := w.opLog.findOrCreate(key, OpRefund)
+		if op.State != OpStateConfirmed {
+			op.State = OpStateConfirmed
+			op.ConfirmedAt = time.Now().Unix()
+			op.ContractVer = contractVer
+			_ = w.txDB.storeOp(op)
+		}
+		w.opMtx.Unlock()
+		return zeroHash[:], nil
+	}
+
+	// If we have an in-flight refund attempt for this locator, return its
+	// canonical hash without rebroadcasting.
+	w.opMtx.Lock()
+	op := w.opLog.findOrCreate(key, OpRefund)
+	if hash := op.canonicalCoinID(); hash != zeroHash {
+		w.opMtx.Unlock()
+		return hash[:], nil
+	}
+	w.opMtx.Unlock()
+
 	status, vector, err := w.statusAndVector(ctx, locator, contractVer)
 	if err != nil {
 		return nil, err
 	}
-	// It's possible the swap was refunded by someone else. In that case we
-	// cannot know the refunding tx hash.
 	switch status.Step {
-	case dexeth.SSInitiated: // good, check refundability
+	case dexeth.SSInitiated: // good, check refundability below
 	case dexeth.SSNone:
 		return nil, asset.ErrSwapNotInitiated
 	case dexeth.SSRefunded:
+		// Race fallback: probe missed it but statusAndVector caught it.
+		w.markProbeAchieved(key)
+		w.opMtx.Lock()
+		opC := w.opLog.findOrCreate(key, OpRefund)
+		if opC.State != OpStateConfirmed {
+			opC.State = OpStateConfirmed
+			opC.ConfirmedAt = time.Now().Unix()
+			opC.ContractVer = contractVer
+			_ = w.txDB.storeOp(opC)
+		}
+		w.opMtx.Unlock()
 		w.log.Infof("Swap with locator %x already refunded.", locator)
-		zeroHash := common.Hash{}
 		return zeroHash[:], nil
 	case dexeth.SSRedeemed:
 		w.log.Infof("Swap with locator %x already redeemed with secret key %x.",
 			locator, status.Secret)
-		return nil, asset.CoinNotFoundError // so caller knows to FindRedemption
+		return nil, asset.CoinNotFoundError // caller falls back to FindRedemption
 	}
 
 	refundable, err := w.isRefundable(ctx, locator, contractVer)
@@ -6266,6 +6348,19 @@ func (w *assetWallet) Refund(ctx context.Context, _, contract dex.Bytes, feeRate
 	}
 
 	txHash := tx.Hash()
+	w.opMtx.Lock()
+	op = w.opLog.findOrCreate(key, OpRefund)
+	op.ContractVer = contractVer
+	op.Attempts = append(op.Attempts, &Attempt{
+		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
+		Outcome:    AttemptPending,
+		Candidates: []common.Hash{txHash},
+		CreatedAt:  time.Now().Unix(),
+	})
+	w.opLog.indexCandidate(txHash, key)
+	_ = w.txDB.storeOp(op)
+	w.opMtx.Unlock()
+
 	return txHash[:], nil
 }
 
@@ -7247,6 +7342,12 @@ func (w *assetWallet) confirmTransaction(coinID dex.Bytes, confirmTx *asset.Conf
 	var txHash common.Hash
 	copy(txHash[:], coinID)
 
+	// Option B: route to the slot's latest candidate when one exists, so
+	// fee-bumps and abandon-replacements surface to core via handleResubmit.
+	if latest := w.canonicalCoinIDFor(txHash); latest != txHash && latest != (common.Hash{}) {
+		txHash = latest
+	}
+
 	contractVer, locator, err := dexeth.DecodeContractData(confirmTx.Contract())
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode contract data: %w", err)
@@ -7321,6 +7422,28 @@ func (w *assetWallet) confirmTransaction(coinID dex.Bytes, confirmTx *asset.Conf
 	return confStatus(confs, w.finalizeConfs, txHash), nil
 }
 
+// canonicalCoinIDFor returns the latest-candidate hash for the slot that
+// contains the given tx hash. If the queried hash is the slot's only or
+// most-recent candidate, the same hash is returned. If the slot has been
+// fee-bumped or abandon-replaced since this hash was added, the latest hash
+// is returned — implementing Option B so fee-bumps and abandon-replacements
+// surface to core via handleResubmit on the next ConfirmTransaction poll.
+//
+// If the hash is not in any active slot (finalized + dropped, or unknown),
+// the input is returned unchanged.
+func (w *baseWallet) canonicalCoinIDFor(txHash common.Hash) common.Hash {
+	w.nonceMtx.RLock()
+	defer w.nonceMtx.RUnlock()
+	for _, slot := range w.slots {
+		for _, c := range slot.Candidates {
+			if c.txHash == txHash {
+				return slot.latest().txHash
+			}
+		}
+	}
+	return txHash
+}
+
 // withLocalTxRead runs a function that reads a pending or DB tx under
 // read-lock. Certain DB transactions in undeterminable states will not be
 // used.
@@ -7328,13 +7451,15 @@ func (w *baseWallet) withLocalTxRead(txHash common.Hash, f func(*extendedWalletT
 	withPendingTxRead := func(txHash common.Hash, f func(*extendedWalletTx)) bool {
 		w.nonceMtx.RLock()
 		defer w.nonceMtx.RUnlock()
-		for _, pendingTx := range w.pendingTxs {
-			if pendingTx.txHash == txHash {
-				f(pendingTx)
-				return true
+		var found bool
+		eachCandidate(w.slots, func(c *extendedWalletTx) {
+			if found || c.txHash != txHash {
+				return
 			}
-		}
-		return false
+			f(c)
+			found = true
+		})
+		return found
 	}
 	if withPendingTxRead(txHash, f) {
 		return true
@@ -7486,9 +7611,7 @@ func (w *assetWallet) sumPendingTxs() (out, in uint64) {
 	w.nonceMtx.RLock()
 	defer w.nonceMtx.RUnlock()
 
-	for _, pendingTx := range w.pendingTxs {
-		sumPendingTx(pendingTx)
-	}
+	eachCandidate(w.slots, sumPendingTx)
 
 	return
 }
@@ -8087,6 +8210,23 @@ func checkTxStatus(receipt *types.Receipt, gasLimit uint64) error {
 	return nil
 }
 
+// emitDataForCandidate routes a generic Data notification through the asset
+// wallet that owns the candidate's TokenID (or the base asset wallet if the
+// candidate is on the base chain). Used for slot-level scheduler events that
+// need to surface to the UI without changing the action-required machinery.
+func (w *baseWallet) emitDataForCandidate(c *extendedWalletTx, route string, payload any) {
+	assetID := w.baseChainID
+	if c.TokenID != nil {
+		assetID = *c.TokenID
+	}
+	w.walletsMtx.RLock()
+	aw := w.wallets[assetID]
+	w.walletsMtx.RUnlock()
+	if aw != nil {
+		aw.emit.Data(route, payload)
+	}
+}
+
 // emitTransactionNote sends a TransactionNote to the base asset wallet and
 // also the wallet, if applicable.
 func (w *baseWallet) emitTransactionNote(tx *asset.WalletTransaction, new bool) {
@@ -8108,17 +8248,18 @@ func (w *baseWallet) emitTransactionNote(tx *asset.WalletTransaction, new bool) 
 	}
 }
 
-func findMissingNonces(confirmedAt, pendingAt *big.Int, pendingTxs []*extendedWalletTx) (ns []uint64) {
+func findMissingNonces(confirmedAt, pendingAt *big.Int, slots []*nonceSlot) (ns []uint64) {
 	pendingTxMap := make(map[uint64]struct{})
 	// It's not clear whether all providers will update PendingNonceAt if
 	// there are gaps. geth doesn't do it on simnet, apparently. We'll use
-	// our own pendingTxs max nonce as a backup.
+	// our own slots' max nonce as a backup. A slot counts as indexed if any
+	// of its candidates is indexed.
 	nonceHigh := big.NewInt(-1)
-	for _, pendingTx := range pendingTxs {
-		if pendingTx.indexed && pendingTx.Nonce.Cmp(nonceHigh) > 0 {
-			nonceHigh.Set(pendingTx.Nonce)
+	for _, slot := range slots {
+		if slot.anyIndexed() && slot.Nonce.Cmp(nonceHigh) > 0 {
+			nonceHigh.Set(slot.Nonce)
 		}
-		pendingTxMap[pendingTx.Nonce.Uint64()] = struct{}{}
+		pendingTxMap[slot.Nonce.Uint64()] = struct{}{}
 	}
 	nonceHigh.Add(nonceHigh, big.NewInt(1))
 	if pendingAt.Cmp(nonceHigh) > 0 {
@@ -8205,19 +8346,22 @@ func (w *baseWallet) updatePendingTx(tip uint64, pendingTx *extendedWalletTx) {
 		return
 	}
 
-	pendingTx.Receipt = receipt
 	pendingTx.indexed = true
-	pendingTx.Rejected = receipt.Status != types.ReceiptStatusSuccessful
-	updated = true
-
-	if receipt.BlockNumber == nil || receipt.BlockNumber.Cmp(new(big.Int)) == 0 {
+	if receipt.BlockNumber == nil || receipt.BlockNumber.Sign() == 0 {
+		// In-mempool but not yet mined. Don't stamp the receipt on the
+		// candidate — slot.winner() / slot.consumed() trip on a non-nil
+		// Receipt, and a still-unmined tx must not look "consumed".
 		if pendingTx.BlockNumber > 0 {
 			w.log.Warnf("Transaction %s was previously mined but is now unconfirmed", pendingTx.txHash)
 			pendingTx.Timestamp = 0
 			pendingTx.BlockNumber = 0
+			updated = true
 		}
 		return
 	}
+	pendingTx.Receipt = receipt
+	pendingTx.Rejected = receipt.Status != types.ReceiptStatusSuccessful
+	updated = true
 	effectiveGasPrice := receipt.EffectiveGasPrice
 	// NOTE: Would be nice if the receipt contained the block time so we could
 	// set the timestamp without having to fetch the header. We could use
@@ -8482,152 +8626,148 @@ func (w *baseWallet) checkPendingRelays() {
 	w.relayMtx.Unlock()
 }
 
-// checkPendingTxs checks the confirmation status of all pending transactions.
+// checkPendingTxs checks the confirmation status of all candidate transactions
+// across all nonce slots, advances confirmedNonceAt as slots finalize, and
+// requests user action on stuck or lost slots.
 func (w *baseWallet) checkPendingTxs() {
 	tip := w.tipHeight()
 
 	w.nonceMtx.Lock()
-	defer w.nonceMtx.Unlock()
+	// nonceMtx is released explicitly before the auto-bump RPCs run (so we
+	// don't stall withNonce / balance queries on a slow sendTransaction);
+	// each auto-bump re-acquires the lock briefly to commit. Use a flag so
+	// early returns still unlock.
+	unlocked := false
+	defer func() {
+		if !unlocked {
+			w.nonceMtx.Unlock()
+		}
+	}()
 
-	// If we have pending txs, trace log the before and after.
 	if w.log.Level() == dex.LevelTrace {
-		if nPending := len(w.pendingTxs); nPending > 0 {
+		if n := len(w.slots); n > 0 {
 			defer func() {
-				w.log.Tracef("Checked %d pending txs. Finalized %d", nPending, nPending-len(w.pendingTxs))
+				w.log.Tracef("Checked %d slots. Finalized %d", n, n-len(w.slots))
 			}()
 		}
 	}
 
-	// keepFromIndex will be the index of the first un-finalized tx.
-	// lastConfirmed, will be the index of the last confirmed tx. All txs with
-	// nonces lower that lastConfirmed should also be confirmed, or else
-	// something isn't right and we may need to request user input.
+	// Phase A: refresh receipts on every non-finalized candidate, reconcile
+	// loser candidates when a slot has a winner, and identify finalized slots
+	// to drop from the front. lastConfirmed is the index of the last finalized
+	// slot — slots with lower nonce that aren't finalized are "lost-nonce"
+	// candidates.
 	var keepFromIndex int
 	var lastConfirmed int = -1
-	for i, pendingTx := range w.pendingTxs {
+	for i, slot := range w.slots {
 		if w.ctx.Err() != nil {
 			return
 		}
-		w.updatePendingTx(tip, pendingTx)
+		for _, c := range slot.Candidates {
+			if c.Confirmed && c.savedToDB {
+				continue
+			}
+			w.updatePendingTx(tip, c)
+		}
 
-		if pendingTx.Confirmed {
+		// If a winner has emerged, mark all other candidates as replaced. A
+		// loser is a fee-replacement of the winner unless either side was an
+		// abandon — in which case the operation was abandoned, not bumped.
+		if winner := slot.winner(); winner != nil {
+			for _, c := range slot.Candidates {
+				if c == winner || c.NonceReplacement != "" {
+					continue
+				}
+				c.NonceReplacement = winner.ID
+				if winner.Purpose != CandidateAbandonReplacement &&
+					c.Purpose != CandidateAbandonReplacement {
+					c.FeeReplacement = true
+				}
+				w.tryStoreDBTx(c)
+			}
+		}
+
+		if slot.finalized() {
 			lastConfirmed = i
-			if pendingTx.Nonce.Cmp(w.confirmedNonceAt) == 0 {
+			if slot.Nonce.Cmp(w.confirmedNonceAt) == 0 {
 				w.confirmedNonceAt.Add(w.confirmedNonceAt, big.NewInt(1))
 			}
-			if pendingTx.savedToDB {
+			winner := slot.winner()
+			if winner != nil && winner.savedToDB {
 				if i == keepFromIndex {
-					// This is what we expect. No tx should be confirmed before a
-					// tx with a lower nonce. We'll delete at least up to this
-					// one.
 					keepFromIndex = i + 1
 				}
 			}
-			// This transaction is finalized. If we had previously sought action
-			// on it, cancel that request.
-			if pendingTx.actionRequested {
-				pendingTx.actionRequested = false
-				w.resolveAction(pendingTx.ID, pendingTx.TokenID)
+			// Resolve any outstanding action prompt on this slot.
+			for _, c := range slot.Candidates {
+				if c.actionRequested {
+					c.actionRequested = false
+					w.resolveAction(c.ID, c.TokenID)
+				}
 			}
 		}
 	}
 
-	// If we have missing nonces, send an alert.
-	if !w.recoveryRequestSent && len(findMissingNonces(w.confirmedNonceAt, w.nextNonceAt, w.pendingTxs)) != 0 {
+	// Missing-nonce alert.
+	if !w.recoveryRequestSent && len(findMissingNonces(w.confirmedNonceAt, w.nextNonceAt, w.slots)) != 0 {
 		w.recoveryRequestSent = true
 		w.requestAction(actionTypeMissingNonces, w.missingNoncesActionID(), nil, nil)
 	}
 
-	// Loop again, classifying problems and sending action requests.
-	for i, pendingTx := range w.pendingTxs {
-		if pendingTx.Confirmed || pendingTx.BlockNumber > 0 {
-			continue
-		}
-		if pendingTx.actionRequested {
-			continue // waiting on action already
-		}
-		if time.Since(pendingTx.lastActionRejected) < txActionPromptFrequency {
-			continue // user asked us to keep waiting
-		}
-		// i < lastConfirmed means unconfirmed nonce < a confirmed nonce.
-		if (i < lastConfirmed) || w.confirmedNonceAt.Cmp(pendingTx.Nonce) > 0 {
-			// The tx in our records wasn't accepted. Seems like it has been replaced by another
-			// transaction with the same nonce, asking the user if he knows what transaction
-			// corresponds to this nonce is the only way to mend this transaction.
-			// This can only happen if user is doing something advanced (like sending transactions
-			// from this wallet using another software), or if there is a bug in our code - so
-			// it's fine to keep asking him to resolve it.
-			req := newLostNonceNote(*pendingTx.WalletTransaction, pendingTx.Nonce.Uint64())
-			pendingTx.actionRequested = true
-			w.requestAction(actionTypeLostNonce, pendingTx.ID, req, pendingTx.TokenID)
-			continue
-		}
+	// Collect auto-bump tasks under the lock; the actual sendTransaction
+	// RPCs happen post-unlock to avoid stalling concurrent withNonce /
+	// balance-query callers. Cap-exceeded warnings are emitted inline (no
+	// RPC needed for them).
+	bumpTasks := w.collectAutoBumpTasks(w.autoBumpCfg)
 
-		// Recheck how transaction fees compare to network conditions. Note, fee tip can be
-		// a large chunk of total fees (on Polygon in particular) - take it into account too,
-		// propose new fees to the user if ours are below what network currently expects.
-		const feeCheckInterval = 2 * time.Minute
-		if time.Since(pendingTx.lastFeeCheck) < feeCheckInterval {
-			continue
-		}
-		pendingTx.lastFeeCheck = time.Now()
-		tx, err := pendingTx.tx()
-		if err != nil {
-			w.log.Errorf("Error decoding raw tx %s for fee check: %v", pendingTx.ID, err)
-			continue
-		}
-		currentFeeRate, err := w.currentFeeRate(w.ctx)
-		if err != nil {
-			w.log.Errorf("Error getting network fees: %v", err)
-			continue
-		}
-		if tx.GasFeeCap().Cmp(currentFeeRate) >= 0 {
-			w.log.Tracef("Pending transacton %s fees seem fine with respect to current netowrk conditions", pendingTx.ID)
-			continue
-		}
-		pendingTx.feesBumps++ // gotta bump the fees then
-		baseRate, tipRate, err := w.currentNetworkFees(w.ctx)
-		if err != nil {
-			w.log.Errorf("Error getting network fees: %v", err)
-			continue
-		}
-		w.log.Tracef("Requesting user action to bump fees transacton %s to adapt it to current netowrk conditions", pendingTx.ID)
-
-		// have to bump tipRate too (and set maxFeeRate accordingly) compared to the previously
-		// pending transaction at that nonce (if there is any previous transaction that network still
-		// remembers) - otherwise it will get rejected as "underpriced"
-		bumpedTipRate := new(big.Int).Mul(tipRate, big.NewInt(1+pendingTx.feesBumps))
-		bumpedMaxFeeRate := new(big.Int).Add(baseRate, bumpedTipRate)
-		bumpedMaxFees := new(big.Int).Mul(bumpedMaxFeeRate, new(big.Int).SetUint64(tx.Gas()))
-		req := newLowFeeNote(*pendingTx.WalletTransaction, dexeth.WeiToGweiCeil(bumpedMaxFees))
-		pendingTx.actionRequested = true
-		w.requestAction(actionTypeTooCheap, pendingTx.ID, req, pendingTx.TokenID)
+	// Phase B: classify the head slot's problem (if any) and prompt the user
+	// for it. Serialization rule: at most one prompt per tick, always on
+	// the head slot. Slots queued behind head are surfaced via the note's
+	// Blocked list so the user knows what depends on resolving head — but
+	// those slots are NOT independently prompted. Once head is resolved
+	// (mined, abandoned, or dropped from tracking), the next tick promotes
+	// the next slot to head.
+	if headIdx := findHeadSlot(w.slots); headIdx >= 0 {
+		w.maybePromptHead(headIdx, lastConfirmed)
 	}
 
-	// Delete finalized txs from local tracking.
-	w.pendingTxs = w.pendingTxs[keepFromIndex:]
+	// Drop finalized slots from the front of the slots list.
+	w.slots = w.slots[keepFromIndex:]
 
-	// Re-broadcast any txs that are not indexed and haven't been re-broadcast
-	// in a while, logging any errors as warnings.
+	// Rebroadcast all live (non-mined, non-replaced, non-indexed,
+	// non-AssumedLost) candidates.
 	const rebroadcastPeriod = time.Minute * 5
-	for _, pendingTx := range w.pendingTxs {
-		if pendingTx.Confirmed || pendingTx.BlockNumber > 0 ||
-			pendingTx.actionRequested || // waiting on action already
-			pendingTx.indexed || // Provider knows about it
-			time.Since(pendingTx.lastBroadcast) < rebroadcastPeriod {
-			continue
+	for _, slot := range w.slots {
+		for _, c := range slot.Candidates {
+			if c.Confirmed || c.BlockNumber > 0 ||
+				c.NonceReplacement != "" || // sibling already won this slot
+				c.actionRequested ||
+				c.indexed ||
+				c.AssumedLost || // gave up on this candidate
+				time.Since(c.lastBroadcast) < rebroadcastPeriod {
+				continue
+			}
+			c.lastBroadcast = time.Now()
+			tx, err := c.tx()
+			if err != nil {
+				w.log.Errorf("Error decoding raw tx %s for rebroadcast: %v", c.ID, err)
+				continue
+			}
+			if err := w.node.sendSignedTransaction(w.ctx, tx, allowAlreadyKnownFilter); err != nil {
+				w.log.Warnf("Error rebroadcasting tx %s: %v", c.ID, err)
+			} else {
+				w.log.Infof("Rebroadcasted un-indexed transaction %s", c.ID)
+			}
 		}
-		pendingTx.lastBroadcast = time.Now()
-		tx, err := pendingTx.tx()
-		if err != nil {
-			w.log.Errorf("Error decoding raw tx %s for rebroadcast: %v", pendingTx.ID, err)
-			continue
-		}
-		if err := w.node.sendSignedTransaction(w.ctx, tx, allowAlreadyKnownFilter); err != nil {
-			w.log.Warnf("Error rebroadcasting tx %s: %v", pendingTx.ID, err)
-		} else {
-			w.log.Infof("Rebroadcasted un-indexed transaction %s", pendingTx.ID)
-		}
+	}
+
+	// Release nonceMtx before doing auto-bump RPCs so concurrent withNonce
+	// and balance-query callers don't stall on sendTransaction. Each
+	// executeOneAutoBump re-acquires nonceMtx briefly to commit.
+	w.nonceMtx.Unlock()
+	unlocked = true
+	if len(bumpTasks) > 0 {
+		w.executeAutoBumpTasks(bumpTasks)
 	}
 }
 
@@ -8647,58 +8787,439 @@ type TransactionActionNote struct {
 	Tx      *asset.WalletTransaction `json:"tx"`
 	Nonce   uint64                   `json:"nonce,omitempty"`
 	NewFees uint64                   `json:"newFees,omitempty"`
+	// Blocked lists pending wallet txs at higher nonces that depend on Tx
+	// landing first. Populated when there are queued-up txs behind a stuck
+	// head — gives the user visibility into the chain of pending work
+	// affected by their decision on Tx.
+	Blocked []*BlockedTxInfo `json:"blocked,omitempty"`
+}
+
+// BlockedTxInfo is a minimal summary of a pending wallet tx that is queued
+// behind a stuck head tx. Carries enough for the UI to identify the tx
+// (hash) and tell the user what kind of operation it is (type), without
+// duplicating the full WalletTransaction.
+type BlockedTxInfo struct {
+	ID   string                `json:"id"`
+	Type asset.TransactionType `json:"type"`
+}
+
+// autoBumpCappedRoute is the asset.WalletEmitter Data route used to surface
+// an AutoBumpCappedNote.
+const autoBumpCappedRoute = "autoBumpCapped"
+
+// AutoBumpCappedNote is the payload of the data notification emitted once
+// per slot when the auto fee-bump scheduler stops bumping a stuck
+// Redeem/Refund because the next bump would exceed the policy's cap
+// (default original×10). After this fires the wallet leaves the slot's
+// fees where they are; the user must Bump or Abandon manually via the
+// usual too-cheap dialog for the operation to complete.
+type AutoBumpCappedNote struct {
+	Nonce      uint64                `json:"nonce"`
+	TxID       string                `json:"txID"`
+	Type       asset.TransactionType `json:"type"`
+	FeeCapGwei uint64                `json:"feeCapGwei"`
+	CapGwei    uint64                `json:"capGwei"`
 }
 
 // newLostNonceNote is information regarding a tx that appears to be lost.
-func newLostNonceNote(tx asset.WalletTransaction, nonce uint64) *TransactionActionNote {
+func newLostNonceNote(tx asset.WalletTransaction, nonce uint64, blocked []*BlockedTxInfo) *TransactionActionNote {
 	return &TransactionActionNote{
-		Tx:    &tx,
-		Nonce: nonce,
+		Tx:      &tx,
+		Nonce:   nonce,
+		Blocked: blocked,
 	}
 }
 
 // newLowFeeNote is data about a tx that is stuck in mempool with too-low fees.
-func newLowFeeNote(tx asset.WalletTransaction, newFees uint64) *TransactionActionNote {
+func newLowFeeNote(tx asset.WalletTransaction, newFees uint64, blocked []*BlockedTxInfo) *TransactionActionNote {
 	return &TransactionActionNote{
 		Tx:      &tx,
 		NewFees: newFees,
+		Blocked: blocked,
 	}
 }
 
-// parse the pending tx and index from the slice.
-func pendingTxWithID(txID string, pendingTxs []*extendedWalletTx) (int, *extendedWalletTx) {
-	for i, pendingTx := range pendingTxs {
-		if pendingTx.ID == txID {
-			return i, pendingTx
+// collectBlockedTxInfos returns BlockedTxInfo entries for every non-finalized
+// non-consumed slot AFTER headIdx — i.e., the txs queued in mempool waiting
+// for head to land. Caller must hold nonceMtx.
+func (w *baseWallet) collectBlockedTxInfos(headIdx int) []*BlockedTxInfo {
+	if headIdx < 0 || headIdx+1 >= len(w.slots) {
+		return nil
+	}
+	var blocked []*BlockedTxInfo
+	for _, s := range w.slots[headIdx+1:] {
+		if s.finalized() || s.consumed() {
+			continue
 		}
+		latest := s.latest()
+		blocked = append(blocked, &BlockedTxInfo{
+			ID:   latest.ID,
+			Type: latest.Type,
+		})
 	}
-	return 0, nil
+	return blocked
 }
 
-// amendPendingTx is called with a function that intends to modify a pendingTx
-// under mutex lock.
-func (w *assetWallet) amendPendingTx(txID string, f func(common.Hash, *types.Transaction, *extendedWalletTx, int) error) error {
+// maybePromptHead emits at most one user-action note for the head slot in
+// w.slots — either lost-nonce or too-cheap. Slots queued behind head (per
+// the Phase A scan) are summarized in the note's Blocked list so the user
+// can see what's waiting on this resolution. Caller must hold nonceMtx.
+func (w *baseWallet) maybePromptHead(headIdx, lastConfirmed int) {
+	head := w.slots[headIdx]
+	if head.anyActionRequested() {
+		return
+	}
+	latest := head.latest()
+	if time.Since(latest.lastActionRejected) < txActionPromptFrequency {
+		return
+	}
+
+	// Lost-nonce: either the chain advanced past this slot's nonce without
+	// any of our candidates being the tx that mined (an external tx
+	// consumed the nonce), OR none of the slot's candidates have been
+	// indexed by the network for long enough that we suspect the tx was
+	// dropped from mempool entirely. Both cases manifest the same to the
+	// user: this nonce can't progress until they Abandon (drop from
+	// tracking) or supply the external tx hash that took it. The
+	// indexed-timeout fallback gives us a path out of mempool-drop
+	// situations that the chain-advance check never sees. Set the
+	// timeout above the 5-minute rebroadcast period so a transient RPC
+	// hiccup doesn't prompt the user before we've even tried to
+	// rebroadcast.
+	const indexedTimeout = 10 * time.Minute
+	chainAdvanced := (headIdx < lastConfirmed) || w.confirmedNonceAt.Cmp(head.Nonce) > 0
+	droppedFromMempool := !head.anyIndexed() && head.original().age() > indexedTimeout
+	if chainAdvanced || droppedFromMempool {
+		req := newLostNonceNote(*latest.WalletTransaction, head.Nonce.Uint64(), w.collectBlockedTxInfos(headIdx))
+		latest.actionRequested = true
+		w.requestAction(actionTypeLostNonce, latest.ID, req, latest.TokenID)
+		return
+	}
+
+	// Too-cheap: latest candidate's fee is below current network rate.
+	const feeCheckInterval = 2 * time.Minute
+	if time.Since(latest.lastFeeCheck) < feeCheckInterval {
+		return
+	}
+	latest.lastFeeCheck = time.Now()
+	tx, err := latest.tx()
+	if err != nil {
+		w.log.Errorf("Error decoding raw tx %s for fee check: %v", latest.ID, err)
+		return
+	}
+	currentFeeRate, err := w.currentFeeRate(w.ctx)
+	if err != nil {
+		w.log.Errorf("Error getting network fees: %v", err)
+		return
+	}
+	if tx.GasFeeCap().Cmp(currentFeeRate) >= 0 {
+		w.log.Tracef("Pending transaction %s fees seem fine with respect to current network conditions", latest.ID)
+		return
+	}
+	latest.feesBumps++
+	baseRate, tipRate, err := w.currentNetworkFees(w.ctx)
+	if err != nil {
+		w.log.Errorf("Error getting network fees: %v", err)
+		return
+	}
+	w.log.Tracef("Requesting user action to bump fees transaction %s to adapt it to current network conditions", latest.ID)
+
+	// Network-rate-derived proposal, then floor it to clear the prior tx's
+	// caps so we don't quote the user a value that the network would reject
+	// as replacement-underpriced.
+	bumpedTipRate := new(big.Int).Mul(tipRate, big.NewInt(1+latest.feesBumps))
+	bumpedMaxFeeRate := new(big.Int).Add(baseRate, bumpedTipRate)
+	bumpedTipRate, bumpedMaxFeeRate = replacementBumpedFees(bumpedTipRate, bumpedMaxFeeRate, tx.GasTipCap(), tx.GasFeeCap())
+	bumpedMaxFees := new(big.Int).Mul(bumpedMaxFeeRate, new(big.Int).SetUint64(tx.Gas()))
+	req := newLowFeeNote(*latest.WalletTransaction, dexeth.WeiToGweiCeil(bumpedMaxFees), w.collectBlockedTxInfos(headIdx))
+	latest.actionRequested = true
+	w.requestAction(actionTypeTooCheap, latest.ID, req, latest.TokenID)
+}
+
+// amendPendingTx is called with a function that intends to modify a pending
+// candidate (and possibly its slot) under nonceMtx.
+func (w *assetWallet) amendPendingTx(txID string, f func(common.Hash, *types.Transaction, int, *nonceSlot, *extendedWalletTx) error) error {
 	txHash := common.HexToHash(txID)
 	if txHash == (common.Hash{}) {
 		return fmt.Errorf("invalid tx ID %q", txID)
 	}
 	w.nonceMtx.Lock()
 	defer w.nonceMtx.Unlock()
-	idx, pendingTx := pendingTxWithID(txID, w.pendingTxs)
-	if pendingTx == nil {
+	slotIdx, slot, candidate := findCandidateByID(w.slots, txID)
+	if slot == nil {
 		// Nothing to do anymore.
 		return nil
 	}
-	tx, err := pendingTx.tx()
+	tx, err := candidate.tx()
 	if err != nil {
 		return fmt.Errorf("error decoding transaction: %w", err)
 	}
-	if err := f(txHash, tx, pendingTx, idx); err != nil {
+	if err := f(txHash, tx, slotIdx, slot, candidate); err != nil {
 		return err
 	}
 	w.emit.ActionResolved(txID)
-	pendingTx.actionRequested = false // processed this action to completion
+	candidate.actionRequested = false // processed this action to completion
 	return nil
+}
+
+// replacementBumpedFees raises the proposed (tip, maxFee) rates if needed so
+// they clear Ethereum's replacement-underpriced rule relative to the prior
+// tx's caps. The rule requires newTx.GasTipCap >= priorTip × 11/10 AND
+// newTx.GasFeeCap >= priorMaxFee × 11/10. Returns (tip, maxFee) — never
+// lower than the inputs. nil priors are no-ops.
+func replacementBumpedFees(proposedTip, proposedMaxFee, priorTip, priorMaxFee *big.Int) (*big.Int, *big.Int) {
+	bumpedTip := new(big.Int).Set(proposedTip)
+	bumpedMaxFee := new(big.Int).Set(proposedMaxFee)
+	if priorTip != nil && priorTip.Sign() > 0 {
+		minTip := new(big.Int).Mul(priorTip, big.NewInt(11))
+		minTip.Div(minTip, big.NewInt(10))
+		if bumpedTip.Cmp(minTip) < 0 {
+			bumpedTip = minTip
+		}
+	}
+	if priorMaxFee != nil && priorMaxFee.Sign() > 0 {
+		minMaxFee := new(big.Int).Mul(priorMaxFee, big.NewInt(11))
+		minMaxFee.Div(minMaxFee, big.NewInt(10))
+		if bumpedMaxFee.Cmp(minMaxFee) < 0 {
+			bumpedMaxFee = minMaxFee
+		}
+	}
+	return bumpedTip, bumpedMaxFee
+}
+
+// dropEmptySlot removes a slot from w.slots if it has no remaining candidates.
+// Caller must hold nonceMtx.
+func (w *baseWallet) dropEmptySlot(slotIdx int) {
+	if slotIdx < 0 || slotIdx >= len(w.slots) {
+		return
+	}
+	if len(w.slots[slotIdx].Candidates) > 0 {
+		return
+	}
+	w.slots = append(w.slots[:slotIdx], w.slots[slotIdx+1:]...)
+}
+
+// autoBumpFeesEligible reports whether the slot is a candidate for the auto
+// fee-bump scheduler under the given policy: its original is a redeem or
+// refund tx, no candidate has been mined yet, and the original was broadcast
+// more than policy.StartAge ago.
+func autoBumpFeesEligible(s *nonceSlot, policy autoBumpPolicy) bool {
+	if s == nil || len(s.Candidates) == 0 {
+		return false
+	}
+	if s.consumed() {
+		return false
+	}
+	typ := s.original().Type
+	if typ != asset.Redeem && typ != asset.Refund {
+		return false
+	}
+	return s.original().age() > policy.StartAge
+}
+
+// autoBumpTask captures everything an auto-bump needs to do its RPCs without
+// holding nonceMtx, plus the inputs to commit the new candidate back into
+// the slot under a re-acquired lock.
+type autoBumpTask struct {
+	slotNonce              *big.Int  // identifies the slot at commit time
+	latestTxIDAtCollection string    // detect if slot.latest changed under us
+	bumpedFeeCap           *big.Int  // proposed cap for the new tx
+	bumpedTipCap           *big.Int  // proposed tip for the new tx
+	gas                    uint64
+	to                     common.Address
+	data                   []byte
+	value                  *big.Int
+	txType                 asset.TransactionType
+	amount                 uint64
+	recipient              *string
+	tokenID                *uint32
+	feesBumps              int64 // latest's count; new candidate gets +1
+	originalFeeCapForLog   *big.Int
+}
+
+// collectAutoBumpTasks decides whether the head slot needs an auto fee-bump
+// this tick, returning at most one task to execute outside the lock. The
+// head slot is the lowest non-finalized non-consumed nonce — non-head
+// Redeem/Refund slots are queued behind some earlier slot in mempool and
+// won't mine until that earlier slot resolves, so bumping their fees burns
+// no value and would emit misleading cap-reached warnings. Once head
+// finalizes/consumes, the next tick promotes the next slot to head and
+// the auto-bump scheduler picks up where it left off. If the head slot's
+// proposed bump would exceed the policy cap, the one-shot cap warning is
+// emitted inline (no RPC involved). Caller must hold nonceMtx.
+func (w *baseWallet) collectAutoBumpTasks(policy autoBumpPolicy) []autoBumpTask {
+	if policy.RatePct < 110 || policy.MaxMult < 1 {
+		return nil
+	}
+	headIdx := findHeadSlot(w.slots)
+	if headIdx < 0 {
+		return nil
+	}
+	slot := w.slots[headIdx]
+	if !autoBumpFeesEligible(slot, policy) {
+		return nil
+	}
+	if !slot.lastAutoBumpAt.IsZero() && time.Since(slot.lastAutoBumpAt) < policy.Interval {
+		return nil
+	}
+	latest := slot.latest()
+	original := slot.original()
+	latestTx, err := latest.tx()
+	if err != nil {
+		w.log.Errorf("auto-bump collect: decode latest tx for nonce %s: %v", slot.Nonce, err)
+		return nil
+	}
+	originalTx, err := original.tx()
+	if err != nil {
+		w.log.Errorf("auto-bump collect: decode original tx for nonce %s: %v", slot.Nonce, err)
+		return nil
+	}
+
+	bumpedFeeCap := new(big.Int).Mul(latestTx.GasFeeCap(), big.NewInt(int64(policy.RatePct)))
+	bumpedFeeCap.Div(bumpedFeeCap, big.NewInt(100))
+	bumpedTipCap := new(big.Int).Mul(latestTx.GasTipCap(), big.NewInt(int64(policy.RatePct)))
+	bumpedTipCap.Div(bumpedTipCap, big.NewInt(100))
+
+	cap := new(big.Int).Mul(originalTx.GasFeeCap(), big.NewInt(int64(policy.MaxMult)))
+	if bumpedFeeCap.Cmp(cap) > 0 {
+		if !slot.autoBumpCapNoticed {
+			slot.autoBumpCapNoticed = true
+			w.log.Warnf("Auto fee-bump cap reached for stuck %s tx at nonce %s (slot age %s); manual review needed",
+				original.Type.Label(), slot.Nonce, original.age().Round(time.Minute))
+			w.emitDataForCandidate(latest, autoBumpCappedRoute, &AutoBumpCappedNote{
+				Nonce:      slot.Nonce.Uint64(),
+				TxID:       latest.ID,
+				Type:       original.Type,
+				FeeCapGwei: dexeth.WeiToGweiCeil(latestTx.GasFeeCap()),
+				CapGwei:    dexeth.WeiToGweiCeil(cap),
+			})
+		}
+		return nil
+	}
+
+	addr := latestTx.To()
+	if addr == nil {
+		w.log.Errorf("auto-bump collect: latest tx for nonce %s has no recipient", slot.Nonce)
+		return nil
+	}
+	return []autoBumpTask{{
+		slotNonce:              new(big.Int).Set(slot.Nonce),
+		latestTxIDAtCollection: latest.ID,
+		bumpedFeeCap:           bumpedFeeCap,
+		bumpedTipCap:           bumpedTipCap,
+		gas:                    latestTx.Gas(),
+		to:                     *addr,
+		data:                   append([]byte(nil), latestTx.Data()...),
+		value:                  new(big.Int).Set(latestTx.Value()),
+		txType:                 latest.Type,
+		amount:                 latest.Amount,
+		recipient:              latest.Recipient,
+		tokenID:                latest.TokenID,
+		feesBumps:              latest.feesBumps,
+		originalFeeCapForLog:   new(big.Int).Set(latestTx.GasFeeCap()),
+	}}
+}
+
+// executeAutoBumpTasks runs OUTSIDE nonceMtx. For each task it does the
+// sendTransaction RPC, then takes nonceMtx briefly to commit the new
+// candidate to its slot. If the slot's state at commit time has shifted
+// (slot dropped, another candidate landed, or latest changed since
+// collection), the bump is discarded — slot.lastAutoBumpAt stays unchanged
+// so the next tick can retry.
+func (w *baseWallet) executeAutoBumpTasks(tasks []autoBumpTask) {
+	for _, task := range tasks {
+		if err := w.executeOneAutoBump(task); err != nil {
+			w.log.Errorf("auto fee-bump for nonce %s: %v", task.slotNonce, err)
+		}
+	}
+}
+
+func (w *baseWallet) executeOneAutoBump(task autoBumpTask) error {
+	txOpts, err := w.node.txOpts(w.ctx, 0, task.gas, task.bumpedFeeCap, task.bumpedTipCap, task.slotNonce)
+	if err != nil {
+		return fmt.Errorf("txOpts: %w", err)
+	}
+	txOpts.Value = task.value
+	newTx, err := w.node.sendTransaction(w.ctx, txOpts, &task.to, task.data, allowAlreadyKnownFilter)
+	if err != nil {
+		return fmt.Errorf("broadcast: %w", err)
+	}
+
+	w.nonceMtx.Lock()
+	defer w.nonceMtx.Unlock()
+
+	slotIdx := slotByNonce(w.slots, task.slotNonce)
+	if slotIdx < 0 {
+		w.log.Tracef("auto-bump commit: slot at nonce %s no longer exists; discarding bump tx %s",
+			task.slotNonce, newTx.Hash())
+		return nil
+	}
+	slot := w.slots[slotIdx]
+	if slot.consumed() {
+		w.log.Tracef("auto-bump commit: slot at nonce %s already has a winner; discarding bump tx %s",
+			task.slotNonce, newTx.Hash())
+		return nil
+	}
+	if slot.latest().ID != task.latestTxIDAtCollection {
+		w.log.Tracef("auto-bump commit: slot at nonce %s gained a new candidate since collect (%s -> %s); discarding bump tx %s",
+			task.slotNonce, task.latestTxIDAtCollection, slot.latest().ID, newTx.Hash())
+		return nil
+	}
+
+	res := &genTxResult{
+		tx:        newTx,
+		txType:    task.txType,
+		amt:       task.amount,
+		recipient: task.recipient,
+	}
+	cand := w.extendAndStoreTx(res, task.tokenID)
+	cand.Purpose = CandidateFeeBump
+	cand.feesBumps = task.feesBumps + 1
+	w.tryStoreDBTx(cand)
+	slot.addCandidate(cand)
+	slot.lastAutoBumpAt = time.Now()
+	w.emitTransactionNote(cand.WalletTransaction, true)
+	w.log.Infof("Auto fee-bump for stuck %s at nonce %s: feeCap %d -> %d gwei",
+		task.txType.Label(), task.slotNonce,
+		dexeth.WeiToGweiCeil(task.originalFeeCapForLog), dexeth.WeiToGweiCeil(task.bumpedFeeCap))
+	return nil
+}
+
+// broadcastAbandonReplacement signs and broadcasts a 0-value self-send tx at
+// the slot's nonce with fees bumped enough to clear the network's
+// replacement-underpriced rule relative to slot.latest(). It returns a new
+// candidate (ready to be added to the slot) with Purpose=AbandonReplacement.
+// Caller must hold nonceMtx.
+func (w *baseWallet) broadcastAbandonReplacement(slot *nonceSlot) (*extendedWalletTx, error) {
+	latest := slot.latest()
+	baseRate, tipRate, err := w.currentNetworkFees(w.ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting network fees for abandon: %w", err)
+	}
+	// Bump tip rate one level beyond whatever the latest candidate already
+	// reflects, so the network accepts the replacement.
+	bumpedTipRate := new(big.Int).Mul(tipRate, big.NewInt(latest.feesBumps+2))
+	bumpedMaxFeeRate := new(big.Int).Add(baseRate, bumpedTipRate)
+
+	txOpts, err := w.node.txOpts(w.ctx, 0, defaultSendGasLimit, bumpedMaxFeeRate, bumpedTipRate, slot.Nonce)
+	if err != nil {
+		return nil, fmt.Errorf("error preparing tx opts for abandon: %w", err)
+	}
+	tx, err := w.node.sendTransaction(w.ctx, txOpts, &w.addr, nil, allowAlreadyKnownFilter)
+	if err != nil {
+		return nil, fmt.Errorf("error broadcasting abandon-replacement tx: %w", err)
+	}
+	recipient := w.addr.Hex()
+	cand := w.extendAndStoreTx(&genTxResult{
+		tx:        tx,
+		txType:    asset.SelfSend,
+		amt:       0,
+		recipient: &recipient,
+	}, nil)
+	cand.Purpose = CandidateAbandonReplacement
+	cand.feesBumps = latest.feesBumps + 1
+	w.tryStoreDBTx(cand)
+	return cand, nil
 }
 
 // userActionStuckDueToLowFees is a request by a user to resolve a actionTypeTooCheap
@@ -8715,23 +9236,27 @@ func (w *assetWallet) userActionStuckDueToLowFees(actionB []byte) error {
 	}
 
 	if action.Abandon {
-		// Just drop transaction from our pending list. Note, this transaction might still
-		// be mined in which case we'll either discover this by monitoring blockchain events
-		// or user might need to manually resolve it.
-		w.log.Infof("Abandoning transaction %s via user action", action.TxID)
-		return w.amendPendingTx(action.TxID, func(_ common.Hash, _ *types.Transaction, wt *extendedWalletTx, idx int) error {
-			wt.AssumedLost = true
-			w.tryStoreDBTx(wt)
-			copy(w.pendingTxs[idx:], w.pendingTxs[idx+1:])
-			w.pendingTxs = w.pendingTxs[:len(w.pendingTxs)-1]
+		// True abandon: broadcast a 0-value self-send at the same nonce with
+		// enough fees to clear the network's replacement-underpriced rule.
+		// When that mines, slot finalizes via the abandon candidate and the
+		// original (still in-flight) gets marked as replaced (FeeReplacement
+		// stays false because the winner is an abandon, not a fee bump).
+		w.log.Infof("Abandoning transaction %s via 0-value replacement", action.TxID)
+		return w.amendPendingTx(action.TxID, func(_ common.Hash, _ *types.Transaction, _ int, slot *nonceSlot, _ *extendedWalletTx) error {
+			cand, err := w.broadcastAbandonReplacement(slot)
+			if err != nil {
+				return err
+			}
+			slot.addCandidate(cand)
+			w.emitTransactionNote(cand.WalletTransaction, true)
 			return nil
 		})
 	}
 
 	if !action.Bump {
 		w.log.Infof("Waiting for transaction %s to finalize on it's own via user action", action.TxID)
-		return w.amendPendingTx(action.TxID, func(txHash common.Hash, _ *types.Transaction, pendingTx *extendedWalletTx, _ int) error {
-			pendingTx.lastActionRejected = time.Now()
+		return w.amendPendingTx(action.TxID, func(txHash common.Hash, _ *types.Transaction, _ int, _ *nonceSlot, candidate *extendedWalletTx) error {
+			candidate.lastActionRejected = time.Now()
 			return nil
 		})
 	}
@@ -8741,7 +9266,7 @@ func (w *assetWallet) userActionStuckDueToLowFees(actionB []byte) error {
 		return errors.New("no newFees value specified")
 	}
 
-	return w.amendPendingTx(action.TxID, func(txHash common.Hash, tx *types.Transaction, pendingTx *extendedWalletTx, idx int) error {
+	return w.amendPendingTx(action.TxID, func(txHash common.Hash, tx *types.Transaction, _ int, slot *nonceSlot, candidate *extendedWalletTx) error {
 		maxFeeRateReasonable := func(maxFeeRate *big.Int) bool {
 			// tolerate ~20% fee difference (not more) between actual max fee rate we are gonna
 			// fee-bump transaction to and max fee rate user signed-off on in UI
@@ -8754,11 +9279,21 @@ func (w *assetWallet) userActionStuckDueToLowFees(actionB []byte) error {
 		if err != nil {
 			return fmt.Errorf("error getting new fee rate: %w", err)
 		}
-		// have to bump tipRate too (and set maxFeeRate accordingly) compared to the previously
-		// pending transaction at that nonce (if there is any previous transaction that network still
-		// remembers) - otherwise it will get rejected as "underpriced"
-		bumpedTipRate := new(big.Int).Mul(tipRate, big.NewInt(1+pendingTx.feesBumps))
+		// Network-rate-derived bump, then floored to clear the slot's CURRENT
+		// latest candidate caps (not just the dialog's). This matters when an
+		// auto-bump landed between the prompt's emission and the user's
+		// click — slot.latest() may have higher caps than the dialog's tx,
+		// so flooring against the dialog's tx alone could quote a value the
+		// network would reject as replacement-underpriced.
+		floorTip, floorMaxFee := tx.GasTipCap(), tx.GasFeeCap()
+		if latestCand := slot.latest(); latestCand.ID != candidate.ID {
+			if latestTx, lErr := latestCand.tx(); lErr == nil {
+				floorTip, floorMaxFee = latestTx.GasTipCap(), latestTx.GasFeeCap()
+			}
+		}
+		bumpedTipRate := new(big.Int).Mul(tipRate, big.NewInt(1+candidate.feesBumps))
 		bumpedMaxFeeRate := new(big.Int).Add(baseRate, bumpedTipRate)
+		bumpedTipRate, bumpedMaxFeeRate = replacementBumpedFees(bumpedTipRate, bumpedMaxFeeRate, floorTip, floorMaxFee)
 		if !maxFeeRateReasonable(bumpedMaxFeeRate) {
 			w.log.Warnf("Skipping fee bump for tx %s (nonce = %d) since current fee rate is "+
 				"much higher than what user approved", txHash, nonce)
@@ -8780,33 +9315,34 @@ func (w *assetWallet) userActionStuckDueToLowFees(actionB []byte) error {
 		}
 
 		var bridgeTx *genBridgeTxResult
-		if pendingTx.BridgeCounterpartTx != nil {
+		if candidate.BridgeCounterpartTx != nil {
 			bridgeTx = &genBridgeTxResult{
-				counterpartAssetID:         pendingTx.BridgeCounterpartTx.AssetID,
-				counterpartTxID:            pendingTx.BridgeCounterpartTx.IDs[0],
-				requiresFollowUp:           pendingTx.RequiresFollowUp,
-				previousBridgeCompletionID: pendingTx.PreviousBridgeCompletionID,
-				followUpData:               pendingTx.BridgeFollowUpData,
-				bridgeName:                 pendingTx.BridgeName,
+				counterpartAssetID:         candidate.BridgeCounterpartTx.AssetID,
+				counterpartTxID:            candidate.BridgeCounterpartTx.IDs[0],
+				requiresFollowUp:           candidate.RequiresFollowUp,
+				previousBridgeCompletionID: candidate.PreviousBridgeCompletionID,
+				followUpData:               candidate.BridgeFollowUpData,
+				bridgeName:                 candidate.BridgeName,
 			}
 		}
 
 		res := &genTxResult{
 			tx:        newTx,
-			txType:    pendingTx.Type,
-			amt:       pendingTx.Amount,
-			recipient: pendingTx.Recipient,
+			txType:    candidate.Type,
+			amt:       candidate.Amount,
+			recipient: candidate.Recipient,
 			bridge:    bridgeTx,
 		}
-		newPendingTx := w.extendedTx(res)
+		newCandidate := w.extendedTx(res)
+		newCandidate.Purpose = CandidateFeeBump
+		newCandidate.feesBumps = candidate.feesBumps
+		w.tryStoreDBTx(newCandidate)
 
-		pendingTx.NonceReplacement = newPendingTx.ID
-		pendingTx.FeeReplacement = true
-
-		w.tryStoreDBTx(pendingTx)
-		w.tryStoreDBTx(newPendingTx)
-
-		w.pendingTxs[idx] = newPendingTx
+		// Phase 2 slot semantics: keep the original candidate in the slot so
+		// we still monitor its receipt (it may already be in the network's
+		// mempool and could win the race). NonceReplacement / FeeReplacement
+		// are set on the loser by checkPendingTxs once a winner emerges.
+		slot.addCandidate(newCandidate)
 		return nil
 	})
 }
@@ -8838,25 +9374,31 @@ func (w *assetWallet) userActionNonceReplacement(actionB []byte) error {
 	}
 	abandon := *action.Abandon
 	if !abandon && action.ReplacementID == "" { // keep waiting
-		return w.amendPendingTx(action.TxID, func(_ common.Hash, _ *types.Transaction, pendingTx *extendedWalletTx, idx int) error {
-			pendingTx.lastActionRejected = time.Now()
+		return w.amendPendingTx(action.TxID, func(_ common.Hash, _ *types.Transaction, _ int, _ *nonceSlot, candidate *extendedWalletTx) error {
+			candidate.lastActionRejected = time.Now()
 			return nil
 		})
 	}
 	if abandon {
-		// Just drop transaction from our pending list. Note, this transaction might still
-		// be mined in which case we'll either discover this by monitoring blockchain events
-		// or user might need to manually resolve it.
-		return w.amendPendingTx(action.TxID, func(txHash common.Hash, _ *types.Transaction, wt *extendedWalletTx, idx int) error {
+		// "Lost nonce" abandon means the user is telling us an external tx
+		// (sent from this account by another tool) has consumed the nonce
+		// our local tx targeted. A 0-value self-send replacement at this
+		// nonce would be rejected as "nonce too low" because the chain has
+		// already accepted something else there — so this path keeps the
+		// "drop from local tracking" semantics. The actionTypeTooCheap
+		// abandon path uses true 0-value replacement; that's the right
+		// behavior when our tx is still alive in the mempool.
+		return w.amendPendingTx(action.TxID, func(txHash common.Hash, _ *types.Transaction, slotIdx int, slot *nonceSlot, wt *extendedWalletTx) error {
 			w.log.Infof("Abandoning transaction %s via user action", txHash)
 			wt.AssumedLost = true
 			w.tryStoreDBTx(wt)
-			pendingTx := w.pendingTxs[idx]
-			if pendingTx.Nonce.Cmp(w.confirmedNonceAt) == 0 {
+			slot.removeCandidate(wt.ID)
+			// Preserve the legacy nextNonceAt adjustment when the abandoned
+			// candidate empties its slot at confirmedNonceAt.
+			if len(slot.Candidates) == 0 && slot.Nonce.Cmp(w.confirmedNonceAt) == 0 {
 				w.nextNonceAt.Add(w.nextNonceAt, big.NewInt(-1))
 			}
-			copy(w.pendingTxs[idx:], w.pendingTxs[idx+1:])
-			w.pendingTxs = w.pendingTxs[:len(w.pendingTxs)-1]
+			w.dropEmptySlot(slotIdx)
 			return nil
 		})
 	}
@@ -8875,18 +9417,18 @@ func (w *assetWallet) userActionNonceReplacement(actionB []byte) error {
 		return fmt.Errorf("specified replacement tx originator %s is not you", from)
 	}
 
-	return w.amendPendingTx(action.TxID, func(txHash common.Hash, oldTx *types.Transaction, pendingTx *extendedWalletTx, idx int) error {
-		if replacementTx.Nonce() != pendingTx.Nonce.Uint64() {
-			return fmt.Errorf("nonce replacement doesn't have the right nonce. %d != %s", replacementTx.Nonce(), pendingTx.Nonce)
+	return w.amendPendingTx(action.TxID, func(txHash common.Hash, oldTx *types.Transaction, _ int, slot *nonceSlot, candidate *extendedWalletTx) error {
+		if replacementTx.Nonce() != candidate.Nonce.Uint64() {
+			return fmt.Errorf("nonce replacement doesn't have the right nonce. %d != %s", replacementTx.Nonce(), candidate.Nonce)
 		}
 		recipient := w.addr.Hex()
-		newPendingTx := w.extendedTx(&genTxResult{
+		newCandidate := w.extendedTx(&genTxResult{
 			tx:        replacementTx,
 			txType:    asset.Unknown,
 			amt:       0,
 			recipient: &recipient,
 		})
-		pendingTx.NonceReplacement = newPendingTx.ID
+		candidate.NonceReplacement = newCandidate.ID
 		var oldTo, newTo common.Address
 		if oldAddr := oldTx.To(); oldAddr != nil {
 			oldTo = *oldAddr
@@ -8895,11 +9437,12 @@ func (w *assetWallet) userActionNonceReplacement(actionB []byte) error {
 			newTo = *newAddr
 		}
 		if bytes.Equal(oldTx.Data(), replacementTx.Data()) && oldTo == newTo {
-			pendingTx.FeeReplacement = true
+			candidate.FeeReplacement = true
+			newCandidate.Purpose = CandidateFeeBump
 		}
-		w.tryStoreDBTx(pendingTx)
-		w.tryStoreDBTx(newPendingTx)
-		w.pendingTxs[idx] = newPendingTx
+		w.tryStoreDBTx(candidate)
+		w.tryStoreDBTx(newCandidate)
+		slot.addCandidate(newCandidate)
 		return nil
 	})
 }
@@ -8935,7 +9478,7 @@ func (w *assetWallet) userActionRecoverNonces(actionB []byte) error {
 	}
 	w.nonceMtx.Lock()
 	defer w.nonceMtx.Unlock()
-	missingNonces := findMissingNonces(w.confirmedNonceAt, w.nextNonceAt, w.pendingTxs)
+	missingNonces := findMissingNonces(w.confirmedNonceAt, w.nextNonceAt, w.slots)
 	if len(missingNonces) == 0 {
 		w.emit.ActionResolved(w.missingNoncesActionID())
 		return nil
@@ -8978,10 +9521,9 @@ func (w *assetWallet) userActionRecoverNonces(actionB []byte) error {
 				recipient: &recipient,
 			}, nil)
 			w.emitTransactionNote(pendingTx.WalletTransaction, true)
-			w.pendingTxs = append(w.pendingTxs, pendingTx)
-			sort.Slice(w.pendingTxs, func(i, j int) bool {
-				return w.pendingTxs[i].Nonce.Cmp(w.pendingTxs[j].Nonce) < 0
-			})
+			// findMissingNonces guarantees the gap nonce had no slot, so we
+			// always create a new slot here.
+			w.slots = insertSlotSorted(w.slots, newNonceSlot(pendingTx))
 		}
 		if i < len(missingNonces)-1 {
 			select {
@@ -9104,6 +9646,7 @@ func (w *baseWallet) extendAndStoreTx(genTxResult *genTxResult, tokenAssetID *ui
 		CallData:       genTxResult.tx.Data(),
 		RawTx:          rawTx,
 		Nonce:          big.NewInt(int64(nonce)),
+		Purpose:        CandidateOriginal,
 		txHash:         genTxResult.tx.Hash(),
 		savedToDB:      true,
 		lastBroadcast:  now,
@@ -9289,17 +9832,17 @@ func (w *assetWallet) PendingTransactions(ctx context.Context) []*asset.WalletTr
 	w.nonceMtx.RLock()
 	defer w.nonceMtx.RUnlock()
 	txs := make([]*asset.WalletTransaction, 0)
-	for _, tx := range w.pendingTxs {
+	eachCandidate(w.slots, func(tx *extendedWalletTx) {
 		txAssetID := w.baseChainID
 		if tx.TokenID != nil {
 			txAssetID = *tx.TokenID
 		}
 		if w.assetID != txAssetID {
-			continue
+			return
 		}
 		txCopy := *tx.WalletTransaction
 		txs = append(txs, &txCopy)
-	}
+	})
 	return txs
 }
 

@@ -40,6 +40,12 @@ type extendedWalletTx struct {
 	// This typically requires feedback from the user in response to an
 	// ActionRequiredNote.
 	AssumedLost bool `json:"assumedLost,omitempty"`
+	// Purpose distinguishes how this tx came to be broadcast at its slot's
+	// nonce: an "original" (newly allocated nonce), a "feebump" appended to an
+	// existing slot, or an "abandon" 0-value replacement (Phase 3+). Empty
+	// is treated as original for back-compat with records persisted before
+	// this field existed.
+	Purpose CandidatePurpose `json:"purpose,omitempty"`
 
 	// The following fields are used for bridge completions that require a follow-up
 	// transaction. This is currently only required for withdrawing POL from Polygon
@@ -79,6 +85,7 @@ const (
 	dbVersion                      = 2
 	txsTable                       = "txs"
 	bridgeCompletionsTable         = "bridgeCompletions"
+	operationsTable                = "operations"
 	allAssetIndexName              = "allAssets"
 	assetIndexName                 = "asset"
 	bridgeInitiationIndexName      = "bridgeinit"
@@ -139,6 +146,14 @@ type txDB interface {
 	getBridges(tokenID *uint32, n int, refID *common.Hash, past bool) ([]*asset.WalletTransaction, error)
 	getPendingBridges(tokenID *uint32) ([]*extendedWalletTx, error)
 	getBridgeCompletions(initiationTxID string) ([]*extendedWalletTx, error)
+	// storeOp persists an Operation. If an Operation with the same OpKey
+	// already exists, it is replaced.
+	storeOp(op *Operation) error
+	// getOp loads an Operation by OpKey, returning nil if not found.
+	getOp(key OpKey) (*Operation, error)
+	// getAllOps returns every persisted Operation. Used at startup to rebuild
+	// the in-memory opLog.
+	getAllOps() ([]*Operation, error)
 }
 
 type TxDB struct {
@@ -146,6 +161,7 @@ type TxDB struct {
 
 	txs               *lexi.Table
 	bridgeCompletions *lexi.Table
+	operations        *lexi.Table
 
 	allAssetIndex              *lexi.Index
 	assetIndex                 *lexi.Index
@@ -252,6 +268,11 @@ func NewTxDB(path string, log dex.Logger, baseChainID uint32) (*TxDB, error) {
 		return nil, err
 	}
 
+	operations, err := ldb.Table(operationsTable)
+	if err != nil {
+		return nil, err
+	}
+
 	allAssetIndex, err := txs.AddUniqueIndex(allAssetIndexName, func(k, v lexi.KV) ([]byte, error) {
 		wt, is := v.(*extendedWalletTx)
 		if !is {
@@ -306,6 +327,7 @@ func NewTxDB(path string, log dex.Logger, baseChainID uint32) (*TxDB, error) {
 		DB:                         ldb,
 		txs:                        txs,
 		bridgeCompletions:          bridgeCompletions,
+		operations:                 operations,
 		allAssetIndex:              allAssetIndex,
 		assetIndex:                 assetIndex,
 		bridgeInitiationIndex:      bridgeInitiationIndex,
@@ -719,4 +741,41 @@ func (db *TxDB) getBridgeCompletions(initiationTxID string) ([]*extendedWalletTx
 	}
 
 	return txs, nil
+}
+
+// storeOp persists an Operation, replacing any existing entry with the same key.
+func (db *TxDB) storeOp(op *Operation) error {
+	return db.operations.Set([]byte(op.Key), op, lexi.WithReplace())
+}
+
+// getOp loads an Operation by OpKey, returning (nil, nil) if it does not exist.
+func (db *TxDB) getOp(key OpKey) (*Operation, error) {
+	op := new(Operation)
+	if err := db.operations.Get([]byte(key), op); err != nil {
+		if errors.Is(err, lexi.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return op, nil
+}
+
+// getAllOps returns every persisted Operation. Used at startup to rebuild the
+// in-memory opLog.
+func (db *TxDB) getAllOps() ([]*Operation, error) {
+	var ops []*Operation
+	err := db.operations.Iterate(nil, func(it *lexi.Iter) error {
+		op := new(Operation)
+		if err := it.V(func(vB []byte) error {
+			return op.UnmarshalBinary(vB)
+		}); err != nil {
+			return err
+		}
+		ops = append(ops, op)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ops, nil
 }

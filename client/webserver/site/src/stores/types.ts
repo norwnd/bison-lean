@@ -480,6 +480,32 @@ export interface TransactionActionNote {
   tx: WalletTransaction
   nonce: number
   newFees: number
+  // blocked summarizes pending wallet txs at higher nonces that are queued
+  // behind tx — they cannot mine until tx is resolved (mined, abandoned, or
+  // dropped from tracking). Surfaced so the user knows what depends on
+  // their decision on this prompt.
+  blocked?: BlockedTxInfo[]
+}
+
+export interface BlockedTxInfo {
+  id: string
+  // type matches the Go asset.TransactionType numeric enum (Send, Swap,
+  // Redeem, Refund, etc.).
+  type: number
+}
+
+// AutoBumpCappedNote arrives on the wallet's data-note channel under
+// route="autoBumpCapped" once per slot when the eth-wallet's auto fee-bump
+// scheduler stops bumping a stuck Redeem/Refund because the next bump
+// would exceed the policy's hard cap. After this fires the wallet leaves
+// the slot's fees where they are; the user must Bump or Abandon manually
+// via the usual too-cheap action prompt.
+export interface AutoBumpCappedNote {
+  nonce: number
+  txID: string
+  type: number
+  feeCapGwei: number
+  capGwei: number
 }
 
 export interface WalletNote extends CoreNote {

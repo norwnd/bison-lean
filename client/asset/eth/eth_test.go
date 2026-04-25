@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"decred.org/dcrdex/client/asset"
-	"decred.org/dcrdex/client/asset/broadcast"
 	"decred.org/dcrdex/dex"
 	"decred.org/dcrdex/dex/config"
 	"decred.org/dcrdex/dex/encode"
@@ -716,6 +715,15 @@ func (db *tTxDB) getPendingBridges(tokenID *uint32) ([]*extendedWalletTx, error)
 func (db *tTxDB) getBridgeCompletions(initiationTxID string) ([]*extendedWalletTx, error) {
 	return []*extendedWalletTx{db.txToGet}, db.getTxErr
 }
+func (db *tTxDB) storeOp(_ *Operation) error {
+	return nil
+}
+func (db *tTxDB) getOp(_ OpKey) (*Operation, error) {
+	return nil, nil
+}
+func (db *tTxDB) getAllOps() ([]*Operation, error) {
+	return nil, nil
+}
 
 // func TestCheckUnconfirmedTxs(t *testing.T) {
 // 	const tipHeight = 50
@@ -1152,7 +1160,10 @@ func TestCheckPendingTxs(t *testing.T) {
 	finalizedStamp := now - txConfsNeededToConfirm*10
 	rebroadcastable := now - 300
 	mature := now - 600 // able to send actions
-	agedOut := now - uint64(txActionPromptFrequency.Seconds()) - 1
+	// Older than txAgeOut (2h) so the assumed-lost path (Phase A's
+	// persistent-RPC-error branch) trips, and so the lost-from-mempool
+	// heuristic in maybePromptHead also triggers for unindexed slots.
+	agedOut := now - uint64(txAgeOut.Seconds()) - 1
 
 	val := dexeth.GweiToWei(1)
 	extendedTx := func(nonce, blockNum, blockStamp, submissionStamp uint64) *extendedWalletTx {
@@ -1167,6 +1178,17 @@ func TestCheckPendingTxs(t *testing.T) {
 		pendingTx.SubmissionTime = submissionStamp
 		pendingTx.lastBroadcast = time.Unix(int64(submissionStamp), 0)
 		pendingTx.lastFeeCheck = time.Unix(int64(submissionStamp), 0)
+		// Slot model requires winner.Receipt != nil for slot.finalized() to
+		// trip — Confirmed alone isn't enough. Stamp a receipt on any tx
+		// the test stages as already-mined so checkPendingTxs's Phase A
+		// can see it.
+		if blockNum > 0 {
+			pendingTx.Receipt = &types.Receipt{
+				BlockNumber:       new(big.Int).SetUint64(blockNum),
+				Status:            types.ReceiptStatusSuccessful,
+				EffectiveGasPrice: big.NewInt(1),
+			}
+		}
 		return pendingTx
 	}
 
@@ -1281,7 +1303,7 @@ func TestCheckPendingTxs(t *testing.T) {
 
 			node.lastSignedTx = nil
 			eth.currentTip = &types.Header{Number: new(big.Int).SetUint64(tip)}
-			eth.pendingTxs = tt.pendingTxs
+			eth.slots = buildSlots(tt.pendingTxs)
 			for i, r := range tt.receipts {
 				pendingTx := tt.pendingTxs[i]
 				if tt.receiptErrs != nil {
@@ -1302,12 +1324,12 @@ func TestCheckPendingTxs(t *testing.T) {
 				}
 			}
 			eth.checkPendingTxs()
-			if len(eth.pendingTxs) != len(tt.noncesAfter) {
-				t.Fatalf("wrong number of pending txs. expected %d got %d", len(tt.noncesAfter), len(eth.pendingTxs))
+			if len(eth.slots) != len(tt.noncesAfter) {
+				t.Fatalf("wrong number of pending slots. expected %d got %d", len(tt.noncesAfter), len(eth.slots))
 			}
-			for i, pendingTx := range eth.pendingTxs {
-				if pendingTx.Nonce.Uint64() != tt.noncesAfter[i] {
-					t.Fatalf("Expected nonce %d at index %d, but got nonce %s", tt.noncesAfter[i], i, pendingTx.Nonce)
+			for i, slot := range eth.slots {
+				if slot.Nonce.Uint64() != tt.noncesAfter[i] {
+					t.Fatalf("Expected nonce %d at index %d, but got nonce %s", tt.noncesAfter[i], i, slot.Nonce)
 				}
 			}
 			if tt.actionID != "" {
@@ -1319,11 +1341,618 @@ func TestCheckPendingTxs(t *testing.T) {
 				t.Fatalf("wrong recast result recast = %t, lastSignedTx = %t", tt.recast, node.lastSignedTx != nil)
 			}
 			for i, expLost := range tt.assumedLost {
-				if eth.pendingTxs[i].AssumedLost != expLost {
-					t.Fatalf("expected AssumedLost=%v for tx at index %d, got %v", expLost, i, eth.pendingTxs[i].AssumedLost)
+				if eth.slots[i].original().AssumedLost != expLost {
+					t.Fatalf("expected AssumedLost=%v for tx at index %d, got %v", expLost, i, eth.slots[i].original().AssumedLost)
 				}
 			}
 		})
+	}
+}
+
+// TestCheckPendingTxsMultiCandidateSlot exercises the Phase 2 slot model:
+// a single nonce slot with two candidate txs (an original + a fee-bump),
+// where one candidate's receipt comes back finalized and the other has no
+// receipt. Verifies that:
+//   - The winning candidate is confirmed.
+//   - The losing candidate is marked as a fee-replacement of the winner.
+//   - confirmedNonceAt advances by one.
+//   - The slot is dropped from in-memory tracking.
+func TestCheckPendingTxsMultiCandidateSlot(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	const tip = 12552
+	const finalized = tip - txConfsNeededToConfirm + 1
+	now := uint64(time.Now().Unix())
+	eth.currentTip = &types.Header{Number: big.NewInt(tip)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(1)
+
+	val := dexeth.GweiToWei(1)
+	candA := eth.extendedTx(&genTxResult{
+		tx:     node.newTransaction(0, val),
+		txType: asset.Send,
+		amt:    1,
+	})
+	candA.SubmissionTime = now - 60
+	candA.lastBroadcast = time.Unix(int64(candA.SubmissionTime), 0)
+	candB := eth.extendedTx(&genTxResult{
+		tx:     node.newTransaction(0, val), // same nonce, different signature/hash
+		txType: asset.Send,
+		amt:    1,
+	})
+	candB.SubmissionTime = now - 30
+	candB.lastBroadcast = time.Unix(int64(candB.SubmissionTime), 0)
+	candB.Purpose = CandidateFeeBump
+
+	if candA.txHash == candB.txHash {
+		t.Fatalf("test setup error: candidates must have distinct hashes")
+	}
+
+	slot := newNonceSlot(candA)
+	slot.addCandidate(candB)
+	eth.slots = []*nonceSlot{slot}
+
+	// candB is the winner (its receipt is finalized). candA's receipt lookup
+	// returns CoinNotFoundError as it would for a tx that lost the mempool race.
+	node.receipts[candB.txHash] = &types.Receipt{
+		BlockNumber:       big.NewInt(int64(finalized)),
+		Status:            types.ReceiptStatusSuccessful,
+		EffectiveGasPrice: big.NewInt(1),
+	}
+	tx, _ := candB.tx()
+	node.receiptTxs[candB.txHash] = tx
+	node.hdrByHash[common.Hash{}] = &types.Header{Number: big.NewInt(int64(finalized)), Time: now}
+	node.receiptErrs[candA.txHash] = asset.CoinNotFoundError
+
+	eth.checkPendingTxs()
+
+	if !candB.Confirmed {
+		t.Fatal("expected winner candB to be Confirmed")
+	}
+	if candA.NonceReplacement != candB.ID {
+		t.Fatalf("candA.NonceReplacement: got %q want %q", candA.NonceReplacement, candB.ID)
+	}
+	if !candA.FeeReplacement {
+		t.Fatal("expected candA.FeeReplacement = true (loser is a fee-bump sibling of winner)")
+	}
+	if eth.confirmedNonceAt.Uint64() != 1 {
+		t.Fatalf("confirmedNonceAt: got %s want 1", eth.confirmedNonceAt)
+	}
+	if len(eth.slots) != 0 {
+		t.Fatalf("expected slot to be dropped after finalization, got %d slots", len(eth.slots))
+	}
+}
+
+// TestRedeemProbeFirst exercises Phase 6: a second Redeem() call for the
+// same redemption set whose swap is already SSRedeemed on-chain returns a
+// synthetic success without rebroadcasting. This is the core bug-fix payoff:
+// once the swap state is achieved, the wallet stops trying to re-redeem.
+func TestRedeemProbeFirst(t *testing.T) {
+	w, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	var sh [32]byte
+	copy(sh[:], []byte("phase6-probe-first-secret-hash00"))
+	c := node.tContractor
+	c.swapMap = map[[32]byte]*dexeth.SwapState{
+		sh: {State: dexeth.SSRedeemed, Value: dexeth.GweiToWei(2)},
+	}
+
+	red := &asset.Redemption{
+		Spends: &asset.AuditInfo{
+			Contract:   dexeth.EncodeContractData(0, sh[:]),
+			SecretHash: sh[:],
+			Coin: &coin{
+				txHash: common.HexToHash("0x01"),
+				value:  1,
+			},
+		},
+		Secret: []byte("secret"),
+	}
+
+	// node.sendTxTx is nil; if Redeem tried to broadcast it'd panic on
+	// extendedTx with a nil tx. The test asserts that didn't happen.
+	c.redeemTx = nil
+
+	form := &asset.RedeemForm{
+		Redemptions: []*asset.Redemption{red},
+	}
+	coins, _, _, err := w.(*ETHWallet).Redeem(context.Background(), form)
+	if err != nil {
+		t.Fatalf("Redeem returned error for already-redeemed swap: %v", err)
+	}
+	if len(coins) != 1 {
+		t.Fatalf("expected 1 coin, got %d", len(coins))
+	}
+	zero := common.Hash{}
+	gotHash := common.BytesToHash(coins[0])
+	if gotHash != zero {
+		t.Fatalf("expected zero-hash synthetic coin ID, got %s", gotHash)
+	}
+
+	// The Op should now be Confirmed in the opLog.
+	op := eth.opLog.get(redeemKey(form.Redemptions))
+	if op == nil {
+		t.Fatal("expected Op to be created in opLog")
+	}
+	if op.State != OpStateConfirmed {
+		t.Fatalf("Op.State: got %q want %q", op.State, OpStateConfirmed)
+	}
+
+	// Second call should hit the probe cache and return the same synthetic.
+	coins2, _, _, err := w.(*ETHWallet).Redeem(context.Background(), form)
+	if err != nil {
+		t.Fatalf("second Redeem call returned error: %v", err)
+	}
+	if len(coins2) != 1 || common.BytesToHash(coins2[0]) != zero {
+		t.Fatal("second Redeem should also return synthetic zero-hash coin")
+	}
+}
+
+// TestRedeemProbeUnknownBlocks exercises Phase 6's "unknown" probe path: when
+// all RPC providers error, Redeem must return an error (not broadcast a
+// duplicate). Core retries later.
+func TestRedeemProbeUnknownBlocks(t *testing.T) {
+	w, _, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	var sh [32]byte
+	copy(sh[:], []byte("phase6-unknown-probe-secret-hash"))
+	c := node.tContractor
+	c.swapMap = map[[32]byte]*dexeth.SwapState{}
+	c.swapErr = errors.New("execution reverted")
+
+	red := &asset.Redemption{
+		Spends: &asset.AuditInfo{
+			Contract:   dexeth.EncodeContractData(0, sh[:]),
+			SecretHash: sh[:],
+			Coin: &coin{
+				txHash: common.HexToHash("0x01"),
+				value:  1,
+			},
+		},
+		Secret: []byte("secret"),
+	}
+
+	prevSentTxs := node.sentTxs
+	form := &asset.RedeemForm{
+		Redemptions: []*asset.Redemption{red},
+	}
+	_, _, _, err := w.(*ETHWallet).Redeem(context.Background(), form)
+	if err == nil {
+		t.Fatal("expected Redeem to return an error when probe is unknown")
+	}
+	if node.sentTxs != prevSentTxs {
+		t.Fatal("Redeem must NOT broadcast when probe state is unknown")
+	}
+}
+
+// TestAutoBumpFees exercises Phase 4: a stuck redeem slot whose original was
+// broadcast more than autoBumpStartAge ago should get an automatic fee-bump
+// candidate appended on the next checkPendingTxs tick.
+func TestAutoBumpFees(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	eth.currentTip = &types.Header{Number: big.NewInt(100)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(1)
+	node.baseFee = dexeth.GweiToWei(50)
+	node.tip = dexeth.GweiToWei(5)
+
+	// Build a stuck redeem at nonce 0. fees high enough that the 1.2x bump
+	// stays under the 10x cap.
+	feeCap := dexeth.GweiToWei(100)
+	tipCap := dexeth.GweiToWei(10)
+	redeemTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: feeCap, GasTipCap: tipCap, Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	original := eth.extendedTx(&genTxResult{
+		tx: redeemTx, txType: asset.Redeem, amt: 1,
+	})
+	original.Type = asset.Redeem
+	original.SubmissionTime = uint64(time.Now().Add(-5 * time.Hour).Unix())
+	original.lastBroadcast = time.Unix(int64(original.SubmissionTime), 0)
+	eth.slots = []*nonceSlot{newNonceSlot(original)}
+	// updatePendingTx polls receipts; mimic a not-yet-mined tx with
+	// CoinNotFoundError so we don't panic on nil-receipt below.
+	node.receiptErrs[original.txHash] = asset.CoinNotFoundError
+
+	// Mock the bumped tx that sendTransaction will return.
+	bumpedTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: dexeth.GweiToWei(120), GasTipCap: dexeth.GweiToWei(12),
+		Gas: 50_000, To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	node.sendTxTx = bumpedTx
+	node.receiptErrs[bumpedTx.Hash()] = asset.CoinNotFoundError
+
+	eth.checkPendingTxs()
+
+	if len(eth.slots) != 1 {
+		t.Fatalf("expected 1 slot, got %d", len(eth.slots))
+	}
+	slot := eth.slots[0]
+	if len(slot.Candidates) != 2 {
+		t.Fatalf("expected auto-bump candidate appended, slot has %d candidates", len(slot.Candidates))
+	}
+	bumped := slot.latest()
+	if bumped == original {
+		t.Fatal("latest must be the new auto-bump candidate, not original")
+	}
+	if bumped.Purpose != CandidateFeeBump {
+		t.Fatalf("auto-bump Purpose: got %q want %q", bumped.Purpose, CandidateFeeBump)
+	}
+	if slot.lastAutoBumpAt.IsZero() {
+		t.Fatal("expected slot.lastAutoBumpAt to be set after auto-bump")
+	}
+	if bumped.feesBumps != original.feesBumps+1 {
+		t.Fatalf("feesBumps: got %d want %d", bumped.feesBumps, original.feesBumps+1)
+	}
+}
+
+// TestAutoBumpFeesCap exercises the cap: when latest×1.2 would exceed
+// original×10, no new candidate is added and the cap-noticed flag latches.
+func TestAutoBumpFeesCap(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	eth.currentTip = &types.Header{Number: big.NewInt(100)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(1)
+	node.baseFee = dexeth.GweiToWei(50)
+	node.tip = dexeth.GweiToWei(5)
+
+	originalFeeCap := dexeth.GweiToWei(100) // cap = 1000 gwei
+	originalTipCap := dexeth.GweiToWei(10)
+	originalTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: originalFeeCap, GasTipCap: originalTipCap, Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	original := eth.extendedTx(&genTxResult{
+		tx: originalTx, txType: asset.Redeem, amt: 1,
+	})
+	original.Type = asset.Redeem
+	original.SubmissionTime = uint64(time.Now().Add(-5 * time.Hour).Unix())
+	original.lastBroadcast = time.Unix(int64(original.SubmissionTime), 0)
+
+	// Pre-existing fee-bump near the cap: 900 gwei. Next bump would be 1080 > 1000 cap.
+	prevTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: dexeth.GweiToWei(900), GasTipCap: dexeth.GweiToWei(50),
+		Gas: 50_000, To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	prevBump := eth.extendedTx(&genTxResult{
+		tx: prevTx, txType: asset.Redeem, amt: 1,
+	})
+	prevBump.Type = asset.Redeem
+	prevBump.Purpose = CandidateFeeBump
+	prevBump.feesBumps = 5
+
+	slot := newNonceSlot(original)
+	slot.addCandidate(prevBump)
+	eth.slots = []*nonceSlot{slot}
+	node.receiptErrs[original.txHash] = asset.CoinNotFoundError
+	node.receiptErrs[prevBump.txHash] = asset.CoinNotFoundError
+
+	// If sendTransaction were called we'd see sentTxs increment. Reset.
+	node.sentTxs = 0
+	node.sendTxTx = nil
+
+	eth.checkPendingTxs()
+
+	if len(slot.Candidates) != 2 {
+		t.Fatalf("expected NO new candidate (cap hit), got %d candidates", len(slot.Candidates))
+	}
+	if !slot.autoBumpCapNoticed {
+		t.Fatal("expected slot.autoBumpCapNoticed = true after cap hit")
+	}
+	if node.sentTxs != 0 {
+		t.Fatalf("expected no sendTransaction calls, got %d", node.sentTxs)
+	}
+
+	// Second tick: still capped, should not emit again.
+	slot.lastAutoBumpAt = time.Time{} // ensure throttle doesn't mask
+	eth.checkPendingTxs()
+	if len(slot.Candidates) != 2 {
+		t.Fatalf("no new candidate expected on second tick, got %d", len(slot.Candidates))
+	}
+}
+
+// TestAbandonReplacement exercises Phase 3: when the user clicks Abandon on a
+// stuck redemption, the wallet broadcasts a 0-value self-send at the same
+// nonce. When that mines, the slot finalizes via the abandon candidate, the
+// original is marked as NonceReplacement (without FeeReplacement, since the
+// winner is an abandon).
+func TestAbandonReplacement(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	const tip = 12552
+	const finalized = tip - txConfsNeededToConfirm + 1
+	now := uint64(time.Now().Unix())
+	eth.currentTip = &types.Header{Number: big.NewInt(tip)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(1)
+
+	val := dexeth.GweiToWei(1)
+	original := eth.extendedTx(&genTxResult{
+		tx:     node.newTransaction(0, val),
+		txType: asset.Send,
+		amt:    1,
+	})
+	original.SubmissionTime = now - 60
+	original.lastBroadcast = time.Unix(int64(original.SubmissionTime), 0)
+	eth.slots = []*nonceSlot{newNonceSlot(original)}
+
+	// Mock the abandon-replacement broadcast: sendTransaction returns this tx.
+	abandonTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce:     0,
+		GasTipCap: dexeth.GweiToWei(10),
+		GasFeeCap: dexeth.GweiToWei(50),
+		Gas:       defaultSendGasLimit,
+		To:        &eth.addr,
+		Value:     big.NewInt(0),
+		ChainID:   node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	node.sendTxTx = abandonTx
+
+	abandonAction := []byte(fmt.Sprintf(`{"txID":"%s","abandon":true}`, original.ID))
+	if err := eth.TakeAction(actionTypeTooCheap, abandonAction); err != nil {
+		t.Fatalf("TakeAction Abandon error: %v", err)
+	}
+
+	if len(eth.slots) != 1 {
+		t.Fatalf("expected 1 slot, got %d", len(eth.slots))
+	}
+	slot := eth.slots[0]
+	if len(slot.Candidates) != 2 {
+		t.Fatalf("expected 2 candidates after abandon, got %d", len(slot.Candidates))
+	}
+	abandon := slot.latest()
+	if abandon.Purpose != CandidateAbandonReplacement {
+		t.Fatalf("abandon Purpose: got %q want %q", abandon.Purpose, CandidateAbandonReplacement)
+	}
+	if abandon.txHash != abandonTx.Hash() {
+		t.Fatalf("abandon hash mismatch: %s vs %s", abandon.txHash, abandonTx.Hash())
+	}
+	if abandon == original {
+		t.Fatal("abandon candidate must be distinct from original")
+	}
+
+	// Now simulate the abandon mining and finalizing. The original's receipt
+	// lookup returns CoinNotFoundError (mempool dropped it).
+	blockHash := common.HexToHash("0xbeef")
+	node.receipts[abandon.txHash] = &types.Receipt{
+		BlockNumber:       big.NewInt(int64(finalized)),
+		BlockHash:         blockHash,
+		Status:            types.ReceiptStatusSuccessful,
+		EffectiveGasPrice: big.NewInt(1),
+	}
+	node.receiptTxs[abandon.txHash] = abandonTx
+	node.hdrByHash[blockHash] = &types.Header{Number: big.NewInt(int64(finalized)), Time: now}
+	node.receiptErrs[original.txHash] = asset.CoinNotFoundError
+
+	eth.checkPendingTxs()
+
+	if !abandon.Confirmed {
+		t.Fatal("abandon-replacement should be Confirmed after finalization")
+	}
+	if original.NonceReplacement != abandon.ID {
+		t.Fatalf("original.NonceReplacement: got %q want %q", original.NonceReplacement, abandon.ID)
+	}
+	if original.FeeReplacement {
+		t.Fatal("original.FeeReplacement must be FALSE when winner is an abandon-replacement")
+	}
+	if eth.confirmedNonceAt.Uint64() != 1 {
+		t.Fatalf("confirmedNonceAt: got %s want 1", eth.confirmedNonceAt)
+	}
+	if len(eth.slots) != 0 {
+		t.Fatalf("expected slot dropped after finalization, got %d slots", len(eth.slots))
+	}
+}
+
+// stuckLowFeeSend builds a Send-type extendedWalletTx at the given nonce
+// with a fee cap well below the test's mocked network rate (50+5=55 gwei),
+// stamped old enough that checkPendingTxs's prompt-throttle won't gate it.
+// The tx is mocked as observed by the network's mempool (receiptTxs entry
+// set) so the lost-from-mempool heuristic doesn't trip and divert the
+// prompt away from too-cheap.
+func stuckLowFeeSend(t *testing.T, eth *assetWallet, node *tMempoolNode, nonce uint64) *extendedWalletTx {
+	t.Helper()
+	now := uint64(time.Now().Unix())
+	feeCap := dexeth.GweiToWei(5) // < 55 gwei → too-cheap
+	tipCap := dexeth.GweiToWei(1)
+	tx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: nonce, GasFeeCap: feeCap, GasTipCap: tipCap, Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	wt := eth.extendedTx(&genTxResult{tx: tx, txType: asset.Send, amt: 1})
+	wt.SubmissionTime = now - 600
+	wt.lastBroadcast = time.Unix(int64(wt.SubmissionTime), 0)
+	wt.lastFeeCheck = time.Time{} // ensure first check goes through
+	node.receiptErrs[wt.txHash] = asset.CoinNotFoundError
+	node.receiptTxs[wt.txHash] = tx
+	return wt
+}
+
+// drainActions returns every ActionRequired note currently buffered on the
+// wallet's emit channel.
+func drainActions(emitChan chan asset.WalletNotification) []*asset.ActionRequiredNote {
+	var out []*asset.ActionRequiredNote
+	for {
+		select {
+		case ni := <-emitChan:
+			if n, ok := ni.(*asset.ActionRequiredNote); ok {
+				out = append(out, n)
+			}
+		default:
+			return out
+		}
+	}
+}
+
+// TestPromptSerializationToHeadOnly verifies that with multiple stuck
+// non-finalized non-consumed slots, only the head (lowest nonce) gets a
+// Bump/Abandon/Wait prompt; the queued-behind txs are summarized in the
+// note's Blocked list rather than being independently prompted.
+func TestPromptSerializationToHeadOnly(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	const tip = 12552
+	eth.currentTip = &types.Header{Number: big.NewInt(tip)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(3)
+	node.baseFee = dexeth.GweiToWei(50)
+	node.tip = dexeth.GweiToWei(5)
+
+	emitChan := make(chan asset.WalletNotification, 128)
+	eth.emit = asset.NewWalletEmitter(emitChan, BipID, eth.log)
+
+	head := stuckLowFeeSend(t, eth, node, 0)
+	queued1 := stuckLowFeeSend(t, eth, node, 1)
+	queued2 := stuckLowFeeSend(t, eth, node, 2)
+	eth.slots = []*nonceSlot{
+		newNonceSlot(head),
+		newNonceSlot(queued1),
+		newNonceSlot(queued2),
+	}
+
+	eth.checkPendingTxs()
+
+	notes := drainActions(emitChan)
+	if len(notes) != 1 {
+		t.Fatalf("expected exactly one ActionRequiredNote (head only), got %d", len(notes))
+	}
+	n := notes[0]
+	if n.ActionID != actionTypeTooCheap {
+		t.Fatalf("expected actionTypeTooCheap, got %q", n.ActionID)
+	}
+	if n.UniqueID != head.ID {
+		t.Fatalf("prompt should be for head tx %s, got %s", head.ID, n.UniqueID)
+	}
+	payload, ok := n.Payload.(*TransactionActionNote)
+	if !ok {
+		t.Fatalf("unexpected payload type %T", n.Payload)
+	}
+	if payload.Tx == nil || payload.Tx.ID != head.ID {
+		t.Fatalf("payload.Tx should reference head; got %+v", payload.Tx)
+	}
+	if len(payload.Blocked) != 2 {
+		t.Fatalf("expected 2 Blocked entries, got %d", len(payload.Blocked))
+	}
+	if payload.Blocked[0].ID != queued1.ID || payload.Blocked[1].ID != queued2.ID {
+		t.Fatalf("Blocked order/ids wrong: got [%s, %s], want [%s, %s]",
+			payload.Blocked[0].ID, payload.Blocked[1].ID, queued1.ID, queued2.ID)
+	}
+	for _, b := range payload.Blocked {
+		if b.Type != asset.Send {
+			t.Fatalf("Blocked entry type: got %v, want %v", b.Type, asset.Send)
+		}
+	}
+
+	// Sanity: queued1 / queued2 must NOT have been marked actionRequested,
+	// otherwise they'd be impossible to prompt later when head clears.
+	if eth.slots[1].anyActionRequested() {
+		t.Fatal("queued1 must not be marked actionRequested")
+	}
+	if eth.slots[2].anyActionRequested() {
+		t.Fatal("queued2 must not be marked actionRequested")
+	}
+}
+
+// TestPromptSerializationHeadFineNoCascading verifies that if head's fees
+// are fine, NO prompt is emitted — even if queued-behind slots have stale
+// fees. The serialization rule is strict: prompts target head exclusively.
+func TestPromptSerializationHeadFineNoCascading(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	const tip = 12552
+	eth.currentTip = &types.Header{Number: big.NewInt(tip)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(2)
+	node.baseFee = dexeth.GweiToWei(50)
+	node.tip = dexeth.GweiToWei(5)
+
+	emitChan := make(chan asset.WalletNotification, 128)
+	eth.emit = asset.NewWalletEmitter(emitChan, BipID, eth.log)
+
+	now := uint64(time.Now().Unix())
+	// Head: high-fee tx (well above current rate), so no too-cheap fires.
+	highFeeTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: dexeth.GweiToWei(500), GasTipCap: dexeth.GweiToWei(20), Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	head := eth.extendedTx(&genTxResult{tx: highFeeTx, txType: asset.Send, amt: 1})
+	head.SubmissionTime = now - 600
+	head.lastBroadcast = time.Unix(int64(head.SubmissionTime), 0)
+	node.receiptErrs[head.txHash] = asset.CoinNotFoundError
+	node.receiptTxs[head.txHash] = highFeeTx // indexed in mempool
+
+	queued := stuckLowFeeSend(t, eth, node, 1)
+	eth.slots = []*nonceSlot{newNonceSlot(head), newNonceSlot(queued)}
+
+	eth.checkPendingTxs()
+
+	notes := drainActions(emitChan)
+	if len(notes) != 0 {
+		t.Fatalf("expected no prompts (head fine, queued not eligible to prompt), got %d", len(notes))
+	}
+}
+
+// TestAutoBumpHeadOnly verifies the auto-bump scheduler only considers the
+// head slot. A non-head Redeem (auto-bump-eligible by type+age in isolation)
+// is ignored while a non-eligible head (Send) blocks it.
+func TestAutoBumpHeadOnly(t *testing.T) {
+	_, eth, node, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	const tip = 12552
+	eth.currentTip = &types.Header{Number: big.NewInt(tip)}
+	eth.confirmedNonceAt = big.NewInt(0)
+	eth.nextNonceAt = big.NewInt(2)
+	node.baseFee = dexeth.GweiToWei(50)
+	node.tip = dexeth.GweiToWei(5)
+
+	now := uint64(time.Now().Unix())
+
+	// Head: 5h-old Send. Send is NOT auto-bump-eligible.
+	headTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 0, GasFeeCap: dexeth.GweiToWei(100), GasTipCap: dexeth.GweiToWei(10), Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	headSend := eth.extendedTx(&genTxResult{tx: headTx, txType: asset.Send, amt: 1})
+	headSend.Type = asset.Send
+	headSend.SubmissionTime = uint64(time.Now().Add(-5 * time.Hour).Unix())
+	headSend.lastBroadcast = time.Unix(int64(headSend.SubmissionTime), 0)
+
+	// Queued: 5h-old Redeem (would be eligible if alone), behind the Send.
+	queuedTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		Nonce: 1, GasFeeCap: dexeth.GweiToWei(100), GasTipCap: dexeth.GweiToWei(10), Gas: 50_000,
+		To: &eth.addr, ChainID: node.chainConfig().ChainID,
+	}), signer, node.privKey)
+	queued := eth.extendedTx(&genTxResult{tx: queuedTx, txType: asset.Redeem, amt: 1})
+	queued.Type = asset.Redeem
+	queued.SubmissionTime = uint64(time.Now().Add(-5 * time.Hour).Unix())
+	queued.lastBroadcast = time.Unix(int64(queued.SubmissionTime), 0)
+	_ = now
+
+	eth.slots = []*nonceSlot{newNonceSlot(headSend), newNonceSlot(queued)}
+	node.receiptErrs[headSend.txHash] = asset.CoinNotFoundError
+	node.receiptErrs[queued.txHash] = asset.CoinNotFoundError
+
+	node.sentTxs = 0
+	node.sendTxTx = nil
+
+	eth.checkPendingTxs()
+
+	if node.sentTxs != 0 {
+		t.Fatalf("expected no auto-bump sendTransaction calls (head is non-eligible Send), got %d", node.sentTxs)
+	}
+	if len(eth.slots[1].Candidates) != 1 {
+		t.Fatalf("queued Redeem must not have been auto-bumped; candidates=%d", len(eth.slots[1].Candidates))
 	}
 }
 
@@ -1337,7 +1966,7 @@ func TestTakeAction(t *testing.T) {
 		txType: asset.Send,
 		amt:    1,
 	})
-	eth.pendingTxs = []*extendedWalletTx{pendingTx}
+	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
 
 	feeCap := new(big.Int).Mul(aGwei, big.NewInt(5))
 	tipCap := new(big.Int).Mul(aGwei, big.NewInt(2))
@@ -1350,12 +1979,13 @@ func TestTakeAction(t *testing.T) {
 	}), signer, node.privKey)
 	node.sendTxTx = replacementTx
 
-	tooCheapAction := []byte(fmt.Sprintf(`{"txID":"%s","bump":true}`, pendingTx.ID))
+	tooCheapAction := []byte(fmt.Sprintf(`{"txID":"%s","bump":true,"newFees":%d}`, pendingTx.ID, 250_000))
 	if err := eth.TakeAction(actionTypeTooCheap, tooCheapAction); err != nil {
 		t.Fatalf("TakeAction error: %v", err)
 	}
 
-	newPendingTx := eth.pendingTxs[0]
+	// After Phase 2 bump, the slot has both candidates; latest is the bumped one.
+	newPendingTx := eth.slots[0].latest()
 	if pendingTx.txHash == newPendingTx.txHash {
 		t.Fatal("tx wasn't replaced")
 	}
@@ -1375,7 +2005,7 @@ func TestTakeAction(t *testing.T) {
 		txType: asset.Send,
 		amt:    1,
 	})
-	eth.pendingTxs = []*extendedWalletTx{pendingTx}
+	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
 	pendingTx.SubmissionTime = 0
 	// Neglecting to bump should reset submission time.
 	tooCheapAction = []byte(fmt.Sprintf(`{"txID":"%s","bump":false}`, pendingTx.ID))
@@ -1389,26 +2019,26 @@ func TestTakeAction(t *testing.T) {
 	if pendingTx.lastActionRejected.IsZero() {
 		t.Fatalf("The ignore time wasn't reset")
 	}
-	if len(eth.pendingTxs) != 1 {
-		t.Fatalf("Tx was removed")
+	if len(eth.slots) != 1 {
+		t.Fatalf("slot was removed")
 	}
 
 	// Nonce-replaced tx
-	eth.pendingTxs = []*extendedWalletTx{pendingTx}
+	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
 	lostNonceAction := []byte(fmt.Sprintf(`{"txID":"%s","abandon":true}`, pendingTx.ID))
 	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err != nil {
 		t.Fatalf("TakeAction replacment=false, abandon=true error: %v", err)
 	}
-	if len(eth.pendingTxs) != 0 {
-		t.Fatalf("Tx wasn't abandoned")
+	if len(eth.slots) != 0 {
+		t.Fatalf("slot wasn't removed after abandon")
 	}
-	eth.pendingTxs = []*extendedWalletTx{pendingTx}
+	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
 	node.getTxRes = replacementTx
 	lostNonceAction = []byte(fmt.Sprintf(`{"txID":"%s","abandon":false,"replacementID":"%s"}`, pendingTx.ID, replacementTx.Hash()))
 	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err != nil {
 		t.Fatalf("TakeAction replacment=true, error: %v", err)
 	}
-	newPendingTx = eth.pendingTxs[0]
+	newPendingTx = eth.slots[0].latest()
 	if newPendingTx.txHash != replacementTx.Hash() {
 		t.Fatalf("replacement tx wasn't accepted")
 	}
@@ -1418,7 +2048,7 @@ func TestTakeAction(t *testing.T) {
 		txType: asset.Send,
 		amt:    1,
 	})
-	eth.pendingTxs = []*extendedWalletTx{pendingTx}
+	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
 	lostNonceAction = []byte(fmt.Sprintf(`{"txID":"%s","abandon":false,"replacementID":"%s"}`, pendingTx.ID, replacementTx.Hash()))
 	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err == nil {
 		t.Fatalf("no error for wrong nonce")
@@ -1430,7 +2060,7 @@ func TestTakeAction(t *testing.T) {
 		txType: asset.Send,
 		amt:    1,
 	})
-	eth.pendingTxs = []*extendedWalletTx{tx5}
+	eth.slots = []*nonceSlot{newNonceSlot(tx5)}
 	eth.confirmedNonceAt = big.NewInt(2)
 	eth.nextNonceAt = big.NewInt(6)
 	nonceRecoveryAction := []byte(`{"recover":true}`)
@@ -1687,12 +2317,14 @@ func tassetWallet(assetID uint32) (asset.Wallet, *assetWallet, *tMempoolNode, co
 			gasFeeLimitV:     defaultGasFeeLimit,
 			nextNonceAt:      new(big.Int),
 			confirmedNonceAt: new(big.Int),
-			pendingTxs:       make([]*extendedWalletTx, 0),
+			slots:            nil,
+			opLog:            newOpLog(),
 			pendingRelays:    make(map[common.Hash]*extendedWalletTx),
 			txDB:             &tTxDB{},
 			currentTip:       &types.Header{Number: new(big.Int), GasLimit: 30_000_000},
 			finalizeConfs:    txConfsNeededToConfirm,
 			maxTxFeeGwei:     dexeth.GweiFactor, // 1 ETH
+			autoBumpCfg:      defaultAutoBumpPolicy,
 		},
 		versionedGases:     versionedGases,
 		log:                tLogger.SubLogger(strings.ToUpper(dex.BipIDSymbol(assetID))),
@@ -1705,8 +2337,6 @@ func tassetWallet(assetID uint32) (asset.Wallet, *assetWallet, *tMempoolNode, co
 		pendingTxCheckBal:  new(big.Int),
 		pendingApprovals:   make(map[common.Address]*pendingApproval),
 		approvalCache:      make(map[common.Address]bool),
-		swapSeen:           broadcast.NewCache[*ethSwapSeen](),
-		redeemSeen:         broadcast.NewCache[*ethSwapSeen](),
 		// move up after review
 		wi:   WalletInfo,
 		emit: asset.NewWalletEmitter(emitChan, BipID, tLogger),
@@ -1993,7 +2623,7 @@ func TestBalanceNoMempool(t *testing.T) {
 			node.tokenContractor.bal = unlimitedAllowance
 			eth.connected.Store(true)
 
-			eth.pendingTxs = tt.unconfirmedTxs
+			eth.slots = buildSlots(tt.unconfirmedTxs)
 
 			bal, err := eth.balanceWithTxPool()
 			if err != nil {
@@ -2020,9 +2650,13 @@ func TestFeeRate(t *testing.T) {
 		log:           tLogger,
 		finalizeConfs: txConfsNeededToConfirm,
 		currentTip:    &types.Header{Number: big.NewInt(100)},
+		// Pick a cap high enough to not kick in for the "ok" case so we
+		// actually exercise the base + 2*tip formula. The "overflow" case
+		// still triggers the cap-comparison branch and errors out before
+		// returning anything useful, which is what that case tests.
+		gasFeeLimitV: 1000,
 	}
 
-	maxInt := ^int64(0)
 	tests := []struct {
 		name           string
 		baseFee        *big.Int
@@ -2034,15 +2668,18 @@ func TestFeeRate(t *testing.T) {
 			name:        "ok",
 			baseFee:     big.NewInt(100e9),
 			tip:         big.NewInt(2e9),
-			wantFeeRate: 202,
+			// recommendedMaxFeeRate = base + 2*tip = 100 + 4 = 104 gwei.
+			wantFeeRate: 104,
 		},
 		{
 			name:           "net fee state error",
 			netFeeStateErr: errors.New("test error"),
 		},
 		{
+			// 2^128 wei ≫ 2^64 gwei, so the wei→gwei conversion overflows
+			// uint64 and FeeRate returns 0.
 			name:    "overflow error",
-			baseFee: big.NewInt(maxInt),
+			baseFee: new(big.Int).Lsh(big.NewInt(1), 128),
 			tip:     big.NewInt(1),
 		},
 	}
@@ -2192,6 +2829,11 @@ func testRefund(t *testing.T, assetID uint32) {
 		c.swapErr = test.swapErr
 		ss.State = test.swapStep
 		eth.lockedFunds.refundReserves = ogRefundReserves
+		// Reset op-layer state between subtests so prior iterations'
+		// in-flight refunds don't short-circuit later ones.
+		eth.opLog = newOpLog()
+		eth.probeCache.achieved = nil
+		eth.probeCache.order = nil
 
 		var txHash common.Hash
 		if test.isRefundable {
@@ -3767,10 +4409,11 @@ func TestGaslessRedeem(t *testing.T) {
 		}
 	}
 
-	// Node fee values
+	// Node fee values. recommendedMaxFeeRate is base + 2*tip = 120 gwei,
+	// capped at gasFeeLimitV (default 100). The cap kicks in here.
 	nodeBaseFee := dexeth.GweiToWei(100)
 	nodeTip := dexeth.GweiToWei(10)
-	nodeRecommendedFee := uint64(2*100 + 10)
+	nodeRecommendedFee := uint64(100)
 
 	type test struct {
 		name        string
@@ -4264,7 +4907,10 @@ func TestValidateGaslessRedeemCalldata(t *testing.T) {
 	if validation.GasEstimate != node.estimateGasResult {
 		t.Fatalf("wrong gas estimate %d", validation.GasEstimate)
 	}
-	wantTxCost := new(big.Int).Mul(dexeth.GweiToWei(202), new(big.Int).SetUint64(node.estimateGasResult))
+	// recommendedMaxFeeRate is base + 2*tip (= 104 gwei with this node's
+	// baseFee=100, tip=2), capped at gasFeeLimitV (default 100 gwei). The
+	// cap kicks in here, so the cost is 100 gwei × gas.
+	wantTxCost := new(big.Int).Mul(dexeth.GweiToWei(100), new(big.Int).SetUint64(node.estimateGasResult))
 	if validation.EstimatedTxCost != wantTxCost.String() {
 		t.Fatalf("wrong estimated tx cost %s", validation.EstimatedTxCost)
 	}
@@ -5813,6 +6459,7 @@ func testConfirmTransaction(t *testing.T, assetID uint32) {
 			ID:          txHash.String(),
 			BlockNumber: confBlock + 1,
 		},
+		Nonce:  big.NewInt(1),
 		txHash: txHash,
 	}
 	dbTx := &extendedWalletTx{
@@ -5965,9 +6612,9 @@ func testConfirmTransaction(t *testing.T, assetID uint32) {
 		node.tokenContractor.bal = big.NewInt(1e9)
 		node.bal = big.NewInt(1e9)
 
-		eth.pendingTxs = []*extendedWalletTx{}
+		eth.slots = nil
 		if test.pendingTx != nil {
-			eth.pendingTxs = append(eth.pendingTxs, test.pendingTx)
+			eth.slots = []*nonceSlot{newNonceSlot(test.pendingTx)}
 		}
 
 		db.txToGet = test.dbTx
@@ -6454,7 +7101,7 @@ func TestSwapOrRedemptionFeesPaid(t *testing.T) {
 			})
 			wt.BlockNumber = test.pendingTxBlock
 			wt.Fees = fees
-			bw.pendingTxs = []*extendedWalletTx{wt}
+			bw.slots = []*nonceSlot{newNonceSlot(wt)}
 			txHash = test.pendingTx.Hash()
 		}
 		node.receiptTx = test.receiptTx
@@ -6649,7 +7296,10 @@ func (m *mockBridge) bridgeLimits(sourceAssetID, destAssetID uint32) (min, max *
 
 func TestBridgeCompletionFees(t *testing.T) {
 	const bridgeName = "mock"
-	const maxFeeRateGwei = 202
+	// recommendedMaxFeeRate is base + 2*tip = 104 gwei with the default test
+	// node (baseFee=100, tip=2), capped at gasFeeLimitV (default 100 gwei).
+	// The cap kicks in here.
+	const maxFeeRateGwei = 100
 
 	tests := []struct {
 		name              string
@@ -7246,9 +7896,9 @@ func TestCompleteBridge(t *testing.T) {
 			ethWallet.txDB = txDB
 
 			if tt.pendingTx != nil {
-				ethWallet.pendingTxs = []*extendedWalletTx{tt.pendingTx}
+				ethWallet.slots = []*nonceSlot{newNonceSlot(tt.pendingTx)}
 			} else {
-				ethWallet.pendingTxs = []*extendedWalletTx{}
+				ethWallet.slots = nil
 			}
 
 			err := ethWallet.CompleteBridge(context.Background(), initiationTx, 1e9, []byte("completionData"), "mock")

@@ -1630,6 +1630,56 @@ func IncomingTxType(txType TransactionType) bool {
 	return txType == Receive || txType == Redeem || txType == Refund || txType == RedeemBond
 }
 
+// Label returns a short lowercase human-readable name for the transaction
+// type, suitable for log messages and notification copy. Returns "unknown"
+// for the zero value or any unrecognized type so callers don't need to
+// nil-check.
+func (t TransactionType) Label() string {
+	switch t {
+	case Send:
+		return "send"
+	case Receive:
+		return "receive"
+	case Swap:
+		return "swap"
+	case Redeem:
+		return "redeem"
+	case Refund:
+		return "refund"
+	case Split:
+		return "split"
+	case CreateBond:
+		return "create-bond"
+	case RedeemBond:
+		return "redeem-bond"
+	case ApproveToken:
+		return "approve-token"
+	case Acceleration:
+		return "acceleration"
+	case SelfSend:
+		return "self-send"
+	case RevokeTokenApproval:
+		return "revoke-token-approval"
+	case TicketPurchase:
+		return "ticket-purchase"
+	case TicketVote:
+		return "ticket-vote"
+	case TicketRevocation:
+		return "ticket-revocation"
+	case SwapOrSend:
+		return "swap-or-send"
+	case Mix:
+		return "mix"
+	case InitiateBridge:
+		return "initiate-bridge"
+	case CompleteBridge:
+		return "complete-bridge"
+	case DeployContract:
+		return "deploy-contract"
+	}
+	return "unknown"
+}
+
 // BondTxInfo contains information about a CreateBond or RedeemBond
 // transaction.
 type BondTxInfo struct {
