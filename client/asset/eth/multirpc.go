@@ -1211,21 +1211,32 @@ func (m *multiRPCClient) setEmitter(emit *asset.WalletEmitter) {
 // to broadcast on every provider would be the worst case for a brand-new
 // trade but is a recoverable annoyance for already-running matches.
 func (m *multiRPCClient) tradeSafe() (safe bool, reason string) {
-	var healthy, total int
-	for _, p := range m.providerList() {
-		total++
+	// Threshold is over the CONFIGURED endpoint count, not the live-pool
+	// size. Counting only the live pool would let a wallet with 4
+	// defaults but 3 dead endpoints pass the gate as long as the 1
+	// remaining live provider was healthy (threshold = min(2, 1) = 1),
+	// even though redundancy has clearly collapsed. Using configured
+	// keeps the threshold pinned to the user-visible provider list.
+	m.providerMtx.RLock()
+	configured := len(m.endpoints)
+	live := make([]*provider, len(m.providers))
+	copy(live, m.providers)
+	m.providerMtx.RUnlock()
+
+	var healthy int
+	for _, p := range live {
 		if p.isHealthy() {
 			healthy++
 		}
 	}
 	threshold := 2
-	if total < threshold {
-		threshold = total
+	if configured < threshold {
+		threshold = configured
 	}
-	if total > 0 && healthy >= threshold {
+	if configured > 0 && healthy >= threshold {
 		return true, ""
 	}
-	return false, fmt.Sprintf("only %d of %d configured providers are reachable; need %d for trade safety", healthy, total, threshold)
+	return false, fmt.Sprintf("only %d of %d configured providers are reachable; need %d for trade safety", healthy, configured, threshold)
 }
 
 // providerInfo returns a snapshot of every configured endpoint's status,
@@ -1616,11 +1627,24 @@ func (m *multiRPCClient) withAll(
 	var atLeastOne bool
 	var errs []string
 	providers := m.nonceProviderList()
+	// All-failed fallback: if every provider is currently in failed()
+	// quarantine, try them all anyway rather than skipping the
+	// operation outright. Mirrors withOne's behavior. Important for
+	// broadcast-style ops (sendSignedTransaction, nonce) where
+	// returning "all providers in a failed state" can drop a swap on
+	// the floor during a transient simultaneous-failure window even
+	// though one of those providers might accept the call now.
+	readyProviders := make([]*provider, 0, len(providers))
 	for _, p := range providers {
-		if p.failed() {
-			continue
+		if !p.failed() {
+			readyProviders = append(readyProviders, p)
 		}
-
+	}
+	if len(readyProviders) == 0 {
+		m.log.Tracef("all providers in a failed state, so acting like none are")
+		readyProviders = providers
+	}
+	for _, p := range readyProviders {
 		ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 		err := f(ctx, p)
 		cancel()
