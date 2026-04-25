@@ -677,7 +677,6 @@
   "INSUFFICIENT_BALANCE_DEPOSIT_TO_YOUR_PARENTNAME_WALLET": "Insufficient balance. Deposit to your {{parentName}} wallet:",
   "INVALID_ADDRESS": "Invalid address.",
   "Limit": "Limit",
-  "LOADED_SETTINGS": "Loaded settings",
   "LOADING": "Loading...",
   "LOCK_TIME": "Lock Time",
   "Logs": "Logs",

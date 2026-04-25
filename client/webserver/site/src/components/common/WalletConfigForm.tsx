@@ -112,16 +112,17 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     return elems
   })
 
-  // Split elements into primary (no default when sectionizing) and "other" (has default).
+  // Split elements into primary (required-no-default + loaded-from-saved-config)
+  // and "defaulted" (using their default value, untouched by the user).
+  // loadedKeys is updated by setLoadedConfig so saved values surface alongside
+  // required opts at the top of the form rather than getting buried under
+  // "default settings".
   const primaryElements: ConfigElement[] = []
   const defaultedElements: ConfigElement[] = []
-  const loadedElements: ConfigElement[] = [] // managed via setLoadedConfig
   const [loadedKeys, setLoadedKeys] = useState<Set<string>>(new Set())
 
   for (const el of configElements) {
-    if (loadedKeys.has(el.id)) {
-      loadedElements.push(el)
-    } else if (sectionize && el.opt.default !== null && el.opt.default !== undefined) {
+    if (sectionize && el.opt.default !== null && el.opt.default !== undefined && !loadedKeys.has(el.id)) {
       defaultedElements.push(el)
     } else {
       primaryElements.push(el)
@@ -234,7 +235,10 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     setLoadedConfig (cfg: Record<string, string>) {
       setConfig(cfg)
       if (!sectionize) return
-      // Track which element IDs were loaded so they render in the "loaded" section.
+      // Track which element IDs got values from the loaded config so the
+      // bucketing logic keeps them in the primary section instead of pushing
+      // them into "default settings" (where they'd be hidden among
+      // never-touched options).
       setConfigElements(prev => {
         const ids = new Set<string>()
         for (const el of prev) {
@@ -411,21 +415,12 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
         <div className="fs15 text-danger mb-2">{error}</div>
       )}
 
-      {/* Defaulted + loaded options always rendered — no collapse toggle. */}
-      {(loadedElements.length > 0 || defaultedElements.length > 0) && (
+      {/* Options using their default value, rendered below the actively-set
+          ones. Always visible — no collapse toggle. */}
+      {defaultedElements.length > 0 && (
         <div className="other-settings">
-          {loadedElements.length > 0 && (
-            <>
-              <div className="fs15 text-secondary mb-1">{t('LOADED_SETTINGS')}</div>
-              {loadedElements.map(renderInput)}
-            </>
-          )}
-          {defaultedElements.length > 0 && (
-            <>
-              <div className="fs15 text-secondary mb-1">{t('DEFAULT_SETTINGS')}</div>
-              {defaultedElements.map(renderInput)}
-            </>
-          )}
+          <div className="fs15 text-secondary mb-1">{t('DEFAULT_SETTINGS')}</div>
+          {defaultedElements.map(renderInput)}
         </div>
       )}
     </div>
