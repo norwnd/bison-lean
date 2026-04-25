@@ -26,9 +26,10 @@ type OpKey string
 type OpType string
 
 const (
-	OpSwap   OpType = "swap"
-	OpRedeem OpType = "redeem"
-	OpRefund OpType = "refund"
+	OpSwap           OpType = "swap"
+	OpRedeem         OpType = "redeem"
+	OpRefund         OpType = "refund"
+	OpBridgeComplete OpType = "bridge-complete"
 )
 
 // OpState is the lifecycle state of an Operation.
@@ -179,6 +180,23 @@ func swapKey(contracts []*asset.Contract) OpKey {
 // contract locator being refunded.
 func refundKey(locator []byte) OpKey {
 	return OpKey("refund:" + hex.EncodeToString(locator))
+}
+
+// bridgeCompleteKey computes the OpKey for a CompleteBridge operation,
+// identified by the initiation tx ID. The completion logically belongs
+// to the source-chain initiation tx — a given initiation has at most
+// one completion per follow-up step, and concurrent CompleteBridge
+// calls for the same initiation must not double-broadcast.
+//
+// Note: InitiateBridge does NOT get an OpKey today. Bridges are
+// user-initiated single-shot actions with no natural retry key (a user
+// who clicks Bridge twice with the same parameters typically intends
+// two separate bridges, not idempotent dedup), so the op-layer adds
+// no value there. Only the completion path — which Core can replay
+// across restarts when a stored BridgeReadyToComplete fires twice —
+// benefits from the serialization the op-layer provides.
+func bridgeCompleteKey(initiationTxID string) OpKey {
+	return OpKey("bridge-complete:" + initiationTxID)
 }
 
 // opLog is the in-memory operation registry plus a tx-hash → OpKey reverse

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"decred.org/dcrdex/client/asset"
 	dexeth "decred.org/dcrdex/dex/networks/eth"
@@ -71,6 +72,30 @@ func (w *baseWallet) markProbeAchieved(key OpKey) {
 		w.probeCache.order = w.probeCache.order[1:]
 		delete(w.probeCache.achieved, oldest)
 	}
+}
+
+// acquireBridgeCompleteLock returns a release function that holds a
+// per-initiation-tx mutex. Use to serialize concurrent CompleteBridge
+// calls for the same initiation. The returned function MUST be called
+// (typically `defer release()`); failure to release will deadlock
+// future calls for this initiation.
+//
+// The map mutex is held only briefly (for map mutation); the per-key
+// mutex is what's actually held during the critical section. Different
+// initiations don't block each other.
+func (w *baseWallet) acquireBridgeCompleteLock(initiationTxID string) func() {
+	w.bridgeCompleteLocks.Lock()
+	if w.bridgeCompleteLocks.m == nil {
+		w.bridgeCompleteLocks.m = make(map[string]*sync.Mutex)
+	}
+	l, ok := w.bridgeCompleteLocks.m[initiationTxID]
+	if !ok {
+		l = &sync.Mutex{}
+		w.bridgeCompleteLocks.m[initiationTxID] = l
+	}
+	w.bridgeCompleteLocks.Unlock()
+	l.Lock()
+	return l.Unlock
 }
 
 // probeRedeemOnChain checks whether all swaps in the given redemption set are

@@ -543,6 +543,25 @@ type baseWallet struct {
 	// overridden per-asset.
 	autoBumpCfg autoBumpPolicy
 
+	// bridgeCompleteLocks is a per-initiation-tx mutex registry serializing
+	// concurrent CompleteBridge calls for the same bridge initiation.
+	// Without this, two callers (e.g. Core replaying a stored
+	// BridgeReadyToComplete twice across a wallet restart, or two distinct
+	// wallets dispatching to the same bridge) can both pass the
+	// getLatestBridgeCompletion DB check and broadcast duplicate completion
+	// txs at separate nonces — wasting gas and locking the user out of
+	// further bridge progress until the duplicate confirms or is abandoned.
+	//
+	// Held only inside completeBridgeIfNeeded; released between calls.
+	// Different initiations don't block each other (per-key granularity).
+	// Outer mutex guards map mutation; inner mutexes guard the per-key
+	// critical section. Lock order: outer briefly, then inner — outer is
+	// never held while inner is held.
+	bridgeCompleteLocks struct {
+		sync.Mutex
+		m map[string]*sync.Mutex
+	}
+
 	balances struct {
 		sync.Mutex
 		m map[uint32]*cachedBalance
@@ -5608,12 +5627,40 @@ func (w *assetWallet) completeBridgeIfNeeded(ctx context.Context, bridgeTx *asse
 		return fmt.Errorf("bridge %s not found", bridgeName)
 	}
 
+	// Op-layer guarantees: serialize concurrent calls for the same
+	// initiation tx and short-circuit if we've already determined this
+	// bridge is fully complete on a prior call.
+	var initiationTxID string
+	if len(bridgeTx.IDs) > 0 {
+		initiationTxID = bridgeTx.IDs[0]
+	}
+	if initiationTxID != "" {
+		opKey := bridgeCompleteKey(initiationTxID)
+		if w.probeAchieved(opKey) {
+			return nil
+		}
+		release := w.acquireBridgeCompleteLock(initiationTxID)
+		defer release()
+		// Re-check the cache after acquiring the per-key lock — another
+		// caller may have completed and cached during our wait.
+		if w.probeAchieved(opKey) {
+			return nil
+		}
+	}
+
 	var completionTxIDs []string
 	var fees uint64
 	var sendNote, isComplete bool
 	defer func() {
 		if sendNote {
 			w.emit.BridgeCompleted(bridgeTx.AssetID, bridgeTx.IDs[0], completionTxIDs, amount, fees, isComplete)
+		}
+		if isComplete && initiationTxID != "" {
+			// Cache positive completion so future CompleteBridge calls for
+			// this same initiation short-circuit at probeAchieved above.
+			// Survives until probeCacheMaxEntries forces FIFO eviction
+			// (in practice 1024 fully-completed bridges before recycling).
+			w.markProbeAchieved(bridgeCompleteKey(initiationTxID))
 		}
 	}()
 
@@ -5631,11 +5678,8 @@ func (w *assetWallet) completeBridgeIfNeeded(ctx context.Context, bridgeTx *asse
 
 	// If this bridge requires a completion transaction, get the latest
 	// completion transaction for this bridge. Some bridges require multiple
-	// completion transactions.
-	var initiationTxID string
-	if len(bridgeTx.IDs) > 0 {
-		initiationTxID = bridgeTx.IDs[0]
-	}
+	// completion transactions. (initiationTxID was bound at function entry
+	// for the op-layer serialization; reuse it here.)
 	wt, err := w.getLatestBridgeCompletion(initiationTxID)
 	if err != nil {
 		return fmt.Errorf("error getting bridge completion: %w", err)

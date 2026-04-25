@@ -7985,6 +7985,108 @@ func TestCompleteBridge(t *testing.T) {
 	}
 }
 
+// TestCompleteBridgeOpLayerCachesPositive verifies that once a bridge
+// completion succeeds (isComplete=true), the wallet caches the positive
+// result via probeCache so subsequent CompleteBridge calls for the same
+// initiation tx short-circuit without invoking the bridge implementation
+// again. This closes the race where Core could replay a stored
+// BridgeReadyToComplete after a wallet restart and end up double-
+// broadcasting completion txs at separate nonces.
+func TestCompleteBridgeOpLayerCachesPositive(t *testing.T) {
+	w, _, _, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	ethWallet := w.(*ETHWallet)
+	mb := &mockBridge{
+		// requiresCompletion=false steers completeBridgeIfNeeded down the
+		// verifyBridgeCompletion path (no on-chain completion tx — Across
+		// behavior). isComplete=true on verify is what we need to flip the
+		// op-layer's cache.
+		requiresCompletionResult:     false,
+		verifyBridgeCompletionResult: true,
+	}
+	ethWallet.bridges = map[string]bridge{"mock": mb}
+	ethWallet.txDB = &tTxDB{}
+
+	emitChan := make(chan asset.WalletNotification, 8)
+	ethWallet.emit = asset.NewWalletEmitter(emitChan, BipID, ethWallet.log)
+
+	initiationTx := &asset.BridgeCounterpartTx{
+		IDs:     []string{"some-initiation-id"},
+		AssetID: 123,
+	}
+
+	// First call: probe is not yet cached, so we descend into the bridge
+	// implementation. With isComplete=true, the wallet should cache.
+	if err := ethWallet.CompleteBridge(context.Background(), initiationTx, 1e9, []byte("data"), "mock"); err != nil {
+		t.Fatalf("first CompleteBridge: %v", err)
+	}
+	if !ethWallet.probeAchieved(bridgeCompleteKey("some-initiation-id")) {
+		t.Fatal("expected bridge completion cached after isComplete=true")
+	}
+
+	// Second call: should short-circuit at probeAchieved before touching
+	// the bridge. Use a panicking mock to prove it's never invoked.
+	mb.verifyBridgeCompletionError = errors.New("would-be invoked if probe didn't short-circuit")
+	mb.verifyBridgeCompletionResult = false // would normally cause a no-op return
+	if err := ethWallet.CompleteBridge(context.Background(), initiationTx, 1e9, []byte("data"), "mock"); err != nil {
+		t.Fatalf("second CompleteBridge (should short-circuit): %v", err)
+	}
+}
+
+// TestCompleteBridgePerKeyLockSerializes verifies that two concurrent
+// CompleteBridge calls for the same initiation tx serialize on the
+// per-key mutex (rather than racing through the
+// getLatestBridgeCompletion check and both broadcasting). Different
+// initiations should not block each other.
+func TestCompleteBridgePerKeyLockSerializes(t *testing.T) {
+	w, _, _, shutdown := tassetWallet(BipID)
+	defer shutdown()
+
+	ethWallet := w.(*ETHWallet)
+	ethWallet.txDB = &tTxDB{}
+
+	// Acquire the lock manually to simulate "an in-flight CompleteBridge".
+	release1 := ethWallet.acquireBridgeCompleteLock("init-A")
+
+	// Acquiring the lock for a DIFFERENT initiation must not block — fire
+	// it on a goroutine and check it returned in a tight time budget.
+	doneB := make(chan struct{})
+	go func() {
+		release := ethWallet.acquireBridgeCompleteLock("init-B")
+		release()
+		close(doneB)
+	}()
+	select {
+	case <-doneB:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("acquireBridgeCompleteLock for different initiation should not block on another initiation's lock")
+	}
+
+	// Acquiring for the SAME initiation must block — verify it does NOT
+	// return until release1 is called.
+	doneA := make(chan struct{})
+	go func() {
+		release := ethWallet.acquireBridgeCompleteLock("init-A")
+		release()
+		close(doneA)
+	}()
+	select {
+	case <-doneA:
+		t.Fatal("acquireBridgeCompleteLock for the same initiation should block while held elsewhere")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: still blocked.
+	}
+
+	// Release the original holder; the second acquire should now proceed.
+	release1()
+	select {
+	case <-doneA:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("acquireBridgeCompleteLock did not unblock after release")
+	}
+}
+
 func TestDomain(t *testing.T) {
 	tests := []struct {
 		addr       string
