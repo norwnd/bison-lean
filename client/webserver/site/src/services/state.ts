@@ -20,6 +20,12 @@ export const lastCandleZoomLevelLK = 'lastCandleZoomLevel'
 export const localeSpecsKey = 'localeSpecsLK'
 export const localeKey = 'localeLK'
 export const newUserBannerDismissedLK = 'newUserBannerDismissed'
+// lastVariantByTickerLK persists the last variant the user viewed for
+// each ticker group on /wallets (e.g. USDC.POL when the user last
+// clicked Polygon under the USDC group). Single bundled object
+// `Record<ticker, assetID>` so a multi-token user has one localStorage
+// entry, not one per ticker. Read/written by WalletsPage.
+export const lastVariantByTickerLK = 'lastVariantByTicker'
 
 export function setCookie (cname: string, cvalue: string) {
   const d = new Date()

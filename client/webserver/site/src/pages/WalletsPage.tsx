@@ -4,6 +4,7 @@ import {
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse, Errors } from '../services/api'
+import { fetchLocal, storeLocal, lastVariantByTickerLK } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
@@ -218,8 +219,13 @@ interface TickerGroup {
   ticker: string
   symbol: string
   name: string
+  // assetIDs is sorted by asset.symbol ascending so the per-chain
+  // breakdown order is stable across renders / refreshes (the upstream
+  // `Object.values(assets)` order is by ascending numeric BIP id, which
+  // is also stable but arbitrary — sorting by symbol matches what users
+  // see in the UI). The picked default variant is computed at click
+  // time via pickVariantForGroup, not stored on the group.
   assetIDs: number[]
-  primaryAssetID: number
   hasWallet: boolean
   // totalNative is the sum of per-asset wallet balances converted from
   // atoms to whole units (e.g. BTC, ETH). Shown in the sidebar so the
@@ -231,23 +237,27 @@ interface TickerGroup {
   totalFiat: number
 }
 
+// tickerOf normalizes an asset's symbol to the ticker used for sidebar
+// grouping. WETH is grouped under ETH so wrapped-Ether balances roll
+// up into the parent ticker the user thinks in.
+function tickerOf (symbol: string): string {
+  const baseSym = shortSymbol(symbol)
+  return baseSym === 'WETH' ? 'ETH' : baseSym
+}
+
 function buildTickerGroups (
   assets: Record<number, SupportedAsset>,
   fiatRatesMap: Record<number, number>
 ): TickerGroup[] {
   const groups: Record<string, TickerGroup> = {}
   for (const asset of Object.values(assets)) {
-    const baseSym = shortSymbol(asset.symbol)
-    const ticker = baseSym === 'WETH'
-      ? 'ETH'
-      : baseSym
+    const ticker = tickerOf(asset.symbol)
     if (!groups[ticker]) {
       groups[ticker] = {
         ticker,
         symbol: asset.symbol,
         name: asset.name,
         assetIDs: [],
-        primaryAssetID: asset.id,
         hasWallet: false,
         totalNative: 0,
         totalFiat: 0
@@ -255,9 +265,6 @@ function buildTickerGroups (
     }
     const g = groups[ticker]
     g.assetIDs.push(asset.id)
-    if (!asset.token && asset.wallet) {
-      g.primaryAssetID = asset.id
-    }
     if (asset.wallet) {
       g.hasWallet = true
       const bal = asset.wallet.balance
@@ -268,7 +275,16 @@ function buildTickerGroups (
       g.totalFiat += native * rate
     }
   }
-  return Object.values(groups).sort((a, b) => {
+  // Within each group, sort variants by symbol ascending (stable +
+  // alphabetical) so the per-chain rows render in the same order every
+  // time. Cross-group ordering uses hasWallet first, then totalFiat
+  // descending so the most valuable wallet-bearing rows surface at
+  // the top of the sidebar.
+  const ordered = Object.values(groups)
+  for (const g of ordered) {
+    g.assetIDs.sort((a, b) => assets[a].symbol.localeCompare(assets[b].symbol))
+  }
+  return ordered.sort((a, b) => {
     if (a.hasWallet !== b.hasWallet) {
       return a.hasWallet
         ? -1
@@ -276,6 +292,40 @@ function buildTickerGroups (
     }
     return b.totalFiat - a.totalFiat
   })
+}
+
+// pickVariantForGroup chooses which variant to land on when the user
+// clicks a sidebar group. Sticky per-ticker via localStorage; falls
+// back to the first variant in the group's sorted assetIDs (which is
+// alphabetically lowest by symbol). The persisted ID is validated
+// against the group's current assetIDs so a stale value (asset support
+// dropped between releases) doesn't strand the user on a missing
+// variant.
+function pickVariantForGroup (
+  g: TickerGroup,
+  lastByTicker: Record<string, number>
+): number {
+  const last = lastByTicker[g.ticker]
+  if (last !== undefined && g.assetIDs.includes(last)) return last
+  return g.assetIDs[0]
+}
+
+// loadLastVariantByTicker reads the persisted last-variant map from
+// localStorage. Best-effort coerces the values to numbers — drops any
+// non-numeric entries rather than crashing the page on malformed
+// state (external edits, older schemas, etc.).
+function loadLastVariantByTicker (): Record<string, number> {
+  const raw = fetchLocal(lastVariantByTickerLK)
+  if (typeof raw !== 'object' || raw === null) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+  }
+  return out
+}
+
+function saveLastVariantByTicker (m: Record<string, number>) {
+  storeLocal(lastVariantByTickerLK, m)
 }
 
 /** Collect markets from all exchanges where the selected asset is base or quote. */
@@ -356,6 +406,24 @@ export default function WalletsPage () {
   // empty. Vanilla loads this on app start; we keep it page-local
   // since no other page needs it.
   const [bridgePaths, setBridgePaths] = useState<Record<number, Record<number, string[]>> | null>(null)
+
+  // Sticky last-viewed variant per ticker group. Initialized from
+  // localStorage and written on every selectedAssetID change so revisits
+  // to the same group land on the user's most recent pick (e.g. USDC.POL
+  // when the user last clicked Polygon). Falls back to the first variant
+  // in the group's sorted assetIDs (alphabetically lowest by symbol)
+  // when no entry is recorded yet — see pickVariantForGroup.
+  const [lastVariantByTicker, setLastVariantByTicker] = useState<Record<string, number>>(loadLastVariantByTicker)
+
+  // In-flight token-wallet creates triggered by clicking a token group
+  // whose parent has a wallet but the token doesn't. Per-asset Set so
+  // multiple variants of the same group (e.g. USDC.ETH + USDC.POL) can
+  // run in parallel. Cleared per-asset when the API response resolves.
+  const [creatingTokenIDs, setCreatingTokenIDs] = useState<Set<number>>(new Set())
+  // Per-asset error messages from the auto-create flow. Cleared on
+  // selectedAssetID change so the user's "navigate away and back to
+  // retry" gesture works without a Retry button.
+  const [tokenCreateErrors, setTokenCreateErrors] = useState<Map<number, string>>(new Map())
 
   // Force re-render on note arrival so balances refresh.
   const [, setTick] = useState(0)
@@ -449,12 +517,104 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
-  // Auto-select the first wallet-bearing asset on mount.
+  // Auto-select the first wallet-bearing asset on mount, restoring the
+  // user's last-viewed variant within that group when persisted.
   useEffect(() => {
     if (selectedAssetID !== null) return
     const first = tickerGroups.find(g => g.hasWallet)
-    if (first) setSelectedAssetID(first.primaryAssetID)
-  }, [tickerGroups, selectedAssetID])
+    if (first) setSelectedAssetID(pickVariantForGroup(first, lastVariantByTicker))
+  }, [tickerGroups, selectedAssetID, lastVariantByTicker])
+
+  // Persist the last-viewed variant per ticker. Catches both code paths
+  // (sidebar click via pickVariantForGroup and per-chain row click)
+  // without separate handlers. Idempotent — no write if the value
+  // hasn't changed.
+  useEffect(() => {
+    if (selectedAssetID === null) return
+    const asset = assets[selectedAssetID]
+    if (!asset) return
+    const ticker = tickerOf(asset.symbol)
+    setLastVariantByTicker(prev => {
+      if (prev[ticker] === selectedAssetID) return prev
+      const next = { ...prev, [ticker]: selectedAssetID }
+      saveLastVariantByTicker(next)
+      return next
+    })
+  }, [selectedAssetID, assets])
+
+  // Clear per-asset error messages on navigation so the user can
+  // retry by leaving the group and coming back. The previous group's
+  // errors aren't useful elsewhere; in-flight creates (creatingTokenIDs)
+  // stay so the result still updates state when it resolves.
+  const lastSelectedID = useRef<number | null>(null)
+  useEffect(() => {
+    if (lastSelectedID.current !== selectedAssetID) {
+      lastSelectedID.current = selectedAssetID
+      setTokenCreateErrors(prev => prev.size === 0 ? prev : new Map())
+    }
+  }, [selectedAssetID])
+
+  // Auto-create-on-click for token wallets whose parent already exists.
+  // For the currently-selected group, fire /api/newwallet for every
+  // variant where (a) it's a token, (b) it has no wallet yet, (c) its
+  // parent has a wallet, (d) we're not already creating it, (e) the
+  // last attempt didn't error (per-navigation; clears above). The
+  // server-side parent-creation hook also auto-creates tokens after
+  // the parent in apiNewWallet, so this fires for the "user already
+  // has a parent on a different chain" / "previous create-attempt
+  // failed" / "asset support added in a later release" cases.
+  useEffect(() => {
+    if (selectedAssetID === null) return
+    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAssetID))
+    if (!group) return
+    const candidates: SupportedAsset[] = []
+    for (const id of group.assetIDs) {
+      const a = assets[id]
+      if (!a || !a.token || a.wallet) continue
+      const parent = assets[a.token.parentID]
+      if (!parent?.wallet) continue
+      if (creatingTokenIDs.has(id)) continue
+      if (tokenCreateErrors.has(id)) continue
+      candidates.push(a)
+    }
+    if (candidates.length === 0) return
+    setCreatingTokenIDs(prev => {
+      const next = new Set(prev)
+      for (const a of candidates) next.add(a.id)
+      return next
+    })
+    for (const asset of candidates) {
+      const tokenDef = asset.token!.definition
+      const config: Record<string, string> = {}
+      for (const opt of tokenDef.configopts ?? []) {
+        if (opt.default === undefined || opt.default === null) continue
+        if (opt.isboolean) config[opt.key] = opt.default ? '1' : '0'
+        else config[opt.key] = String(opt.default)
+      }
+      ;(async () => {
+        const res = await postJSON('/api/newwallet', {
+          assetID: asset.id,
+          walletType: tokenDef.type,
+          config,
+        })
+        setCreatingTokenIDs(prev => {
+          if (!prev.has(asset.id)) return prev
+          const next = new Set(prev)
+          next.delete(asset.id)
+          return next
+        })
+        if (!checkResponse(res)) {
+          setTokenCreateErrors(prev => {
+            const next = new Map(prev)
+            next.set(asset.id, res.msg || 'Failed to create wallet')
+            return next
+          })
+          return
+        }
+        await fetchUser()
+      })()
+    }
+  }, [selectedAssetID, assets, tickerGroups, creatingTokenIDs, tokenCreateErrors, fetchUser])
 
   const selectedAsset = selectedAssetID !== null
     ? assets[selectedAssetID]
@@ -525,7 +685,7 @@ export default function WalletsPage () {
               <div
                 key={g.ticker}
                 className={`flex-stretch-column pt-2 px-2 hoverbg pointer ${selected ? 'selected' : ''}`}
-                onClick={() => setSelectedAssetID(g.primaryAssetID)}
+                onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker))}
                 style={selected ? { backgroundColor: 'var(--body-bg)' } : undefined}
               >
                 <div className="d-flex justify-content-between align-items-start">
@@ -575,13 +735,49 @@ export default function WalletsPage () {
                       hasBridge={hasBridge}
                     />
                   )}
-                  {!selectedWallet && (
+                  {!selectedWallet && creatingTokenIDs.has(selectedAsset.id) && (
+                    <CreatingTokenView asset={selectedAsset} />
+                  )}
+                  {!selectedWallet && !creatingTokenIDs.has(selectedAsset.id) &&
+                   tokenCreateErrors.has(selectedAsset.id) && (
+                    <TokenCreateErrorView
+                      asset={selectedAsset}
+                      msg={tokenCreateErrors.get(selectedAsset.id) ?? ''}
+                    />
+                  )}
+                  {!selectedWallet && !creatingTokenIDs.has(selectedAsset.id) &&
+                   !tokenCreateErrors.has(selectedAsset.id) && (
                     <NoWalletView
                       asset={selectedAsset}
                       parentAsset={selectedAsset.token ? assets[selectedAsset.token.parentID] ?? null : null}
                       onCreate={() => setActiveForm('newWallet')}
                     />
                   )}
+                  {/* Per-chain breakdown for multi-variant groups —
+                      assetIDs are sorted by symbol ascending in
+                      buildTickerGroups so the order is stable and
+                      alphabetical. Clickable rows drill into a
+                      specific variant; selectedAssetID flips to that
+                      variant and the WalletDetail / Right column
+                      re-render. Single-variant groups (DCR, BTC, etc.)
+                      are skipped. Covers both token groups (USDC) and
+                      mixed groups (ETH+WETH) since the Networks list
+                      is useful in either case. */}
+                  {(() => {
+                    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAsset.id))
+                    if (!group || group.assetIDs.length < 2) return null
+                    return (
+                      <NetworksBreakdown
+                        group={group}
+                        assets={assets}
+                        fiatRatesMap={fiatRatesMap}
+                        selectedAssetID={selectedAsset.id}
+                        creatingTokenIDs={creatingTokenIDs}
+                        tokenCreateErrors={tokenCreateErrors}
+                        onSelect={setSelectedAssetID}
+                      />
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -874,6 +1070,129 @@ function NoWalletView ({ asset, parentAsset, onCreate }: {
         </p>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// CreatingTokenView — shown in place of NoWalletView while a token
+// wallet is being auto-created (effect in WalletsPage). The auto-create
+// is best-effort and resolves either by populating the wallet (which
+// flips us into WalletDetail) or by surfacing an error here via
+// TokenCreateErrorView.
+// ---------------------------------------------------------------------------
+
+function CreatingTokenView ({ asset }: { asset: SupportedAsset }) {
+  const { t } = useTranslation()
+  return (
+    <div className="text-center py-4">
+      <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} className="mb-3" />
+      <div className="fs18 mb-2">{asset.name}</div>
+      <div className="d-flex justify-content-center align-items-center">
+        <span className="ico-spinner spinner fs18 grey me-2" />
+        <span className="fs15 text-secondary">{t('CREATING_TOKEN_WALLET')}</span>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// TokenCreateErrorView — shown when an auto-create attempt failed for
+// the currently-selected token. Cleared per-asset on navigation, so the
+// user retries by leaving the group and coming back (no Retry button).
+// ---------------------------------------------------------------------------
+
+function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: string }) {
+  const { t } = useTranslation()
+  return (
+    <div className="text-center py-4">
+      <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} className="mb-3" />
+      <div className="fs18 mb-2">{asset.name}</div>
+      <p className="text-danger fs14 mb-1">{t('TOKEN_WALLET_CREATE_FAILED')}</p>
+      <p className="text-secondary fs13 text-break">{msg}</p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// NetworksBreakdown — per-chain row list rendered below WalletDetail
+// for any multi-variant ticker group. Variant order matches
+// `group.assetIDs`, which buildTickerGroups sorts by symbol ascending,
+// so the order is stable across renders. Each row is clickable: it
+// switches selectedAssetID to that variant, and the auto-create effect
+// fires for any newly-eligible candidate. The currently-selected row
+// is highlighted.
+// ---------------------------------------------------------------------------
+
+function NetworksBreakdown ({
+  group, assets, fiatRatesMap, selectedAssetID,
+  creatingTokenIDs, tokenCreateErrors, onSelect,
+}: {
+  group: TickerGroup
+  assets: Record<number, SupportedAsset>
+  fiatRatesMap: Record<number, number>
+  selectedAssetID: number
+  creatingTokenIDs: Set<number>
+  tokenCreateErrors: Map<number, string>
+  onSelect: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <section className="border-top mt-3 pt-3 px-3">
+      <div className="fs14 text-secondary mb-2">{t('NETWORKS')}</div>
+      {group.assetIDs.map(id => {
+        const a = assets[id]
+        if (!a) return null
+        const ui = a.unitInfo
+        const isSelected = id === selectedAssetID
+        const parentAsset = a.token ? assets[a.token.parentID] : null
+        // For tokens, label the row by the parent chain's name so the
+        // breakdown reads "Ethereum / Polygon / Base"; for non-tokens
+        // (e.g. ETH itself in the ETH+WETH group) the asset's own
+        // name is the right label.
+        const networkLabel = parentAsset?.name ?? a.name
+        const totalAtoms = a.wallet
+          ? a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
+          : 0
+        const balanceText = a.wallet
+          ? `${formatCoinAtom(totalAtoms, ui)} ${ui.conventional.unit}`
+          : creatingTokenIDs.has(id)
+            ? t('CREATING')
+            : tokenCreateErrors.has(id)
+              ? t('CREATE_FAILED')
+              : '—'
+        const fiatRate = fiatRatesMap[id] ?? 0
+        const fiat = a.wallet && fiatRate > 0
+          ? atomToConventional(totalAtoms, ui) * fiatRate
+          : null
+        return (
+          <div
+            key={id}
+            className={`d-flex align-items-center justify-content-between p-2 hoverbg pointer rounded mb-1 ${isSelected ? 'bg-body' : ''}`}
+            onClick={() => onSelect(id)}
+          >
+            <div className="d-flex align-items-center">
+              <img
+                src={logoPath((parentAsset ?? a).symbol)}
+                alt=""
+                width={20}
+                height={20}
+                className="me-2"
+              />
+              <span className="fs15">{networkLabel}</span>
+              {creatingTokenIDs.has(id) && (
+                <span className="ico-spinner spinner fs11 ms-2 grey" />
+              )}
+            </div>
+            <div className="text-end">
+              <div className="fs15">{balanceText}</div>
+              {fiat !== null && (
+                <div className="fs13 grey">~${formatBestWeCan(fiat)}</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </section>
   )
 }
 

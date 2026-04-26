@@ -480,8 +480,10 @@ func (s *WebServer) apiNewWallet(w http.ResponseWriter, r *http.Request) {
 
 	// If we just created a parent (non-token) wallet, auto-create all of its
 	// known child token wallets. Failures here are logged but don't fail the
-	// outer request — the parent wallet is already created and child tokens
-	// can still be created later if something goes wrong.
+	// outer request — the WalletsPage UI re-tries any missing token wallet
+	// on click (see the "Auto-create-on-click" effect in WalletsPage.tsx),
+	// which also covers existing setups whose parent was created before
+	// this hook landed.
 	if asset.TokenInfo(form.AssetID) == nil {
 		if parent := asset.Asset(form.AssetID); parent != nil {
 			for tokenID, tok := range parent.Tokens {
