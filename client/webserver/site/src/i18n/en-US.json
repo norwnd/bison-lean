@@ -153,7 +153,7 @@
   "NO_TOKEN_ALLOWANCES": "You have not granted allowances for any swap contracts for this token.",
   "TOKEN_UNAPPROVAL_TX_MSG": "Your token approval has been removed with transaction ID:",
   "APPROVAL_CHANGE_PENDING": "Approval change pending",
-  "QUICKCONFIG_WALLET_HEADER": "We can activate these native wallets now. Configure additional wallets from the Wallets view.",
+  "QUICKCONFIG_WALLET_HEADER": "Pick the wallets you want to set up right away (you can create and customize your wallets later, if you want).",
   "QUICKCONFIG_WALLET_ERROR_HEADER": "Errors encountered when creating the following wallets. Wallets can be configured in the Wallets view.",
   "Continue": "Continue",
   "BACKUP_APP_SEED": "Backup App Seed",

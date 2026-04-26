@@ -27,11 +27,17 @@ export function AuthGuard () {
 
 // InitGuard redirects to /login if the app is already initialized.
 // Used for the /init route which should only be accessible during first setup.
+//
+// `initInProgress` is honoured so that a fetchUser() call mid-init flow
+// (which would flip `inited` to true) doesn't yank the user out of the
+// QuickConfig/SeedBackup steps before they finish — InitPage clears
+// the flag once it has its own navigate ready to fire.
 export function InitGuard ({ children }: { children: React.ReactNode }) {
   const ready = useWaitForInitialFetch()
   const inited = useAuthStore(s => s.inited)
+  const initInProgress = useAuthStore(s => s.initInProgress)
   if (!ready) return null
-  if (inited) return <Navigate to={ROUTES.LOGIN} replace />
+  if (inited && !initInProgress) return <Navigate to={ROUTES.LOGIN} replace />
   return <>{children}</>
 }
 

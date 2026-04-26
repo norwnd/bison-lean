@@ -43,12 +43,19 @@ export interface AuthState {
   // arrives with a DexAuthError* topic. Cleared when a subsequent
   // `/api/user` refresh shows the DEX as authed, or on logout.
   authFailed: Record<string, string>
+  // initInProgress is true while the user is mid-flow on InitPage,
+  // between /api/init succeeding and the final navigate to /wallets.
+  // InitGuard honours this so a refresh of the auth store (which would
+  // otherwise flip `inited` to true and bounce the user away from /init)
+  // doesn't clobber the QuickConfig / SeedBackup steps.
+  initInProgress: boolean
 
   fetchUser: () => Promise<User | null>
   fetchBuildInfo: () => Promise<void>
   login: (appPass: string) => Promise<LoginResult>
   logout: (force?: boolean) => Promise<LogoutResult>
   setAuthFailed: (host: string, msg: string) => void
+  setInitInProgress: (v: boolean) => void
 }
 
 function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number, WalletState> {
@@ -133,6 +140,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     fiatRatesMap: {},
     mmStatus: null,
     authFailed: {},
+    initInProgress: false,
 
     fetchUser: async () => {
       const resp: UserResponse = await getJSON('/api/user')
@@ -212,6 +220,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
     setAuthFailed: (host: string, msg: string) => {
       set({ authFailed: { ...get().authFailed, [host]: msg } })
+    },
+
+    setInitInProgress: (v: boolean) => {
+      set({ initInProgress: v })
     },
   }
 })
