@@ -3600,16 +3600,41 @@ func (c *Core) WalletSettings(assetID uint32) (map[string]string, error) {
 // WalletProviders returns the per-RPC-provider status snapshot for a
 // MultiProviderWallet (eth/polygon-style). Returns an empty slice for
 // wallets that don't multiplex RPC traffic.
+//
+// Two flavors of result are conflated under one method:
+//
+//  1. Live wallet exists — entries are the active provider pool with
+//     real Healthy/Probed/LastProbed status. This is the canonical use
+//     case (per-provider health UI, redundancy banner).
+//
+//  2. Wallet doesn't exist yet — falls back to the driver's static
+//     defaults so the create-wallet form can preview what providers
+//     will be used. These entries carry IsDefault=true, Probed=false,
+//     and no live health data. Returns missingWalletErr only when the
+//     asset has no driver-level defaults to surface.
+//
+// Callers that care about which flavor they got can check whether any
+// returned entry has Probed=true. If you need to tell "wallet is being
+// created" apart from "live wallet with no probe data yet", call
+// Core.wallet(assetID) directly instead.
 func (c *Core) WalletProviders(assetID uint32) ([]asset.ProviderInfo, error) {
 	wallet, found := c.wallet(assetID)
-	if !found {
+	if found {
+		mp, ok := wallet.Wallet.(asset.MultiProviderWallet)
+		if !ok {
+			return nil, nil
+		}
+		return mp.ProviderInfo(), nil
+	}
+	defaults := asset.DefaultProviders(assetID, c.net)
+	if len(defaults) == 0 {
 		return nil, newError(missingWalletErr, "%d -> %s wallet not found", assetID, unbip(assetID))
 	}
-	mp, ok := wallet.Wallet.(asset.MultiProviderWallet)
-	if !ok {
-		return nil, nil
+	out := make([]asset.ProviderInfo, len(defaults))
+	for i, url := range defaults {
+		out[i] = asset.ProviderInfo{URL: url, IsDefault: true}
 	}
-	return mp.ProviderInfo(), nil
+	return out, nil
 }
 
 // ChangeAppPass updates the application password to the provided new password

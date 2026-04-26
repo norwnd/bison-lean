@@ -2913,7 +2913,6 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
             ref={subformRef}
             assetID={asset.id}
             configOpts={configOpts}
-            sectionize={true}
             activeOrders={activeOrders}
             showFileSelector={!walletDef?.seeded && !asset.token}
           />

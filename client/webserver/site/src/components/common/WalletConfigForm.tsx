@@ -42,7 +42,6 @@ interface ConfigElement {
 interface Props {
   assetID: number
   configOpts: ConfigOption[]
-  sectionize: boolean
   activeOrders: boolean
   showFileSelector?: boolean
   onFileSelect?: () => void
@@ -89,13 +88,16 @@ function buildElements (opt: ConfigOption): ConfigElement[] {
 }
 
 export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(function WalletConfigForm (
-  { assetID, configOpts: propConfigOpts, sectionize, activeOrders, showFileSelector = false },
+  { assetID, configOpts: propConfigOpts, activeOrders, showFileSelector = false },
   ref
 ) {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const assets = useAuthStore(s => s.assets)
   const hiddenFields = user?.extensionModeConfig?.restrictedWallets?.[String(assetID)]?.hiddenFields ?? []
+  // Wallet liveness drives whether ProviderList should poll for health
+  // updates (live wallets) or fetch defaults once (create-wallet form).
+  const live = Boolean(assets[assetID]?.wallet)
 
   // Internal state managed by the parent via handle methods OR by props.
   const [, setCurrentAssetID] = useState(assetID)
@@ -116,14 +118,14 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
   // Split elements into primary (required-no-default + loaded-from-saved-config)
   // and "defaulted" (using their default value, untouched by the user).
   // loadedKeys is updated by setLoadedConfig so saved values surface alongside
-  // required opts at the top of the form rather than getting buried under
-  // "default settings".
+  // required opts at the top of the form rather than getting lumped in with
+  // never-touched options.
   const primaryElements: ConfigElement[] = []
   const defaultedElements: ConfigElement[] = []
   const [loadedKeys, setLoadedKeys] = useState<Set<string>>(new Set())
 
   for (const el of configElements) {
-    if (sectionize && el.opt.default !== null && el.opt.default !== undefined && !loadedKeys.has(el.id)) {
+    if (el.opt.default !== null && el.opt.default !== undefined && !loadedKeys.has(el.id)) {
       defaultedElements.push(el)
     } else {
       primaryElements.push(el)
@@ -235,11 +237,9 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     },
     setLoadedConfig (cfg: Record<string, string>) {
       setConfig(cfg)
-      if (!sectionize) return
       // Track which element IDs got values from the loaded config so the
-      // bucketing logic keeps them in the primary section instead of pushing
-      // them into "default settings" (where they'd be hidden among
-      // never-touched options).
+      // bucketing logic keeps them in the primary section instead of
+      // grouping them with never-touched defaults.
       setConfigElements(prev => {
         const ids = new Set<string>()
         for (const el of prev) {
@@ -261,7 +261,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
       }
       setConfigElements(elems)
     },
-  }), [configElements, sectionize, setConfig])
+  }), [configElements, setConfig])
 
   // --- File input handler ---
 
@@ -292,7 +292,9 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
     // list of RPC endpoints with per-provider health status. Defaults
     // (hardcoded in the wallet) appear first as non-deletable rows;
     // user-added entries are deletable. Health is fetched from
-    // /api/walletproviders and refreshed periodically.
+    // /api/walletproviders and refreshed periodically while the wallet
+    // is live; on the create-wallet form it's a one-shot fetch since
+    // the response is static defaults.
     if (opt.key === 'providers' && !isHidden) {
       return (
         <ProviderList
@@ -301,6 +303,7 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
           value={el.value}
           onChange={(v) => updateElement(el.id, { value: v })}
           disabled={isDisabled}
+          live={live}
         />
       )
     }
@@ -433,14 +436,9 @@ export const WalletConfigForm = forwardRef<WalletConfigFormHandle, Props>(functi
         <div className="fs15 text-danger mb-2">{error}</div>
       )}
 
-      {/* Options using their default value, rendered below the actively-set
-          ones. Always visible — no collapse toggle. */}
-      {defaultedElements.length > 0 && (
-        <div className="other-settings">
-          <div className="fs15 text-secondary mb-1">{t('DEFAULT_SETTINGS')}</div>
-          {defaultedElements.map(renderInput)}
-        </div>
-      )}
+      {/* Options using their default value, rendered below the
+          actively-set ones so required/loaded fields surface first. */}
+      {defaultedElements.map(renderInput)}
     </div>
   )
 })

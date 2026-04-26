@@ -54,13 +54,6 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
   const [showOneBttn, setShowOneBttn] = useState(false)
   const [guideLink, setGuideLink] = useState('')
 
-  // T18#13: previously declared a `createUpdater` useState that was
-  // always null and a `useNotifications({ createwallet })` handler
-  // whose body never fired because of the null check. Dead code from
-  // an earlier refactor -- deleted. If we ever need wallet-creation
-  // progress callbacks (e.g. DCR SPV sync progress), wire them up
-  // fresh via useNotifications directly.
-
   // Parse asset data from store.
   const parseAsset = useCallback((id: number): CurrentAsset | null => {
     const asset = assets[id]
@@ -132,10 +125,18 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
     }
   }, [seedGenTime])
 
-  // Set asset when assetID prop changes.
+  // Initialize the form for the given asset. The auth-store-backed
+  // `parseAsset`/`updateDef` callbacks change on every assets/seedGenTime
+  // update (e.g. websocket-driven balance pushes), which would re-fire
+  // this effect and reset the user's tab choice + typed inputs back to
+  // their defaults. Guard with a ref so we only initialize once per
+  // assetID change.
+  const initializedFor = useRef<number | null>(null)
   useEffect(() => {
+    if (initializedFor.current === assetID) return
     const cur = parseAsset(assetID)
     if (!cur) return
+    initializedFor.current = assetID
     setCurrent(cur)
     setWalletPass('')
     setError('')
@@ -236,7 +237,6 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
         ref={subformRef}
         assetID={asset.id}
         configOpts={configOpts}
-        sectionize={true}
         activeOrders={false}
         showFileSelector={showFileSelector}
       />

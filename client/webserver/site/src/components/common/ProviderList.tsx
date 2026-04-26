@@ -23,6 +23,10 @@ interface Props {
   onChange: (value: string) => void
   // disabled when the wallet has active orders or other reasons.
   disabled?: boolean
+  // live is true when the wallet exists and is reporting live health
+  // data; false on the create-wallet form, where the API just echoes
+  // the static defaults. Drives whether we re-poll for fresh status.
+  live?: boolean
 }
 
 const POLL_INTERVAL_MS = 5000
@@ -55,7 +59,7 @@ function formatTimeAgo (rfc3339: string): string {
 // providers can be added/deleted. A green/red status dot reflects the
 // most recent health-probe outcome for each, with a hover tooltip
 // showing the last error and last-checked time.
-export function ProviderList ({ assetID, value, onChange, disabled }: Props) {
+export function ProviderList ({ assetID, value, onChange, disabled, live = false }: Props) {
   const { t } = useTranslation()
   // entries is the displayed list = (defaults from API) ∪ (user-added).
   // Health fields come from the API; user-added URLs that aren't yet
@@ -70,8 +74,10 @@ export function ProviderList ({ assetID, value, onChange, disabled }: Props) {
     onChange(joinUserURLs(urls))
   }, [onChange])
 
-  // Fetch /api/walletproviders on mount and re-fetch periodically so
-  // health dots stay fresh while the form is open.
+  // Fetch /api/walletproviders on mount; for a live wallet, also
+  // re-fetch periodically so health dots stay fresh. The pre-creation
+  // response is just the static default list, so a single fetch is
+  // enough.
   useEffect(() => {
     let cancelled = false
     const fetchOnce = async () => {
@@ -81,9 +87,12 @@ export function ProviderList ({ assetID, value, onChange, disabled }: Props) {
       setApiEntries((res.providers ?? []) as ProviderInfo[])
     }
     fetchOnce()
+    if (!live) {
+      return () => { cancelled = true }
+    }
     const id = setInterval(fetchOnce, POLL_INTERVAL_MS)
     return () => { cancelled = true; clearInterval(id) }
-  }, [assetID])
+  }, [assetID, live])
 
   // Build the rendered list: defaults from API (always present, in API
   // order), then user-added (locally-tracked URLs, with health pulled

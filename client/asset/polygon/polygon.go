@@ -126,28 +126,6 @@ func (d *Driver) Open(cfg *asset.WalletConfig, logger dex.Logger, net dex.Networ
 		}
 	}
 
-	var defaultProviders []string
-	switch net {
-	case dex.Simnet:
-		defaultProviders = []string{"http://127.0.0.1:48296"}
-	case dex.Testnet:
-		defaultProviders = []string{
-			// Verified working (2025-12-26)
-			"https://polygon-amoy.drpc.org",               // dRPC - verified working
-			"https://rpc-amoy.polygon.technology",         // Polygon Labs official
-			"https://polygon-amoy-bor-rpc.publicnode.com", // PublicNode
-			"wss://polygon-amoy-bor-rpc.publicnode.com",   // PublicNode WSS
-		}
-	case dex.Mainnet:
-		defaultProviders = []string{
-			// Verified working (2025-12-26)
-			"https://polygon-rpc.com",                    // Polygon Labs official
-			"https://rpc-mainnet.matic.quiknode.pro",     // QuikNode
-			"https://gateway.tenderly.co/public/polygon", // Tenderly
-			"https://polygon-bor-rpc.publicnode.com",     // PublicNode
-		}
-	}
-
 	// BipID, chainCfg, cfg, &t, dexpolygon.VersionedGases, dexpolygon.Tokens, logger, net
 	evmWallet, err := eth.NewEVMWallet(&eth.EVMWalletConfig{
 		BaseChainID:        BipID,
@@ -162,7 +140,7 @@ func (d *Driver) Open(cfg *asset.WalletConfig, logger dex.Logger, net dex.Networ
 		MultiBalAddress:    dexpolygon.MultiBalanceAddresses[net],
 		WalletInfo:         WalletInfo,
 		Net:                net,
-		DefaultProviders:   defaultProviders,
+		DefaultProviders:   defaultProviders(net),
 		MaxTxFeeGwei:       1000 * dexeth.GweiFactor, // 1000 POL
 	})
 	if err != nil {
@@ -170,6 +148,44 @@ func (d *Driver) Open(cfg *asset.WalletConfig, logger dex.Logger, net dex.Networ
 	}
 
 	return evmWallet, nil
+}
+
+// DefaultProviders returns the hardcoded fallback RPC providers used
+// when the user has not configured custom endpoints. Surfaced through
+// the optional asset-package interface so Core can show the would-be
+// provider list on the create-wallet form (before a wallet exists).
+func (d *Driver) DefaultProviders(net dex.Network) []string {
+	return defaultProviders(net)
+}
+
+// defaultProviders is the source of truth for the hardcoded Polygon
+// RPC fallback list. Used by both Driver.Open (when constructing a
+// live wallet) and Driver.DefaultProviders (for the pre-creation UI).
+//
+// The public endpoints below are checked by health-probes at runtime,
+// so a stale entry won't break the wallet — it just gets skipped. Still
+// worth a manual sweep occasionally; the multi-RPC client logs flags
+// any provider that errors more than the others.
+func defaultProviders(net dex.Network) []string {
+	switch net {
+	case dex.Simnet:
+		return []string{"http://127.0.0.1:48296"}
+	case dex.Testnet:
+		return []string{
+			"https://polygon-amoy.drpc.org",
+			"https://rpc-amoy.polygon.technology",
+			"https://polygon-amoy-bor-rpc.publicnode.com",
+			"wss://polygon-amoy-bor-rpc.publicnode.com",
+		}
+	case dex.Mainnet:
+		return []string{
+			"https://polygon-rpc.com",
+			"https://rpc-mainnet.matic.quiknode.pro",
+			"https://gateway.tenderly.co/public/polygon",
+			"https://polygon-bor-rpc.publicnode.com",
+		}
+	}
+	return nil
 }
 
 func (d *Driver) DecodeCoinID(coinID []byte) (string, error) {

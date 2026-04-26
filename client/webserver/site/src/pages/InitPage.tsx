@@ -340,7 +340,6 @@ export default function InitPage () {
                               }}
                               assetID={wRow.asset.id}
                               configOpts={wRow.walletDef.configopts ?? []}
-                              sectionize={true}
                               activeOrders={false}
                             />
                           </div>

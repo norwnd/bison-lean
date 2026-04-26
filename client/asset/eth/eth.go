@@ -301,6 +301,44 @@ func (d *Driver) Open(cfg *asset.WalletConfig, logger dex.Logger, network dex.Ne
 	return newWallet(cfg, logger, network)
 }
 
+// DefaultProviders returns the hardcoded fallback RPC providers used
+// when the user has not configured custom endpoints. Surfaced through
+// the optional asset-package interface so Core can show the would-be
+// provider list on the create-wallet form (before a wallet exists).
+func (d *Driver) DefaultProviders(net dex.Network) []string {
+	return defaultProviders(net)
+}
+
+// defaultProviders is the source of truth for the hardcoded ETH RPC
+// fallback list. Used by both newWallet (when constructing a live
+// wallet) and Driver.DefaultProviders (for the pre-creation UI).
+//
+// The public endpoints below are checked by health-probes at runtime,
+// so a stale entry won't break the wallet — it just gets skipped. Still
+// worth a manual sweep occasionally; the multi-RPC client logs flags
+// any provider that errors more than the others.
+func defaultProviders(net dex.Network) []string {
+	switch net {
+	case dex.Simnet:
+		return []string{"http://127.0.0.1:38556"}
+	case dex.Testnet:
+		return []string{
+			"https://ethereum-sepolia-rpc.publicnode.com",
+			"https://sepolia.drpc.org",
+			"https://endpoints.omniatech.io/v1/eth/sepolia/public",
+			"https://rpc-sepolia.rockx.com",
+		}
+	case dex.Mainnet:
+		return []string{
+			"https://eth-mainnet.nodereal.io/v1/1659dfb40aa24bbb8153a677b98064d7",
+			"https://eth.api.onfinality.io/public",
+			"https://eth-mainnet.public.blastapi.io",
+			"https://ethereum-rpc.publicnode.com",
+		}
+	}
+	return nil
+}
+
 // DecodeCoinID creates a human-readable representation of a coin ID for Ethereum.
 // These are supported coin ID formats:
 //  1. A transaction hash. 32 bytes
@@ -1833,28 +1871,6 @@ func newWallet(assetCFG *asset.WalletConfig, logger dex.Logger, net dex.Network)
 		}
 	}
 
-	var defaultProviders []string
-	switch net {
-	case dex.Simnet:
-		defaultProviders = []string{"http://127.0.0.1:38556"}
-	case dex.Testnet:
-		defaultProviders = []string{
-			// Verified working (2025-12-26)
-			"https://ethereum-sepolia-rpc.publicnode.com",          // PublicNode - no rate limits
-			"https://sepolia.drpc.org",                             // dRPC - verified working
-			"https://endpoints.omniatech.io/v1/eth/sepolia/public", // Omniatech - verified working
-			"https://rpc-sepolia.rockx.com",                        // RockX - verified working
-		}
-	case dex.Mainnet:
-		defaultProviders = []string{
-			// Verified working (2025-12-26)
-			"https://eth-mainnet.nodereal.io/v1/1659dfb40aa24bbb8153a677b98064d7", // NodeReal - verified working
-			"https://eth.api.onfinality.io/public",                                // OnFinality - verified working
-			"https://eth-mainnet.public.blastapi.io",                              // Blast API - verified working
-			"https://ethereum-rpc.publicnode.com",                                 // PublicNode - verified working
-		}
-	}
-
 	return NewEVMWallet(&EVMWalletConfig{
 		BaseChainID:        BipID,
 		ChainCfg:           chainCfg,
@@ -1868,7 +1884,7 @@ func newWallet(assetCFG *asset.WalletConfig, logger dex.Logger, net dex.Network)
 		MultiBalAddress:    dexeth.MultiBalanceAddresses[net],
 		WalletInfo:         WalletInfo,
 		Net:                net,
-		DefaultProviders:   defaultProviders,
+		DefaultProviders:   defaultProviders(net),
 		MaxTxFeeGwei:       dexeth.GweiFactor, // 1 ETH
 	})
 }

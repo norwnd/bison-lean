@@ -324,6 +324,28 @@ func WalletDef(assetID uint32, walletType string) (*WalletDefinition, error) {
 	return wd, nil
 }
 
+// DefaultProviders returns the static fallback RPC providers a wallet of
+// this asset would use on the given network if created right now.
+// Returns nil for assets whose driver doesn't multiplex RPC traffic, or
+// for unknown asset/network combinations. The webserver uses this to
+// show the would-be provider list on the create-wallet form, before a
+// wallet exists to query for live status.
+func DefaultProviders(assetID uint32, net dex.Network) []string {
+	driversMtx.RLock()
+	drv, ok := drivers[assetID]
+	driversMtx.RUnlock()
+	if !ok {
+		return nil
+	}
+	p, ok := drv.(interface {
+		DefaultProviders(net dex.Network) []string
+	})
+	if !ok {
+		return nil
+	}
+	return p.DefaultProviders(net)
+}
+
 // MinimumLotSize returns the minimimum lot size for a registered asset.
 func MinimumLotSize(assetID uint32, maxFeeRate uint64) (minLotSize uint64, found bool) {
 	baseChainID := assetID
