@@ -4,7 +4,7 @@ import {
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse, Errors } from '../services/api'
-import { fetchLocal, storeLocal, lastVariantByTickerLK } from '../services/state'
+import { fetchLocal, storeLocal, lastVariantByTickerLK, selectedAssetLK } from '../services/state'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
@@ -294,6 +294,26 @@ function buildTickerGroups (
   })
 }
 
+// visibleVariantsOf filters a group's assetIDs down to the variants
+// the sidebar should actually display in its expansion: parent assets
+// (non-tokens) always show, and a token variant only shows when its
+// parent has a wallet — without the parent, the token can't be
+// created or held, so listing it is just noise. To start using the
+// hidden variant, the user creates the parent first (clicking the
+// parent's own coin-group row), and the variant becomes visible on
+// the next render once the parent wallet appears in `assets`.
+function visibleVariantsOf (
+  g: TickerGroup,
+  assets: Record<number, SupportedAsset>
+): number[] {
+  return g.assetIDs.filter(id => {
+    const a = assets[id]
+    if (!a) return false
+    if (!a.token) return true
+    return !!assets[a.token.parentID]?.wallet
+  })
+}
+
 // pickVariantForGroup chooses which variant to land on when the user
 // clicks a sidebar group. Tries, in order:
 //   1. The user's last-viewed variant for this ticker (localStorage),
@@ -406,7 +426,18 @@ export default function WalletsPage () {
   const user = useAuthStore(s => s.user)
   const fetchUser = useAuthStore(s => s.fetchUser)
 
-  const [selectedAssetID, setSelectedAssetID] = useState<number | null>(null)
+  // selectedAssetID is the variant currently shown on the right side
+  // (e.g. usdc.matic when the user is looking at USDC on Polygon).
+  // Persisted to localStorage so navigating to /markets and back lands
+  // the user on the same view they left. The first-mount auto-select
+  // effect only fires when this is still null, so the restored value
+  // takes precedence; if the persisted asset is no longer supported
+  // (asset list changed between releases), the validity check in the
+  // render path falls through to the auto-select on the next render.
+  const [selectedAssetID, setSelectedAssetID] = useState<number | null>(() => {
+    const v = fetchLocal(selectedAssetLK)
+    return typeof v === 'number' && Number.isFinite(v) ? v : null
+  })
   // WP-19: extended `activeForm` to host the four new action modals
   // (recoverWallet / exportWalletAuth / restoreWalletInfo / managePeers)
   // plus the shared confirmForce step. The string-tagged enum mirrors
@@ -546,12 +577,26 @@ export default function WalletsPage () {
   )
 
   // Auto-select the first wallet-bearing asset on mount, restoring the
-  // user's last-viewed variant within that group when persisted.
+  // user's last-viewed variant within that group when persisted. Also
+  // self-corrects if a previously-persisted selectedAssetID points to
+  // an asset that no longer exists (asset list changed between
+  // releases) — drop it and fall through to the auto-select.
   useEffect(() => {
-    if (selectedAssetID !== null) return
+    if (selectedAssetID !== null && assets[selectedAssetID]) return
+    if (selectedAssetID !== null && !assets[selectedAssetID]) {
+      setSelectedAssetID(null)
+      return
+    }
     const first = tickerGroups.find(g => g.hasWallet)
     if (first) setSelectedAssetID(pickVariantForGroup(first, lastVariantByTicker, assets))
   }, [tickerGroups, selectedAssetID, lastVariantByTicker, assets])
+
+  // Persist the current selection so /wallets restores the same view
+  // after the user navigates to /markets, /settings, etc. and back.
+  useEffect(() => {
+    if (selectedAssetID === null) return
+    storeLocal(selectedAssetLK, selectedAssetID)
+  }, [selectedAssetID])
 
   // Persist the last-viewed variant per ticker. Catches both code paths
   // (sidebar click via pickVariantForGroup and per-chain row click)
@@ -677,6 +722,16 @@ export default function WalletsPage () {
     return false
   }, [bridgePaths, selectedTickerNetworkIDs, assets])
 
+  // Index of the group containing the currently-selected asset, used by
+  // the sidebar render to hide the bottom-underscore on both the
+  // selected row and the row directly above it (so neither row's top
+  // edge has an extra horizontal line stacked against the selection's
+  // bg accent). -1 when no group's variants include selectedAssetID.
+  const selectedGroupIndex = useMemo(
+    () => tickerGroups.findIndex(g => g.assetIDs.includes(selectedAssetID ?? -1)),
+    [tickerGroups, selectedAssetID]
+  )
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
@@ -684,21 +739,30 @@ export default function WalletsPage () {
   return (
     <div className="d-flex fill-abs">
       {/* ---- Left Sidebar: Asset List ---- */}
-      <section className="w-auto d-flex flex-column align-items-stretch overflow-y-auto hidden-overflow">
-        {/* Holdings header */}
-        <div className="flex-stretch-column pt-2 px-2 hoverbg pointer" onClick={() => setSelectedAssetID(null)}>
-          <span className="grey fs16 lh1 mb-1">{t('Holdings')}</span>
-          <span className="d-flex align-items-end lh1">
-            <span className="fs20">
-              {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
-            </span>
+      <section
+        className="w-auto d-flex flex-column align-items-stretch overflow-y-auto hidden-overflow"
+        style={{ minWidth: 240 }}
+      >
+        {/* Holdings header — value-only, right-aligned. The "Holdings"
+            label was removed since the right-aligned $ figure is
+            self-explanatory in the sidebar context. */}
+        <div className="d-flex justify-content-end pt-2 px-2 pb-1 hoverbg pointer border-bottom" onClick={() => setSelectedAssetID(null)}>
+          <span className="fs18 fw-bold lh1">
+            {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
           </span>
-          <div className="border-bottom mt-2"></div>
         </div>
         {/* Ticker balance rows */}
         <div className="flex-stretch-column border-bottom">
-          {tickerGroups.map(g => {
+          {tickerGroups.map((g, idx) => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
+            // The row immediately above the selected group keeps its
+            // bottom-underscore hidden too — without that, the
+            // selected row's top edge butts up against an unrelated
+            // horizontal line from the row above, which looks busy.
+            // (Selected row's own underscore is already hidden — see
+            // the `borderBottomColor: transparent` below.)
+            const isAboveSelected =
+              selectedGroupIndex >= 0 && idx === selectedGroupIndex - 1
             // LI-ASYNC Batch 9: tiny spinner when any asset in the group
             // has a wallet mid-connect (user hasn't disabled it, but its
             // `Running` flag is false). Post-login this is the
@@ -709,31 +773,94 @@ export default function WalletsPage () {
             // every `walletstate` setState, promoting this into the
             // aggregate is a safe follow-up refactor.
             const connectingAsset = g.assetIDs.find(id => walletConnecting(assets[id]?.wallet))
+            // Expand the per-chain breakdown when (a) the group is
+            // selected, OR (b) any variant (parent OR token) in the
+            // group has a non-zero wallet balance. POL is a parent
+            // (non-token) on Polygon and a token on Ethereum, so
+            // restricting this to tokens-only would leave POL groups
+            // collapsed on first render even though the user holds
+            // POL on Polygon.
+            const hasAnyBalance = g.assetIDs.some(id => {
+              const a = assets[id]
+              if (!a?.wallet) return false
+              const bal = a.wallet.balance
+              return (bal.available + bal.locked + bal.immature) > 0
+            })
+            // Expansion shows only the visible variants (those whose
+            // parent has a wallet). Suppress entirely when fewer than
+            // 2 are visible — at 1 visible variant the aggregate row
+            // already conveys the same info and the tree would be a
+            // single dangling branch with nothing to navigate between.
+            const visibleCount = visibleVariantsOf(g, assets).length
+            const showNetworks = visibleCount >= 2 && (selected || hasAnyBalance)
             return (
-              <div
-                key={g.ticker}
-                className={`flex-stretch-column pt-2 px-2 hoverbg pointer ${selected ? 'selected' : ''}`}
-                onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
-                style={selected ? { backgroundColor: 'var(--body-bg)' } : undefined}
-              >
-                <div className="d-flex justify-content-between align-items-start">
-                  <div className="flex-center me-4 lh1">
-                    <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
-                    <span className="ms-1 fs22">{g.ticker}</span>
-                    {connectingAsset !== undefined && (
-                      <span
-                        className="ico-spinner spinner fs11 ms-2"
-                        title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[connectingAsset].symbol) })}
-                      />
-                    )}
+              <div key={g.ticker}>
+                <div
+                  className={`flex-stretch-column pt-2 pb-1 px-2 ${selected ? '' : 'hoverbg'} pointer`}
+                  onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
+                  style={selected
+                    ? {
+                        // Bg fill plus 2px top + bottom accents — the
+                        // selected coin-group is bracketed top and
+                        // bottom by accent bars matching the bold
+                        // tree-branch line weight.
+                        backgroundColor: 'var(--tertiary-bg)',
+                        boxShadow: 'inset 0 2px 0 var(--text-color), inset 0 -2px 0 var(--text-color)',
+                        color: 'var(--text-color)',
+                      }
+                    : undefined}
+                >
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div className="flex-center me-4 lh1">
+                      <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
+                      <span className="ms-1 fs18 fw-bold">{g.ticker}</span>
+                      {connectingAsset !== undefined && (
+                        <span
+                          className="ico-spinner spinner fs11 ms-2"
+                          title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[connectingAsset].symbol) })}
+                        />
+                      )}
+                    </div>
+                    <div className="d-flex flex-column align-items-end">
+                      {g.hasWallet
+                        ? <span className="fs18 fw-bold lh1">{formatBestWeCan(g.totalNative, 8)}</span>
+                        : <span className="grey me-1">—</span>}
+                    </div>
                   </div>
-                  <div className="d-flex flex-column align-items-end">
-                    {g.hasWallet
-                      ? <span className="fs22 lh1">{formatBestWeCan(g.totalNative, 8)}</span>
-                      : <span className="grey me-1">—</span>}
-                  </div>
+                  {/* Inner row separator. Hidden (border transparent to
+                      keep layout height stable) on (a) the selected
+                      row — its 3px bottom boxShadow already separates
+                      it from below — and (b) the row directly above
+                      the selected one, so the selected row's top edge
+                      doesn't sit under an unrelated horizontal line.
+                      Bootstrap's `.border-bottom` utility ships an
+                      `!important` shorthand which prevents inline
+                      `borderBottomColor` from overriding it, so the
+                      whole border is set via inline style here. */}
+                  <div
+                    className="mt-2"
+                    style={{
+                      borderBottom: '1px solid',
+                      borderBottomColor: (selected || isAboveSelected)
+                        ? 'transparent'
+                        : 'var(--border-color)',
+                    }}
+                  ></div>
                 </div>
-                <div className="border-bottom mt-2"></div>
+                {/* Per-chain expansion under the selected multi-variant
+                    group — pushes the rows below it down. Tree-style
+                    indentation links each variant visually back to the
+                    parent group. Click any variant to switch to it. */}
+                {showNetworks && (
+                  <SidebarNetworksExpansion
+                    group={g}
+                    assets={assets}
+                    selectedAssetID={selectedAssetID ?? -1}
+                    creatingTokenIDs={creatingTokenIDs}
+                    tokenCreateErrors={tokenCreateErrors}
+                    onSelect={setSelectedAssetID}
+                  />
+                )}
               </div>
             )
           })}
@@ -753,31 +880,6 @@ export default function WalletsPage () {
               {/* ---- Center Column: Wallet Detail ---- */}
               <div className="position-relative col-24 col-xl-12 col-xxl-9 flex-stretch-column">
                 <div className="flex-stretch-column">
-                  {/* Per-chain breakdown for multi-variant groups —
-                      rendered at the top of the center column with a
-                      horizontal-card layout so the chain switcher is
-                      always one click away regardless of the main
-                      view's state (wallet, creating, error, no-wallet).
-                      assetIDs are sorted by symbol ascending in
-                      buildTickerGroups, so the order is stable and
-                      alphabetical. Single-variant groups (DCR, BTC,
-                      etc.) skip the section. Covers both token groups
-                      (USDC) and mixed groups (ETH+WETH). */}
-                  {(() => {
-                    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAsset.id))
-                    if (!group || group.assetIDs.length < 2) return null
-                    return (
-                      <NetworksBreakdown
-                        group={group}
-                        assets={assets}
-                        fiatRatesMap={fiatRatesMap}
-                        selectedAssetID={selectedAsset.id}
-                        creatingTokenIDs={creatingTokenIDs}
-                        tokenCreateErrors={tokenCreateErrors}
-                        onSelect={setSelectedAssetID}
-                      />
-                    )
-                  })()}
                   {selectedWallet && (
                     <WalletDetail
                       asset={selectedAsset}
@@ -1142,90 +1244,199 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 }
 
 // ---------------------------------------------------------------------------
-// NetworksBreakdown — horizontal-card chain switcher rendered at the
-// top of the center column for any multi-variant ticker group. Cards
-// expand rightward (wrapping to a new line if the column is narrow)
-// rather than stacking, keeping the main view directly below in the
-// same horizontal slice the user is already looking at.
+// SidebarNetworksExpansion — per-chain row list rendered inside the
+// sidebar directly below the selected multi-variant token group's row.
+// Pushes other groups below it down (in-flow expansion). Each variant
+// row is indented with a tree-style ASCII connector linking it back to
+// the parent group, mimicking the visual cue you'd expect from a
+// drill-down list.
 //
-// Variant order matches group.assetIDs, sorted by symbol ascending in
-// buildTickerGroups so the order is stable. Each card is clickable —
-// switches selectedAssetID, and the auto-create effect fires for any
-// newly-eligible candidate. The selected card is highlighted via
-// border + body-bg.
+// Variant order matches group.assetIDs (sorted by symbol ascending in
+// buildTickerGroups). Each row is clickable — switches selectedAssetID
+// and the auto-create effect fires for any newly-eligible candidate.
+//
+// The selected variant takes the same active-state treatment as the
+// page header buttons (Wallet / Trade / etc.) — `--tertiary-bg` fill
+// plus a darker text colour and a left-edge accent bar, so the active
+// chain stands out clearly against its siblings.
 // ---------------------------------------------------------------------------
 
-function NetworksBreakdown ({
-  group, assets, fiatRatesMap, selectedAssetID,
-  creatingTokenIDs, tokenCreateErrors, onSelect,
+function SidebarNetworksExpansion ({
+  group, assets, selectedAssetID, creatingTokenIDs, tokenCreateErrors, onSelect,
 }: {
   group: TickerGroup
   assets: Record<number, SupportedAsset>
-  fiatRatesMap: Record<number, number>
   selectedAssetID: number
   creatingTokenIDs: Set<number>
   tokenCreateErrors: Map<number, string>
   onSelect: (id: number) => void
 }) {
   const { t } = useTranslation()
+  // Tree-glyph geometry. Centerline + stub-end pulled inward — the
+  // tree still visually originates from the parent group row's
+  // coin-symbol area but takes less horizontal space. ~30% closer
+  // to the row's left edge and ~35% shorter L-stub vs the previous
+  // values (18 → 13, stub 20 → 13).
+  const treeStartX = 13 // centerline, px from row's left edge
+  const treeStubEnd = 26 // px from row's left edge to where stub meets the variant logo
+  // The bold "selection branch" runs from the parent token row down
+  // through every variant up to and including the selected one. So
+  // for each variant at index i:
+  //   • i < selectedIndex   → top-half bold (path arriving) AND
+  //                           bottom-half bold (path passing through),
+  //                           stub thin (this row isn't the destination).
+  //   • i === selectedIndex → top-half bold + stub bold (the L pointing
+  //                           at the selected row); bottom-half stays
+  //                           thin since the selection ends here.
+  //   • i > selectedIndex   → all thin (path doesn't reach this row).
+  // selectedIndex < 0 means no variant in this group is selected (the
+  // group is open because hasAnyBalance, but the user is currently
+  // looking at a different group) — render every line thin.
+  // Filter to the variants that are actually visible (parent wallet
+  // exists) before computing the tree geometry, so the bold-path
+  // index calculations operate on the same row set the user sees.
+  const visibleIDs = visibleVariantsOf(group, assets)
+  const selectedIndex = visibleIDs.indexOf(selectedAssetID)
+  // Sum the conventional balance across every variant in the group so
+  // each row can show its share as a % of the group total instead of
+  // the raw amount. Conventional units are already normalised (e.g.
+  // USDC = 1 USDC regardless of chain), so summing across variants is
+  // valid. Total is 0 when no variant has a wallet — every row falls
+  // back to "—".
+  const groupTotalConventional = visibleIDs.reduce((sum, id) => {
+    const a = assets[id]
+    if (!a?.wallet) return sum
+    const total = a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
+    return sum + atomToConventional(total, a.unitInfo)
+  }, 0)
   return (
-    <section className="border-bottom px-3 pt-3 pb-2">
-      <div className="fs14 text-secondary mb-2">{t('NETWORKS')}</div>
-      <div className="d-flex flex-wrap gap-2">
-        {group.assetIDs.map(id => {
-          const a = assets[id]
-          if (!a) return null
-          const ui = a.unitInfo
-          const isSelected = id === selectedAssetID
-          const parentAsset = a.token ? assets[a.token.parentID] : null
-          // For tokens, label the card by the parent chain's name so
-          // the breakdown reads "Ethereum / Polygon / Base"; for
-          // non-tokens (e.g. ETH itself in the ETH+WETH group) the
-          // asset's own name is the right label.
-          const networkLabel = parentAsset?.name ?? a.name
-          const totalAtoms = a.wallet
-            ? a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
-            : 0
-          const balanceText = a.wallet
-            ? `${formatCoinAtom(totalAtoms, ui)} ${ui.conventional.unit}`
-            : creatingTokenIDs.has(id)
-              ? t('CREATING')
-              : tokenCreateErrors.has(id)
-                ? t('CREATE_FAILED')
-                : '—'
-          const fiatRate = fiatRatesMap[id] ?? 0
-          const fiat = a.wallet && fiatRate > 0
-            ? atomToConventional(totalAtoms, ui) * fiatRate
-            : null
-          return (
+    <div className="flex-stretch-column">
+      {visibleIDs.map((id, i) => {
+        const a = assets[id]
+        if (!a) return null
+        const ui = a.unitInfo
+        const isSelected = id === selectedAssetID
+        const parentAsset = a.token ? assets[a.token.parentID] : null
+        const totalAtoms = a.wallet
+          ? a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
+          : 0
+        // Show this variant's share of the group total as a percentage.
+        // Falls back to the creating/error/em-dash sentinels when the
+        // wallet doesn't exist (or the group total is zero).
+        const variantConventional = a.wallet ? atomToConventional(totalAtoms, ui) : 0
+        const balanceText = a.wallet && groupTotalConventional > 0
+          ? `${Math.round((variantConventional / groupTotalConventional) * 100)}%`
+          : creatingTokenIDs.has(id)
+            ? t('CREATING')
+            : tokenCreateErrors.has(id)
+              ? t('CREATE_FAILED')
+              : '—'
+        const isLast = i === visibleIDs.length - 1
+        const networkLabel = parentAsset?.name ?? a.name
+        // Per-segment boldness: top-half is part of the bold branch
+        // for any row at-or-before the selected one; bottom-half is
+        // bold only for rows STRICTLY before the selected one (the
+        // selection ends at the L-corner, so its run-down stays thin);
+        // the horizontal stub is bold only for the single selected
+        // row (it's the visual "you are here" pointer).
+        const topHalfBold = selectedIndex >= 0 && i <= selectedIndex
+        const bottomHalfBold = selectedIndex >= 0 && i < selectedIndex
+        const stubBold = i === selectedIndex
+        const boldColor = 'var(--text-color)'
+        const thinColor = 'var(--border-color)'
+        // Bold lines are 2px (down from 3) — still clearly heavier
+        // than the 1px thin lines but less eye-catching against the
+        // sidebar bg.
+        const topHalfThickness = topHalfBold ? 2 : 1
+        const bottomHalfThickness = bottomHalfBold ? 2 : 1
+        const stubThickness = stubBold ? 2 : 1
+        // Stub left edge is anchored to the top-half's left edge so
+        // the L-corner fills cleanly when both are bold. When the
+        // stub is thin and the top-half is bold, the thin stub's
+        // overlap with the top-half is hidden by the top-half's
+        // higher z-index (see below) — only the part of the stub
+        // outside the top-half column is visible, which is what we
+        // want for "this row exists but isn't selected".
+        const stubLeft = treeStartX - topHalfThickness / 2
+        return (
+          <div
+            key={id}
+            className={`d-flex align-items-center py-1 ${isSelected ? '' : 'hoverbg'} pointer position-relative`}
+            style={{
+              paddingLeft: `${treeStubEnd + 4}px`,
+              paddingRight: '0.5rem',
+              ...(isSelected
+                ? {
+                    backgroundColor: 'var(--tertiary-bg)',
+                    color: 'var(--text-color)',
+                  }
+                : {}),
+            }}
+            onClick={() => onSelect(id)}
+            title={networkLabel}
+          >
+            {/* All line positions snap to integer pixels via
+                Math.floor so a 1px line never lands on a half-pixel
+                (where the browser would smear it across two pixels
+                via anti-aliasing — the visible result was thin lines
+                appearing ~2px wide and fuzzier than their selected
+                2px siblings). Slight off-center vs the geometric
+                centerline is cheaper than the blur it replaces. */}
             <div
-              key={id}
-              className={`d-flex flex-column align-items-center p-2 hoverbg pointer rounded border ${isSelected ? 'bg-body' : ''}`}
-              style={{ minWidth: 140, borderColor: isSelected ? 'var(--bs-primary, #336)' : undefined }}
-              onClick={() => onSelect(id)}
-            >
-              <div className="d-flex align-items-center mb-1">
-                <img
-                  src={logoPath((parentAsset ?? a).symbol)}
-                  alt=""
-                  width={18}
-                  height={18}
-                  className="me-2"
-                />
-                <span className="fs15">{networkLabel}</span>
-                {creatingTokenIDs.has(id) && (
-                  <span className="ico-spinner spinner fs11 ms-2 grey" />
-                )}
-              </div>
-              <div className="fs14">{balanceText}</div>
-              {fiat !== null && (
-                <div className="fs12 grey">~${formatBestWeCan(fiat)}</div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </section>
+              style={{
+                position: 'absolute',
+                left: `${Math.floor(treeStartX - topHalfThickness / 2)}px`,
+                top: 0,
+                height: '50%',
+                width: topHalfThickness,
+                backgroundColor: topHalfBold ? boldColor : thinColor,
+                zIndex: topHalfBold ? 2 : 1,
+              }}
+            />
+            {!isLast && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.floor(treeStartX - bottomHalfThickness / 2)}px`,
+                  top: '50%',
+                  bottom: 0,
+                  width: bottomHalfThickness,
+                  backgroundColor: bottomHalfBold ? boldColor : thinColor,
+                  zIndex: bottomHalfBold ? 2 : 1,
+                }}
+              />
+            )}
+            <div
+              style={{
+                position: 'absolute',
+                left: `${Math.floor(stubLeft)}px`,
+                top: `calc(50% - ${Math.floor(stubThickness / 2)}px)`,
+                width: `${treeStubEnd - Math.floor(stubLeft)}px`,
+                height: stubThickness,
+                backgroundColor: stubBold ? boldColor : thinColor,
+                zIndex: stubBold ? 2 : 1,
+              }}
+            />
+            {/* Chain LOGO is the chain "symbol" — no spelled-out
+                network name. Row reads as: tree → chain logo →
+                share-of-group-balance. The full chain name still
+                surfaces on hover via the row's `title` attr above. */}
+            <img
+              src={logoPath((parentAsset ?? a).symbol)}
+              alt={networkLabel}
+              width={18}
+              height={18}
+              className="me-2"
+            />
+            <span className="flex-grow-1" />
+            {creatingTokenIDs.has(id) && (
+              <span className="ico-spinner spinner fs12 me-1 grey" />
+            )}
+            <span className="fs18">{balanceText}</span>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -1269,7 +1480,25 @@ function WalletDetail ({
         <div className="d-flex justify-content-between align-items-start p-3">
           <div className="flex-center">
             <img src={logoPath(asset.symbol)} alt={asset.symbol} className="large-icon" />
-            <div className="fs24 ms-2 demi lh1">{asset.name}</div>
+            <div className="ms-2 d-flex flex-column">
+              <div className="fs24 demi lh1">{asset.name}</div>
+              {/* For token wallets, surface the parent network so the
+                  user knows whether they're looking at e.g. USDC.ETH
+                  vs USDC.POL — the sidebar tree-glyphs only show the
+                  network icon, so this is the canonical "what am I
+                  looking at" indicator on the right-side view. */}
+              {parentAsset && (
+                <div className="d-flex align-items-center fs14 grey lh1 mt-1">
+                  <span className="me-1">{t('ON_NETWORK', { network: parentAsset.name })}</span>
+                  <img
+                    src={logoPath(parentAsset.symbol)}
+                    alt={parentAsset.name}
+                    width={14}
+                    height={14}
+                  />
+                </div>
+              )}
+            </div>
             {/* LI-ASYNC Batch 9: transient indicator while the selected
                 wallet is mid-connect (`!disabled && !running`). The
                 `wallet` prop flips because `useMarketStore.handleWalletStateNote`
