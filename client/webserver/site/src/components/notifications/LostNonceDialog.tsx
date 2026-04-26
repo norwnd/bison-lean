@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { postTakeAction, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { txTypeLabel, shortHash } from './actionRequiredUtils'
+import { txTypeLabel, shortHash, networkSuffix } from './actionRequiredUtils'
 import type { ActionRequiredNote, TransactionActionNote } from '../../stores/types'
 
 interface Props {
@@ -28,6 +28,7 @@ export function LostNonceDialog ({ note }: Props) {
   const tx = payload.tx
   const asset = assets[note.assetID]
   const assetName = asset?.name || `asset ${note.assetID}`
+  const network = networkSuffix(assets, note.assetID, t)
 
   const submit = async (label: string, action: any) => {
     setSubmitting(label)
@@ -45,7 +46,7 @@ export function LostNonceDialog ({ note }: Props) {
     <div style={{ minWidth: 380, maxWidth: 520 }}>
       <div className="fs20 mb-3">{t('LOST_NONCE_TITLE')}</div>
       <p className="fs14">
-        {t('LOST_NONCE_BODY', { asset: assetName, type: txTypeLabel(t, tx.type) })}
+        {t('LOST_NONCE_BODY', { asset: assetName, network, type: txTypeLabel(t, tx.type) })}
       </p>
       <div className="fs13 mb-3" style={{ wordBreak: 'break-all' }}>
         <div><strong>{t('TX_HASH')}:</strong> {tx.id}</div>

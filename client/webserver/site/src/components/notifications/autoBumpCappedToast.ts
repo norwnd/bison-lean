@@ -18,13 +18,16 @@ export function handleAutoBumpCapped (
   payload: AutoBumpCappedNote,
   assetID: number,
   assetName: string,
+  network: string,
   t: TFunction
 ): void {
   const subject = t('AUTO_BUMP_CAPPED_SUBJECT', {
     asset: assetName,
+    network,
     type: txTypeLabel(t, payload.type),
   })
   const details = t('AUTO_BUMP_CAPPED_DETAILS', {
+    type: txTypeLabel(t, payload.type),
     feeCapGwei: payload.feeCapGwei,
     capGwei: payload.capGwei,
     nonce: payload.nonce,

@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next'
+import type { SupportedAsset } from '../../stores/types'
 
 // Mirrors asset.TransactionType in client/asset/interface.go. Keep in sync
 // when new types are added on the Go side; unknown values fall back to
@@ -64,4 +65,26 @@ export function txTypeLabel (t: TFunction, type: number): string {
 export function shortHash (hash: string): string {
   if (hash.length <= 14) return hash
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`
+}
+
+// networkSuffix returns the parent-chain qualifier to append to a token
+// asset's name in dialog copy — e.g. " on Ethereum" for USDC on Ethereum.
+// Returns the empty string for base-chain assets (BTC, ETH, etc.) so the
+// same i18n template ("Your {{asset}}{{network}} {{type}} ...") works
+// for both: tokens read "Your USDC on Ethereum Redeem ..." and base
+// assets read "Your Ethereum Redeem ..." with no awkward prefix.
+//
+// Returns just the suffix string (with leading space) rather than
+// composing the full sentence so callers retain control over wording.
+export function networkSuffix (
+  assets: Record<number, SupportedAsset>,
+  assetID: number,
+  t: TFunction
+): string {
+  const asset = assets[assetID]
+  const parentID = asset?.token?.parentID
+  if (parentID === undefined) return ''
+  const parent = assets[parentID]
+  if (!parent) return ''
+  return t('NETWORK_SUFFIX', { network: parent.name })
 }

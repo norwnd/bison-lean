@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { postTakeAction, checkResponse } from '../../services/api'
 import { useAuthStore } from '../../stores/useAuthStore'
+import { networkSuffix } from './actionRequiredUtils'
 import type { ActionRequiredNote } from '../../stores/types'
 
 interface Props {
@@ -23,6 +24,7 @@ export function MissingNoncesDialog ({ note }: Props) {
 
   const asset = assets[note.assetID]
   const assetName = asset?.name || `asset ${note.assetID}`
+  const network = networkSuffix(assets, note.assetID, t)
 
   const submit = async (label: string, action: any) => {
     setSubmitting(label)
@@ -37,7 +39,7 @@ export function MissingNoncesDialog ({ note }: Props) {
   return (
     <div style={{ minWidth: 380, maxWidth: 520 }}>
       <div className="fs20 mb-3">{t('MISSING_NONCES_TITLE')}</div>
-      <p className="fs14">{t('MISSING_NONCES_BODY', { asset: assetName })}</p>
+      <p className="fs14">{t('MISSING_NONCES_BODY', { asset: assetName, network })}</p>
       <p className="fs13 mb-3 text-secondary">{t('MISSING_NONCES_RECOVER_HINT')}</p>
 
       {error && <div className="fs13 mb-2 text-danger">{error}</div>}

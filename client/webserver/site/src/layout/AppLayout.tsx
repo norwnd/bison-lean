@@ -14,6 +14,7 @@ import { NewUserBanner } from './NewUserBanner'
 import { PopupNotes } from '../components/notifications/PopupNotes'
 import { ActionRequiredDialog } from '../components/notifications/ActionRequiredDialog'
 import { handleAutoBumpCapped } from '../components/notifications/autoBumpCappedToast'
+import { networkSuffix } from '../components/notifications/actionRequiredUtils'
 import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, WalletNote } from '../stores/types'
 
 export function AppLayout () {
@@ -127,9 +128,11 @@ export function AppLayout () {
             case 'autoBumpCapped': {
               const cw = wn.payload as CustomWalletNote
               const inner = cw.payload as AutoBumpCappedNote
-              const asset = useAuthStore.getState().assets[cw.assetID]
+              const allAssets = useAuthStore.getState().assets
+              const asset = allAssets[cw.assetID]
               const assetName = asset?.name || `asset ${cw.assetID}`
-              handleAutoBumpCapped(inner, cw.assetID, assetName, t)
+              const network = networkSuffix(allAssets, cw.assetID, t)
+              handleAutoBumpCapped(inner, cw.assetID, assetName, network, t)
               break
             }
           }
