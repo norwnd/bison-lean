@@ -1,6 +1,7 @@
 import {
   useState, useEffect, useCallback, useMemo, useRef
 } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse, Errors } from '../services/api'
@@ -576,6 +577,16 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
+  // Portal target: the holdings "Total: $X" block renders into the
+  // global app header's left slot via createPortal (mirrors the
+  // pattern MarketsPage uses for market stats). Auto-unmounts when
+  // /wallets navigates away — no per-page gating needed.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setHeaderSlot(document.getElementById('headerSlot'))
+    return () => setHeaderSlot(null)
+  }, [])
+
   // Auto-select the first wallet-bearing asset on mount, restoring the
   // user's last-viewed variant within that group when persisted. Also
   // self-corrects if a previously-persisted selectedAssetID points to
@@ -722,47 +733,40 @@ export default function WalletsPage () {
     return false
   }, [bridgePaths, selectedTickerNetworkIDs, assets])
 
-  // Index of the group containing the currently-selected asset, used by
-  // the sidebar render to hide the bottom-underscore on both the
-  // selected row and the row directly above it (so neither row's top
-  // edge has an extra horizontal line stacked against the selection's
-  // bg accent). -1 when no group's variants include selectedAssetID.
-  const selectedGroupIndex = useMemo(
-    () => tickerGroups.findIndex(g => g.assetIDs.includes(selectedAssetID ?? -1)),
-    [tickerGroups, selectedAssetID]
-  )
-
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
 
   return (
     <div className="d-flex fill-abs">
+      {/* Holdings "Total: $X" block — portalled into the global header's
+          headerSlot. Width matches the sidebar's minWidth so "Total:" sits
+          at the coin-column's left edge and the $ figure at its right
+          edge. Click clears the selection (returns to the asset-picker
+          placeholder), same as the prior in-sidebar block. */}
+      {headerSlot && createPortal(
+        <div
+          className="d-flex justify-content-between align-items-center px-2 hoverbg pointer h-100"
+          style={{ width: 240, flex: '0 0 240px' }}
+          onClick={() => setSelectedAssetID(null)}
+        >
+          <span className="fs18 fw-bold lh1">{t('Total')}:</span>
+          <span className="fs18 fw-bold lh1">
+            {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
+          </span>
+        </div>,
+        headerSlot
+      )}
+
       {/* ---- Left Sidebar: Asset List ---- */}
       <section
         className="w-auto d-flex flex-column align-items-stretch overflow-y-auto hidden-overflow"
         style={{ minWidth: 240 }}
       >
-        {/* Holdings header — value-only, right-aligned. The "Holdings"
-            label was removed since the right-aligned $ figure is
-            self-explanatory in the sidebar context. */}
-        <div className="d-flex justify-content-end pt-2 px-2 pb-1 hoverbg pointer border-bottom" onClick={() => setSelectedAssetID(null)}>
-          <span className="fs18 fw-bold lh1">
-            {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
-          </span>
-        </div>
         {/* Ticker balance rows */}
         <div className="flex-stretch-column border-bottom">
-          {tickerGroups.map((g, idx) => {
+          {tickerGroups.map((g) => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
-            // The row immediately above the selected group keeps its
-            // bottom-underscore hidden too — without that, the
-            // selected row's top edge butts up against an unrelated
-            // horizontal line from the row above, which looks busy.
-            // (Selected row's own underscore is already hidden — see
-            // the `borderBottomColor: transparent` below.)
-            const isAboveSelected =
-              selectedGroupIndex >= 0 && idx === selectedGroupIndex - 1
             // LI-ASYNC Batch 9: tiny spinner when any asset in the group
             // has a wallet mid-connect (user hasn't disabled it, but its
             // `Running` flag is false). Post-login this is the
@@ -800,12 +804,12 @@ export default function WalletsPage () {
                   onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
                   style={selected
                     ? {
-                        // Bg fill plus 2px top + bottom accents — the
-                        // selected coin-group is bracketed top and
-                        // bottom by accent bars matching the bold
-                        // tree-branch line weight.
+                        // Bg fill plus a 2px bottom accent — the top
+                        // edge stays on the row above's regular 1px
+                        // border so only the bottom boundary reads as
+                        // "bold".
                         backgroundColor: 'var(--tertiary-bg)',
-                        boxShadow: 'inset 0 2px 0 var(--text-color), inset 0 -2px 0 var(--text-color)',
+                        boxShadow: 'inset 0 -2px 0 var(--text-color)',
                         color: 'var(--text-color)',
                       }
                     : undefined}
@@ -827,21 +831,17 @@ export default function WalletsPage () {
                         : <span className="grey me-1">—</span>}
                     </div>
                   </div>
-                  {/* Inner row separator. Hidden (border transparent to
-                      keep layout height stable) on (a) the selected
-                      row — its 3px bottom boxShadow already separates
-                      it from below — and (b) the row directly above
-                      the selected one, so the selected row's top edge
-                      doesn't sit under an unrelated horizontal line.
-                      Bootstrap's `.border-bottom` utility ships an
-                      `!important` shorthand which prevents inline
-                      `borderBottomColor` from overriding it, so the
-                      whole border is set via inline style here. */}
+                  {/* Inner row separator — kept for layout height
+                      stability. Hidden on the selected row since its
+                      2px bottom accent already serves as the divider;
+                      Bootstrap's `.border-bottom` ships `!important`
+                      so the whole border is applied via inline style
+                      to allow `transparent` to win. */}
                   <div
                     className="mt-2"
                     style={{
                       borderBottom: '1px solid',
-                      borderBottomColor: (selected || isAboveSelected)
+                      borderBottomColor: selected
                         ? 'transparent'
                         : 'var(--border-color)',
                     }}
@@ -1255,10 +1255,9 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 // buildTickerGroups). Each row is clickable — switches selectedAssetID
 // and the auto-create effect fires for any newly-eligible candidate.
 //
-// The selected variant takes the same active-state treatment as the
-// page header buttons (Wallet / Trade / etc.) — `--tertiary-bg` fill
-// plus a darker text colour and a left-edge accent bar, so the active
-// chain stands out clearly against its siblings.
+// The selected variant takes a `--tertiary-bg` fill plus a darker
+// text colour, so the active chain stands out clearly against its
+// siblings.
 // ---------------------------------------------------------------------------
 
 function SidebarNetworksExpansion ({
