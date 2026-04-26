@@ -42,7 +42,7 @@ export async function getJSON (addr: string): Promise<any> {
 export async function postTakeAction (
   assetID: number,
   actionID: string,
-  action: any,
+  action: any
 ): Promise<APIResponse> {
   return postJSON('/api/takeaction', { assetID, actionID, action })
 }

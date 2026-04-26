@@ -21,6 +21,12 @@ import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 // OrderForm — fully independent buy/sell limit-order form
 // ---------------------------------------------------------------------------
 
+// requestMax result: non-null `est` ⇒ success; null `est` ⇒ failure, with
+// `errMsg` populated iff the failure was an explicit server error.
+type MaxResult =
+  | { est: MaxOrderEstimate; errMsg?: undefined }
+  | { est: null; errMsg?: string }
+
 export interface OrderFormProps {
   side: 'buy' | 'sell'
   selected: SelectedMarket
@@ -165,9 +171,14 @@ export function OrderForm ({
     if (!isSell) maxCacheRef.current = {}
   }, [bookRateVersion])
 
-  // Request max estimate for this side
-  const requestMax = useCallback(async (): Promise<MaxOrderEstimate | null> => {
-    if (!selected || !currentMkt || !bui || !qui) return null
+  // Request max estimate for this side. Discriminated union: a non-null
+  // `est` means success; otherwise `errMsg` is set iff the server returned
+  // an explicit error (`!checkResponse`). Stale-request / wallet-not-running
+  // / missing preconditions return `{est:null}` with no errMsg so passive
+  // callers (slider/qty) silently no-op while `stepSubmit` surfaces real
+  // server errors to the user.
+  const requestMax = useCallback(async (): Promise<MaxResult> => {
+    if (!selected || !currentMkt || !bui || !qui) return { est: null }
     const reqSelected = selected
     const marketChanged = () =>
       selectedRef.current.host !== reqSelected.host ||
@@ -176,29 +187,37 @@ export function OrderForm ({
     const wm = walletMapRef.current
     if (isSell) {
       const cached = maxCacheRef.current[0]
-      if (cached) return cached
+      if (cached) return { est: cached }
       const baseWallet = wm[selected.baseID]
-      if (!baseWallet?.running) return null
+      if (!baseWallet?.running) return { est: null }
       const res = await postJSON('/api/maxsell', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID
       })
-      if (marketChanged()) return null
-      if (!checkResponse(res) || !res.maxSell) return null
+      if (marketChanged()) return { est: null }
+      if (!checkResponse(res)) return { est: null, errMsg: res.msg || '' }
+      if (!res.maxSell) {
+        console.warn('maxsell: server returned ok but no maxSell field', res)
+        return { est: null }
+      }
       maxCacheRef.current[0] = res.maxSell
-      return res.maxSell as MaxOrderEstimate
+      return { est: res.maxSell as MaxOrderEstimate }
     } else {
-      if (!rateAtom) return null
+      if (!rateAtom) return { est: null }
       const cached = maxCacheRef.current[rateAtom]
-      if (cached) return cached
+      if (cached) return { est: cached }
       const quoteWallet = wm[selected.quoteID]
-      if (!quoteWallet?.running) return null
+      if (!quoteWallet?.running) return { est: null }
       const res = await postJSON('/api/maxbuy', {
         host: selected.host, base: selected.baseID, quote: selected.quoteID, rate: rateAtom
       })
-      if (marketChanged()) return null
-      if (!checkResponse(res) || !res.maxBuy) return null
+      if (marketChanged()) return { est: null }
+      if (!checkResponse(res)) return { est: null, errMsg: res.msg || '' }
+      if (!res.maxBuy) {
+        console.warn('maxbuy: server returned ok but no maxBuy field', res)
+        return { est: null }
+      }
       maxCacheRef.current[rateAtom] = res.maxBuy
-      return res.maxBuy as MaxOrderEstimate
+      return { est: res.maxBuy as MaxOrderEstimate }
     }
   }, [selected, currentMkt, bui, qui, isSell, rateAtom])
 
@@ -211,7 +230,7 @@ export function OrderForm ({
     const lotsize = currentMkt.lotsize
     const currentLots = Math.floor(qty / lotsize)
     if (currentLots <= 0) { setSliderValue(0); return }
-    const maxEst = await requestMax()
+    const { est: maxEst } = await requestMax()
     if (maxEst && maxEst.swap.lots > 0) {
       setSliderValue(Math.min(1, currentLots / maxEst.swap.lots))
     }
@@ -336,7 +355,7 @@ export function OrderForm ({
     setSliderValue(value)
     if (!bui || !currentMkt) return
     const lotsize = currentMkt.lotsize
-    const maxEst = await requestMax()
+    const { est: maxEst } = await requestMax()
     const maxLots = maxEst?.swap.lots ?? 0
     if (maxLots <= 0) return
     const lots = Math.max(1, Math.floor(maxLots * value))
@@ -361,15 +380,22 @@ export function OrderForm ({
     return ''
   }, [rateAtom, currentMkt, bui, qui, isSell, t])
 
-  // Reactive error clearing: when the inputs change OR the relevant wallet
-  // state changes, the previous click's error may no longer apply (user
-  // adjusted qty, balance update arrived, etc.). Clear it so the user can
-  // try again. We deliberately avoid re-running validation here — the
-  // next click does that. Narrowed to base/quote wallets so unrelated WS
-  // balance notes don't clear errors unnecessarily.
+  // Clear errorMsg when the user adjusts rate or qty — that's a deliberate
+  // retry signal. Wallet-state changes are intentionally NOT in this dep
+  // array: WS balance notes fire every few seconds and would otherwise
+  // dismiss the error before the user can read it.
   useEffect(() => {
     setErrorMsg('')
-  }, [rateInput, qtyInput, baseWallet, quoteWallet])
+  }, [rateInput, qtyInput])
+
+  // Auto-clear errorMsg 15s after it appears, so the form returns to its
+  // idle state even if the user doesn't touch the inputs. Cleanup cancels
+  // the pending timer if errorMsg changes/clears earlier.
+  useEffect(() => {
+    if (!errorMsg) return
+    const timer = setTimeout(() => setErrorMsg(''), 15000)
+    return () => clearTimeout(timer)
+  }, [errorMsg])
 
   // Preview total
   const previewTotal = useMemo(() => {
@@ -399,8 +425,12 @@ export function OrderForm ({
     if (!rateAtom || !qtyAtom) return
     setErrorMsg('')
     setInFlight(true)
-    const maxEst = await requestMax()
+    const { est: maxEst, errMsg } = await requestMax()
     setInFlight(false)
+    if (errMsg) {
+      setErrorMsg(errMsg)
+      return
+    }
     const enough = isSell
       ? maxEst && qtyAtom <= maxEst.swap.value
       : maxEst && qtyAtom <= maxEst.swap.lots * currentMkt.lotsize
@@ -553,17 +583,22 @@ export function OrderForm ({
           // Always wrap in Tooltip so the button doesn't remount when msg
           // toggles empty↔non-empty. Tooltip is a no-op on empty content.
           return (
+            // Wrap the button so the Tooltip's hover handlers attach to a non-disabled element — disabled buttons don't reliably fire React's synthetic onMouseEnter/Leave across browsers, even with `pointer-events: auto`.
             <Tooltip content={msg}>
-              <button
-                type="button"
-                className={`flex-center border pointer hoverbg border-rounded3 m-1 mt-auto submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}${pressed ? ' submit-pressed' : ''}`}
-                disabled={!enabled}
-                onClick={stepSubmit}
-              >
-                <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
-                  {msg || defaultLabel}
-                </span>
-              </button>
+              <div className="d-flex m-1 mt-auto" style={{ minWidth: 0 }}>
+                <button
+                  type="button"
+                  className={`flex-center flex-grow-1 border pointer hoverbg border-rounded3 submit fs18 text-center ${isSell ? 'sellred-bg' : 'buygreen-bg'}${pressed ? ' submit-pressed' : ''}`}
+                  // Override `.pointer` (cursor:pointer) when there's a message so the help-cursor hint reaches the user's pointer through the wrapper div. Idle state falls back to the class-defined pointer.
+                  style={{ minWidth: 0, cursor: msg ? 'help' : undefined }}
+                  disabled={!enabled}
+                  onClick={stepSubmit}
+                >
+                  <span className="overflow-ellipsis text-nowrap" style={{ minWidth: 0, maxWidth: '100%' }}>
+                    {msg || defaultLabel}
+                  </span>
+                </button>
+              </div>
             </Tooltip>
           )
         })()}

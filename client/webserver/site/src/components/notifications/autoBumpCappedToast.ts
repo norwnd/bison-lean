@@ -18,7 +18,7 @@ export function handleAutoBumpCapped (
   payload: AutoBumpCappedNote,
   assetID: number,
   assetName: string,
-  t: TFunction,
+  t: TFunction
 ): void {
   const subject = t('AUTO_BUMP_CAPPED_SUBJECT', {
     asset: assetName,

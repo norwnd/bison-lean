@@ -640,11 +640,14 @@ div[data-handler=markets] {
             & > #orderFormBuy {
               order: 1;
               flex-basis: calc(50% - 2px); /* width/height - depending on flex-direction */
+              // Defend the 50% basis: override the default `min-width: auto` so descendant content (e.g. long error text on the submit button) can't push the form past basis and squish its sibling.
+              min-width: 0;
             }
 
             & > #orderFormSell {
               order: 2;
               flex-basis: calc(50% - 2px); /* width/height - depending on flex-direction */
+              min-width: 0;
             }
           }
         }
