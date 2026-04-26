@@ -295,18 +295,46 @@ function buildTickerGroups (
 }
 
 // pickVariantForGroup chooses which variant to land on when the user
-// clicks a sidebar group. Sticky per-ticker via localStorage; falls
-// back to the first variant in the group's sorted assetIDs (which is
-// alphabetically lowest by symbol). The persisted ID is validated
-// against the group's current assetIDs so a stale value (asset support
-// dropped between releases) doesn't strand the user on a missing
-// variant.
+// clicks a sidebar group. Tries, in order:
+//   1. The user's last-viewed variant for this ticker (localStorage),
+//      provided it's "useful" — wallet exists, or the parent has a
+//      wallet (auto-create can fire on selection). Without the
+//      usefulness check, a stale auto-pick (e.g. the alphabetic-first
+//      `usdc.base` saved by an earlier mount when no wallet existed
+//      anywhere yet) strands the user on a dead variant even when
+//      other variants in the group are actionable.
+//   2. The first variant with an existing wallet — the user can act
+//      on it immediately.
+//   3. The first variant whose parent already has a wallet — selecting
+//      it triggers the auto-create-on-click effect and the "Creating…"
+//      view. Without this fallback we'd default-land on a variant
+//      whose parent doesn't exist yet, showing "Create parent first"
+//      even when an actionable variant sits one row away.
+//   4. The first variant in the group's sorted assetIDs. Falls through
+//      to NoWalletView's "Create parent first" hint (no parent in any
+//      variant of the group).
+// The persisted ID is validated against current assetIDs first so a
+// stale value (asset support dropped between releases) doesn't strand
+// the user on a missing variant.
 function pickVariantForGroup (
   g: TickerGroup,
-  lastByTicker: Record<string, number>
+  lastByTicker: Record<string, number>,
+  assets: Record<number, SupportedAsset>
 ): number {
   const last = lastByTicker[g.ticker]
-  if (last !== undefined && g.assetIDs.includes(last)) return last
+  if (last !== undefined && g.assetIDs.includes(last)) {
+    const a = assets[last]
+    if (a?.wallet) return last
+    if (a?.token && assets[a.token.parentID]?.wallet) return last
+    // Persisted but useless — fall through.
+  }
+  for (const id of g.assetIDs) {
+    if (assets[id]?.wallet) return id
+  }
+  for (const id of g.assetIDs) {
+    const a = assets[id]
+    if (a?.token && assets[a.token.parentID]?.wallet) return id
+  }
   return g.assetIDs[0]
 }
 
@@ -522,8 +550,8 @@ export default function WalletsPage () {
   useEffect(() => {
     if (selectedAssetID !== null) return
     const first = tickerGroups.find(g => g.hasWallet)
-    if (first) setSelectedAssetID(pickVariantForGroup(first, lastVariantByTicker))
-  }, [tickerGroups, selectedAssetID, lastVariantByTicker])
+    if (first) setSelectedAssetID(pickVariantForGroup(first, lastVariantByTicker, assets))
+  }, [tickerGroups, selectedAssetID, lastVariantByTicker, assets])
 
   // Persist the last-viewed variant per ticker. Catches both code paths
   // (sidebar click via pickVariantForGroup and per-chain row click)
@@ -685,7 +713,7 @@ export default function WalletsPage () {
               <div
                 key={g.ticker}
                 className={`flex-stretch-column pt-2 px-2 hoverbg pointer ${selected ? 'selected' : ''}`}
-                onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker))}
+                onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
                 style={selected ? { backgroundColor: 'var(--body-bg)' } : undefined}
               >
                 <div className="d-flex justify-content-between align-items-start">
@@ -725,6 +753,31 @@ export default function WalletsPage () {
               {/* ---- Center Column: Wallet Detail ---- */}
               <div className="position-relative col-24 col-xl-12 col-xxl-9 flex-stretch-column">
                 <div className="flex-stretch-column">
+                  {/* Per-chain breakdown for multi-variant groups —
+                      rendered at the top of the center column with a
+                      horizontal-card layout so the chain switcher is
+                      always one click away regardless of the main
+                      view's state (wallet, creating, error, no-wallet).
+                      assetIDs are sorted by symbol ascending in
+                      buildTickerGroups, so the order is stable and
+                      alphabetical. Single-variant groups (DCR, BTC,
+                      etc.) skip the section. Covers both token groups
+                      (USDC) and mixed groups (ETH+WETH). */}
+                  {(() => {
+                    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAsset.id))
+                    if (!group || group.assetIDs.length < 2) return null
+                    return (
+                      <NetworksBreakdown
+                        group={group}
+                        assets={assets}
+                        fiatRatesMap={fiatRatesMap}
+                        selectedAssetID={selectedAsset.id}
+                        creatingTokenIDs={creatingTokenIDs}
+                        tokenCreateErrors={tokenCreateErrors}
+                        onSelect={setSelectedAssetID}
+                      />
+                    )
+                  })()}
                   {selectedWallet && (
                     <WalletDetail
                       asset={selectedAsset}
@@ -753,31 +806,6 @@ export default function WalletsPage () {
                       onCreate={() => setActiveForm('newWallet')}
                     />
                   )}
-                  {/* Per-chain breakdown for multi-variant groups —
-                      assetIDs are sorted by symbol ascending in
-                      buildTickerGroups so the order is stable and
-                      alphabetical. Clickable rows drill into a
-                      specific variant; selectedAssetID flips to that
-                      variant and the WalletDetail / Right column
-                      re-render. Single-variant groups (DCR, BTC, etc.)
-                      are skipped. Covers both token groups (USDC) and
-                      mixed groups (ETH+WETH) since the Networks list
-                      is useful in either case. */}
-                  {(() => {
-                    const group = tickerGroups.find(g => g.assetIDs.includes(selectedAsset.id))
-                    if (!group || group.assetIDs.length < 2) return null
-                    return (
-                      <NetworksBreakdown
-                        group={group}
-                        assets={assets}
-                        fiatRatesMap={fiatRatesMap}
-                        selectedAssetID={selectedAsset.id}
-                        creatingTokenIDs={creatingTokenIDs}
-                        tokenCreateErrors={tokenCreateErrors}
-                        onSelect={setSelectedAssetID}
-                      />
-                    )
-                  })()}
                 </div>
               </div>
 
@@ -1114,13 +1142,17 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 }
 
 // ---------------------------------------------------------------------------
-// NetworksBreakdown — per-chain row list rendered below WalletDetail
-// for any multi-variant ticker group. Variant order matches
-// `group.assetIDs`, which buildTickerGroups sorts by symbol ascending,
-// so the order is stable across renders. Each row is clickable: it
-// switches selectedAssetID to that variant, and the auto-create effect
-// fires for any newly-eligible candidate. The currently-selected row
-// is highlighted.
+// NetworksBreakdown — horizontal-card chain switcher rendered at the
+// top of the center column for any multi-variant ticker group. Cards
+// expand rightward (wrapping to a new line if the column is narrow)
+// rather than stacking, keeping the main view directly below in the
+// same horizontal slice the user is already looking at.
+//
+// Variant order matches group.assetIDs, sorted by symbol ascending in
+// buildTickerGroups so the order is stable. Each card is clickable —
+// switches selectedAssetID, and the auto-create effect fires for any
+// newly-eligible candidate. The selected card is highlighted via
+// border + body-bg.
 // ---------------------------------------------------------------------------
 
 function NetworksBreakdown ({
@@ -1137,61 +1169,62 @@ function NetworksBreakdown ({
 }) {
   const { t } = useTranslation()
   return (
-    <section className="border-top mt-3 pt-3 px-3">
+    <section className="border-bottom px-3 pt-3 pb-2">
       <div className="fs14 text-secondary mb-2">{t('NETWORKS')}</div>
-      {group.assetIDs.map(id => {
-        const a = assets[id]
-        if (!a) return null
-        const ui = a.unitInfo
-        const isSelected = id === selectedAssetID
-        const parentAsset = a.token ? assets[a.token.parentID] : null
-        // For tokens, label the row by the parent chain's name so the
-        // breakdown reads "Ethereum / Polygon / Base"; for non-tokens
-        // (e.g. ETH itself in the ETH+WETH group) the asset's own
-        // name is the right label.
-        const networkLabel = parentAsset?.name ?? a.name
-        const totalAtoms = a.wallet
-          ? a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
-          : 0
-        const balanceText = a.wallet
-          ? `${formatCoinAtom(totalAtoms, ui)} ${ui.conventional.unit}`
-          : creatingTokenIDs.has(id)
-            ? t('CREATING')
-            : tokenCreateErrors.has(id)
-              ? t('CREATE_FAILED')
-              : '—'
-        const fiatRate = fiatRatesMap[id] ?? 0
-        const fiat = a.wallet && fiatRate > 0
-          ? atomToConventional(totalAtoms, ui) * fiatRate
-          : null
-        return (
-          <div
-            key={id}
-            className={`d-flex align-items-center justify-content-between p-2 hoverbg pointer rounded mb-1 ${isSelected ? 'bg-body' : ''}`}
-            onClick={() => onSelect(id)}
-          >
-            <div className="d-flex align-items-center">
-              <img
-                src={logoPath((parentAsset ?? a).symbol)}
-                alt=""
-                width={20}
-                height={20}
-                className="me-2"
-              />
-              <span className="fs15">{networkLabel}</span>
-              {creatingTokenIDs.has(id) && (
-                <span className="ico-spinner spinner fs11 ms-2 grey" />
-              )}
-            </div>
-            <div className="text-end">
-              <div className="fs15">{balanceText}</div>
+      <div className="d-flex flex-wrap gap-2">
+        {group.assetIDs.map(id => {
+          const a = assets[id]
+          if (!a) return null
+          const ui = a.unitInfo
+          const isSelected = id === selectedAssetID
+          const parentAsset = a.token ? assets[a.token.parentID] : null
+          // For tokens, label the card by the parent chain's name so
+          // the breakdown reads "Ethereum / Polygon / Base"; for
+          // non-tokens (e.g. ETH itself in the ETH+WETH group) the
+          // asset's own name is the right label.
+          const networkLabel = parentAsset?.name ?? a.name
+          const totalAtoms = a.wallet
+            ? a.wallet.balance.available + a.wallet.balance.locked + a.wallet.balance.immature
+            : 0
+          const balanceText = a.wallet
+            ? `${formatCoinAtom(totalAtoms, ui)} ${ui.conventional.unit}`
+            : creatingTokenIDs.has(id)
+              ? t('CREATING')
+              : tokenCreateErrors.has(id)
+                ? t('CREATE_FAILED')
+                : '—'
+          const fiatRate = fiatRatesMap[id] ?? 0
+          const fiat = a.wallet && fiatRate > 0
+            ? atomToConventional(totalAtoms, ui) * fiatRate
+            : null
+          return (
+            <div
+              key={id}
+              className={`d-flex flex-column align-items-center p-2 hoverbg pointer rounded border ${isSelected ? 'bg-body' : ''}`}
+              style={{ minWidth: 140, borderColor: isSelected ? 'var(--bs-primary, #336)' : undefined }}
+              onClick={() => onSelect(id)}
+            >
+              <div className="d-flex align-items-center mb-1">
+                <img
+                  src={logoPath((parentAsset ?? a).symbol)}
+                  alt=""
+                  width={18}
+                  height={18}
+                  className="me-2"
+                />
+                <span className="fs15">{networkLabel}</span>
+                {creatingTokenIDs.has(id) && (
+                  <span className="ico-spinner spinner fs11 ms-2 grey" />
+                )}
+              </div>
+              <div className="fs14">{balanceText}</div>
               {fiat !== null && (
-                <div className="fs13 grey">~${formatBestWeCan(fiat)}</div>
+                <div className="fs12 grey">~${formatBestWeCan(fiat)}</div>
               )}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </section>
   )
 }
