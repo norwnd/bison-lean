@@ -962,9 +962,8 @@ func (c *Core) RedeemPrepaidBond(appPW []byte, code []byte, host string, certI a
 
 	var success, acctExists bool
 
-	c.connMtx.RLock()
-	dc, found := c.conns[host]
-	c.connMtx.RUnlock()
+	dc := c.existingConn(host)
+	found := dc != nil
 	if found {
 		acctExists = !dc.acct.isViewOnly()
 		if acctExists {
@@ -1421,9 +1420,8 @@ func (c *Core) PostBond(form *PostBondForm) (*PostBondResult, error) {
 		maintain = *form.MaintainTier
 	}
 
-	c.connMtx.RLock()
-	dc, found := c.conns[host]
-	c.connMtx.RUnlock()
+	dc := c.existingConn(host)
+	found := dc != nil
 	if found {
 		acctExists = !dc.acct.isViewOnly()
 		if acctExists {

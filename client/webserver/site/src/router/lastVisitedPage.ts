@@ -11,7 +11,6 @@ export const lastVisitedPageLK = 'lastVisitedPage'
 // requires no change here; adding a new *pre-auth* route needs one line.
 const PRE_AUTH_ROUTES: ReadonlySet<string> = new Set([
   ROUTES.LOGIN,
-  ROUTES.REGISTER,
   ROUTES.INIT,
 ])
 

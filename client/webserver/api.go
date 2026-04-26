@@ -478,6 +478,29 @@ func (s *WebServer) apiNewWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If we just created a parent (non-token) wallet, auto-create all of its
+	// known child token wallets. Failures here are logged but don't fail the
+	// outer request — the parent wallet is already created and child tokens
+	// can still be created later if something goes wrong.
+	if asset.TokenInfo(form.AssetID) == nil {
+		if parent := asset.Asset(form.AssetID); parent != nil {
+			for tokenID, tok := range parent.Tokens {
+				if s.core.WalletState(tokenID) != nil {
+					continue
+				}
+				if tok.Definition == nil {
+					continue
+				}
+				if err := s.core.CreateWallet(pass, nil, &core.WalletForm{
+					AssetID: tokenID,
+					Type:    tok.Definition.Type,
+				}); err != nil {
+					log.Errorf("auto-create %s token wallet failed: %v", unbip(tokenID), err)
+				}
+			}
+		}
+	}
+
 	writeJSON(w, simpleAck())
 }
 
@@ -955,12 +978,10 @@ func (s *WebServer) apiInit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, struct {
-		OK           bool     `json:"ok"`
-		Hosts        []string `json:"hosts"`
-		MnemonicSeed string   `json:"mnemonic"`
+		OK           bool   `json:"ok"`
+		MnemonicSeed string `json:"mnemonic"`
 	}{
 		OK:           true,
-		Hosts:        s.knownUnregisteredExchanges(map[string]*core.Exchange{}),
 		MnemonicSeed: mnemonicSeed,
 	})
 }

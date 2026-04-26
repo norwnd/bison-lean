@@ -1440,10 +1440,32 @@ func (c *Core) dex(addr string) (*dexConnection, bool, error) {
 	return dc, dc.status() == comms.Connected, nil
 }
 
-// addDexConnection is a helper used to add a dex connection.
+// existingConn returns the dexConnection for host if one is registered,
+// or nil otherwise. Read-locked wrapper that replaces the four-line
+// `RLock; conns[host]; RUnlock` idiom used by callers that need to
+// branch on whether a connection already exists for a host.
+func (c *Core) existingConn(host string) *dexConnection {
+	c.connMtx.RLock()
+	defer c.connMtx.RUnlock()
+	return c.conns[host]
+}
+
+// addDexConnection registers dc in the conns map. If dc was created via
+// connectDEXFlagTemporary (no listen goroutine started), the listener
+// and price-feed goroutines are started here on first call. The
+// CompareAndSwap on reportingConnects is the gate so subsequent calls on
+// the same dc don't re-start them. Non-temporary connections are
+// idempotent at this layer because connectDEXFlagTemporary is unset
+// upstream (in newDEXConnection -> startDexConnection), so the CAS
+// short-circuits and only the map write runs.
 func (c *Core) addDexConnection(dc *dexConnection) {
 	if dc == nil {
 		return
+	}
+	if atomic.CompareAndSwapUint32(&dc.reportingConnects, 0, 1) {
+		c.wg.Add(1)
+		go c.listen(dc)
+		go dc.subPriceFeed()
 	}
 	c.connMtx.Lock()
 	c.conns[dc.acct.host] = dc
@@ -4198,10 +4220,7 @@ func (c *Core) tempDexConnection(dexAddr string, certI any) (*dexConnection, err
 		return nil, newError(fileReadErr, "failed to parse certificate: %w", err)
 	}
 
-	c.connMtx.RLock()
-	_, found := c.conns[host]
-	c.connMtx.RUnlock()
-	if found {
+	if c.existingConn(host) != nil {
 		return nil, newError(dupeDEXErr, "already registered at %s", dexAddr)
 	}
 
@@ -4251,10 +4270,10 @@ func (c *Core) AddDEX(appPW []byte, dexAddr string, certI any) error {
 		return newError(fileReadErr, "failed to parse certificate: %w", err)
 	}
 
-	c.connMtx.RLock()
-	_, found := c.conns[host]
-	c.connMtx.RUnlock()
-	if found {
+	if c.existingConn(host) != nil {
+		if _, blessed := CertStore[c.net][host]; blessed {
+			return newError(dupeDEXErr, "%s is already connected as a built-in known DEX — no need to add it manually", dexAddr)
+		}
 		return newError(dupeDEXErr, "already connected to DEX at %s", dexAddr)
 	}
 
@@ -4296,9 +4315,7 @@ func (c *Core) AddDEX(appPW []byte, dexAddr string, certI any) error {
 	}
 
 	success = true
-	c.connMtx.Lock()
-	c.conns[dc.acct.host] = dc
-	c.connMtx.Unlock()
+	c.addDexConnection(dc)
 
 	// If a password was provided, try discoverAccount, but OK if we don't find
 	// it.
@@ -4313,7 +4330,7 @@ func (c *Core) AddDEX(appPW []byte, dexAddr string, certI any) error {
 		if err != nil {
 			c.log.Errorf("discoverAccount error during AddDEX: %v", err)
 		} else if paid {
-			c.upgradeConnection(dc)
+			c.addDexConnection(dc)
 		}
 	}
 
@@ -4436,17 +4453,6 @@ func (c *Core) dexWithPubKeyExists(pubKey *secp256k1.PublicKey) (bool, string) {
 	return false, ""
 }
 
-// upgradeConnection promotes a temporary dex connection and starts listening
-// to the messages it receives.
-func (c *Core) upgradeConnection(dc *dexConnection) {
-	if atomic.CompareAndSwapUint32(&dc.reportingConnects, 0, 1) {
-		c.wg.Add(1)
-		go c.listen(dc)
-		go dc.subPriceFeed()
-	}
-	c.addDexConnection(dc)
-}
-
 // DiscoverAccount fetches the DEX server's config, and if the server supports
 // the new deterministic account derivation scheme by providing its public key
 // in the config response, DiscoverAccount also checks if the account is already
@@ -4480,16 +4486,15 @@ func (c *Core) DiscoverAccount(dexAddr string, appPW []byte, certI any) (*Exchan
 	}
 	defer crypter.Close()
 
-	c.connMtx.RLock()
-	dc, existingConn := c.conns[host]
-	c.connMtx.RUnlock()
-	if existingConn && !dc.acct.isViewOnly() {
+	dc := c.existingConn(host)
+	hasExistingConn := dc != nil
+	if hasExistingConn && !dc.acct.isViewOnly() {
 		// Already registered, but connection may be down and/or PostBond needed.
 		return c.exchangeInfo(dc), true, nil // *Exchange has Tier and BondsPending
 	}
 
 	var ready bool
-	if !existingConn {
+	if !hasExistingConn {
 		dc, err = c.tempDexConnection(host, certI)
 		if err != nil {
 			return nil, false, err
@@ -4502,7 +4507,7 @@ func (c *Core) DiscoverAccount(dexAddr string, appPW []byte, certI any) (*Exchan
 				return
 			}
 
-			c.upgradeConnection(dc)
+			c.addDexConnection(dc)
 		}()
 	}
 
@@ -4515,7 +4520,7 @@ func (c *Core) DiscoverAccount(dexAddr string, appPW []byte, certI any) (*Exchan
 	// Don't allow registering for another dex with the same pubKey. There can only
 	// be one dex connection per pubKey. UpdateDEXHost must be called to connect to
 	// the same dex using a different host name.
-	if !existingConn {
+	if !hasExistingConn {
 		exists, host := c.dexWithPubKeyExists(dc.acct.dexPubKey)
 		if exists {
 			return nil, false,
@@ -8411,10 +8416,19 @@ func (c *Core) initialize() error {
 		c.pokesCache.init(pokes)
 	}
 
-	// Start connecting to DEX servers.
+	// Build the full list of DEXes to connect to: db-persisted accounts
+	// first, then CertStore-blessed hosts that aren't already covered
+	// (see knownDEXesNotInDB for the dedup contract).
+	connectList := make([]*db.AccountInfo, 0, len(accts))
+	connectList = append(connectList, accts...)
+	connectList = append(connectList, c.knownDEXesNotInDB(accts)...)
+
+	// Start connecting to DEX servers. connectAccount's retry loop logs its
+	// own errors, so a dead host is non-fatal — startup proceeds with
+	// whatever connected (may be zero).
 	var liveConns uint32
 	var wg sync.WaitGroup
-	for _, acct := range accts {
+	for _, acct := range connectList {
 		wg.Add(1)
 		go func(acct *db.AccountInfo) {
 			defer wg.Done()
@@ -8439,7 +8453,7 @@ func (c *Core) initialize() error {
 	// (contracts and bonds), so we don't wait after the dbWallets loop.
 	wg.Wait()
 
-	c.log.Infof("Connected to %d of %d DEX servers", liveConns, len(accts))
+	c.log.Infof("Connected to %d of %d DEX servers", liveConns, len(connectList))
 
 	existingTokenWallets := make(map[uint32]bool)
 	for _, dbWallet := range dbWallets {
@@ -8491,6 +8505,34 @@ func (c *Core) initialize() error {
 	}
 
 	return nil
+}
+
+// knownDEXesNotInDB returns synthesized AccountInfo entries for every
+// CertStore-blessed host on the current network that isn't already
+// represented by an entry in accts. The returned slice is appended to
+// the startup connect list — these are "we already know about these"
+// hosts that get a transient view-only connection on every startup
+// (no DB write here). On user action (AddDEX / PostBond / etc.), the
+// host is persisted to the DB; the next startup's db.Accounts() call
+// returns it and the dedup below skips the CertStore entry, so a host
+// is never double-connected.
+func (c *Core) knownDEXesNotInDB(accts []*db.AccountInfo) []*db.AccountInfo {
+	known := CertStore[c.net]
+	if len(known) == 0 {
+		return nil
+	}
+	inDB := make(map[string]struct{}, len(accts))
+	for _, a := range accts {
+		inDB[a.Host] = struct{}{}
+	}
+	extras := make([]*db.AccountInfo, 0, len(known))
+	for host, cert := range known {
+		if _, ok := inDB[host]; ok {
+			continue
+		}
+		extras = append(extras, &db.AccountInfo{Host: host, Cert: cert})
+	}
+	return extras
 }
 
 // connectAccount makes a connection to the DEX for the given account. If a

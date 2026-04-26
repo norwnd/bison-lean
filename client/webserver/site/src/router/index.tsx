@@ -14,7 +14,6 @@ function IndexRedirect () {
 
 // Lazy-load pages for code splitting.
 const LoginPage = lazy(() => import('../pages/LoginPage'))
-const RegisterPage = lazy(() => import('../pages/RegisterPage'))
 const InitPage = lazy(() => import('../pages/InitPage'))
 const MarketsPage = lazy(() => import('../pages/markets'))
 const WalletsPage = lazy(() => import('../pages/WalletsPage'))
@@ -38,7 +37,6 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { path: ROUTES.LOGIN, element: <GuestGuard><PageSuspense><LoginPage /></PageSuspense></GuestGuard> },
-      { path: ROUTES.REGISTER, element: <PageSuspense><RegisterPage /></PageSuspense> },
       {
         path: ROUTES.INIT,
         element: <InitGuard><PageSuspense><InitPage /></PageSuspense></InitGuard>,

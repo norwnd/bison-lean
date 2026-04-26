@@ -173,7 +173,7 @@ const MarketSelector: React.FC<MarketSelectorProps> = ({
                 type="button"
                 id="needRegTmpl"
                 className="mt-3"
-                onClick={() => navigate(`/register?host=${encodeURIComponent(host)}&backTo=mmsettings`)}
+                onClick={() => navigate(`/settings?registerHost=${encodeURIComponent(host)}&backTo=mmsettings`)}
               >
                 {t('MM_REGISTER_HOST', { host })}
               </button>

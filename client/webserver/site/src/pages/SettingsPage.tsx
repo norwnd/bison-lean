@@ -1,11 +1,12 @@
-import { useState, useCallback, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse, Errors } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useUIStore } from '../stores/useUIStore'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { DEXAddressForm } from '../components/common/DEXAddressForm'
+import { DiscoverAccountForm } from '../components/common/DiscoverAccountForm'
 import { FeeAssetSelectionForm } from '../components/common/FeeAssetSelectionForm'
 import { NewWalletForm } from '../components/common/NewWalletForm'
 import { WalletWaitForm } from '../components/common/WalletWaitForm'
@@ -23,7 +24,7 @@ import {
   fireSystemNotification,
 } from '../services/notifier'
 
-type RegStep = 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
+type RegStep = 'discoverAcct' | 'dexAddress' | 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
 
 export default function SettingsPage () {
   const { t } = useTranslation()
@@ -56,6 +57,34 @@ export default function SettingsPage () {
   const [regAssetID, setRegAssetID] = useState<number | null>(null)
   const [regTier, setRegTier] = useState(1)
   const [regBondFeeBuffer, setRegBondFeeBuffer] = useState(0)
+  // Deep-link state for /settings?registerHost=...&backTo=...
+  // - regHost: pre-filled DEX address used by the discoverAcct step
+  //   (auto-submits on mount).
+  // - regBackTo: optional return-to route after successful registration.
+  // Used by StatusPanels' "Create account" button and MarketSelector's
+  // "Register on this DEX" button, both of which need to bond on a
+  // specific (already-connected) host and return to the caller.
+  const [regHost, setRegHost] = useState('')
+  const [regBackTo, setRegBackTo] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Auto-open the Add DEX overlay when navigated here with a registerHost
+  // query param. We strip the params after consuming so a refresh / back-
+  // navigation doesn't re-trigger the wizard.
+  const deepLinkHandled = useRef(false)
+  useEffect(() => {
+    if (deepLinkHandled.current) return
+    const host = searchParams.get('registerHost')
+    if (!host) return
+    deepLinkHandled.current = true
+    setRegHost(host)
+    setRegBackTo(searchParams.get('backTo'))
+    setRegStep('discoverAcct')
+    setShowAddDex(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('registerHost')
+    next.delete('backTo')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   // -- Fiat rate sources --
   const [fiatSourcesLoading, setFiatSourcesLoading] = useState<Record<string, boolean>>({})
@@ -130,8 +159,30 @@ export default function SettingsPage () {
   const registerDEXSuccess = useCallback(async () => {
     await fetchUser()
     setShowAddDex(false)
+    if (regHost) {
+      // Deep-link flow — return to the caller's view (or markets fallback).
+      const target = regBackTo
+        ? (regBackTo.startsWith('/') ? regBackTo : '/' + regBackTo)
+        : ROUTES.MARKETS
+      setRegHost('')
+      setRegBackTo(null)
+      navigate(target)
+      return
+    }
+    // Plain settings flow — reload preserves the legacy behaviour and
+    // refreshes any non-store-derived state (DEX list, fiat-rate sources,
+    // etc.) the new exchange might have invalidated.
     window.location.reload()
-  }, [fetchUser])
+  }, [fetchUser, navigate, regHost, regBackTo])
+
+  const handleDiscoverSuccess = useCallback((xc: Exchange) => {
+    setRegExchange(xc)
+    // No user-supplied cert in the deep-link flow — DiscoverAccountForm hits
+    // /api/discoveracct with an empty cert, so the server falls back to the
+    // CertStore entry for this host. Keep regCertFile empty downstream.
+    setRegCertFile('')
+    setRegStep('feeAsset')
+  }, [])
 
   const handleDexAddressSuccess = useCallback((xc: Exchange, cert: string) => {
     setRegExchange(xc)
@@ -385,6 +436,9 @@ export default function SettingsPage () {
   const closeAddDex = useCallback(() => {
     setShowAddDex(false)
     setRegStep('dexAddress')
+    // Clear deep-link state so reopening from the Settings button starts fresh.
+    setRegHost('')
+    setRegBackTo(null)
     setRegExchange(null)
     setRegCertFile('')
     setRegAssetID(null)
@@ -658,6 +712,14 @@ export default function SettingsPage () {
 
       {/* -- Add DEX overlay -- */}
       <FormOverlay show={showAddDex} onClose={closeAddDex}>
+        {regStep === 'discoverAcct' && regHost && (
+          <DiscoverAccountForm
+            addr={regHost}
+            onSuccess={handleDiscoverSuccess}
+            onPaid={registerDEXSuccess}
+          />
+        )}
+
         {regStep === 'dexAddress' && (
           <DEXAddressForm onSuccess={handleDexAddressSuccess} />
         )}

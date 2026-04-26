@@ -41,7 +41,11 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
   const [current, setCurrent] = useState<CurrentAsset | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [password, setPassword] = useState('')
+  // walletPass is the wallet password (e.g. for an external dcrwallet/bitcoind
+  // RPC endpoint). NOT the app password — `apiNewWallet` resolves the app
+  // password server-side from the cached cookie via `resolvePass`. The JSON
+  // key on the wire is `pass`, matching the Go `newWalletForm.Pass` field.
+  const [walletPass, setWalletPass] = useState('')
   const [selectedTabIdx, setSelectedTabIdx] = useState(0)
   const [configOpts, setConfigOpts] = useState<ConfigOption[]>([])
   const [showFileSelector, setShowFileSelector] = useState(false)
@@ -133,7 +137,7 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
     const cur = parseAsset(assetID)
     if (!cur) return
     setCurrent(cur)
-    setPassword('')
+    setWalletPass('')
     setError('')
     setSelectedTabIdx(0)
     updateDef(cur, cur.selectedDef)
@@ -163,7 +167,7 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
     const config = subformRef.current?.getConfigMap(asset.id) ?? {}
     const createForm = {
       assetID: asset.id,
-      pass: password,
+      pass: walletPass,
       config,
       walletType: selectedDef.type,
     }
@@ -173,7 +177,7 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
       setError(res.msg || 'Failed to create wallet')
       return
     }
-    setPassword('')
+    setWalletPass('')
     onSuccess(asset.id)
   }
 
@@ -245,8 +249,8 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
             id="newWalletPass"
             type="password"
             className="form-control"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
+            value={walletPass}
+            onChange={e => setWalletPass(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
           />
         </div>

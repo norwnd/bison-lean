@@ -578,6 +578,7 @@ export default function WalletsPage () {
                   {!selectedWallet && (
                     <NoWalletView
                       asset={selectedAsset}
+                      parentAsset={selectedAsset.token ? assets[selectedAsset.token.parentID] ?? null : null}
                       onCreate={() => setActiveForm('newWallet')}
                     />
                   )}
@@ -841,23 +842,37 @@ export default function WalletsPage () {
 // worked for assets with required config). Mirrors vanilla
 // `wallets.ts` `showNewWallet()` (L930) which also just hands off
 // to the shared NewWalletForm component.
-function NoWalletView ({ asset, onCreate }: {
+//
+// Token wallets aren't shown a Create button: they are auto-created
+// alongside their parent wallet (server-side in apiNewWallet). If a
+// token row ends up here, it means the parent wallet doesn't exist
+// yet, so prompt the user to create the parent instead.
+function NoWalletView ({ asset, parentAsset, onCreate }: {
   asset: SupportedAsset
+  parentAsset: SupportedAsset | null
   onCreate: () => void
 }) {
   const { t } = useTranslation()
+  const isToken = !!asset.token
 
   return (
     <div className="text-center py-4">
       <img src={logoPath(asset.symbol)} alt={asset.symbol} width={48} height={48} className="mb-3" />
       <div className="fs18 mb-2">{asset.name}</div>
       <p className="text-secondary fs14 mb-3">{t('NO_WALLET_CONFIGURED_FOR_THIS_ASSET')}</p>
-      <button
-        className="btn btn-primary"
-        onClick={onCreate}
-      >
-        {t('CREATE_WALLET')}
-      </button>
+      {!isToken && (
+        <button
+          className="btn btn-primary"
+          onClick={onCreate}
+        >
+          {t('CREATE_WALLET')}
+        </button>
+      )}
+      {isToken && parentAsset && (
+        <p className="text-secondary fs14">
+          {t('CREATE_PARENT_WALLET_FIRST', { parent: parentAsset.name })}
+        </p>
+      )}
     </div>
   )
 }

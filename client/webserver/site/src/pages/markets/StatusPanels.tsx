@@ -84,7 +84,7 @@ export function StatusPanels ({ statusPanel, loaderMsgText, noWalletMsg }: Statu
             <button
               type="button"
               className="text-nowrap"
-              onClick={() => navigate(`/register?host=${encodeURIComponent(selected.host)}`)}
+              onClick={() => navigate(`/settings?registerHost=${encodeURIComponent(selected.host)}`)}
             >
               {t('CREATE_ACCOUNT')}
             </button>

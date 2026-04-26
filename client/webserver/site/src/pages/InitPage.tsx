@@ -1,24 +1,26 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
 import { Wave } from '../components/charts/Wave'
+import { WalletConfigForm } from '../components/common/WalletConfigForm'
+import type { WalletConfigFormHandle } from '../components/common/WalletConfigForm'
 import { ROUTES } from '../router/routes'
 import type { SupportedAsset, WalletDefinition } from '../stores/types'
 import { logoPath } from '../hooks/useFormatters'
 
 type Step = 'password' | 'quickConfig' | 'seedBackup'
 
-interface ServerRow {
-  host: string
-  checked: boolean
-}
-
 interface WalletRow {
   asset: SupportedAsset
-  walletType: string
+  walletDef: WalletDefinition
   checked: boolean
+  // needsConfig is true when the chosen wallet definition has any required
+  // configopts (e.g. XMR's `daemonaddress`). Such rows render an inline
+  // WalletConfigForm when checked and default to unchecked so users
+  // explicitly opt in (and aren't surprised by a creation failure mid-submit).
+  needsConfig: boolean
 }
 
 /** Build a config map from a wallet definition's default values. */
@@ -58,17 +60,23 @@ export default function InitPage () {
   const [savedPassword, setSavedPassword] = useState('')
   const [mnemonic, setMnemonic] = useState<string | undefined>(undefined)
 
-  // QuickConfig stage state.
-  const [servers, setServers] = useState<ServerRow[]>([])
+  // QuickConfig stage state. Known DEX servers are auto-added by /api/init,
+  // so QuickConfig is wallet-only on the client.
   const [wallets, setWallets] = useState<WalletRow[]>([])
   const [quickConfigLoading, setQuickConfigLoading] = useState(false)
   const [quickConfigMessage, setQuickConfigMessage] = useState('')
-  const [failedHosts, setFailedHosts] = useState<string[]>([])
   const [failedWallets, setFailedWallets] = useState<string[]>([])
   const [showErrors, setShowErrors] = useState(false)
 
   // Seed backup stage state.
   const [seedRevealed, setSeedRevealed] = useState(false)
+
+  // Refs to inline WalletConfigForm instances, keyed by asset id. Populated
+  // by the form's ref callback at mount; entries removed at unmount (when
+  // the user unchecks a row). `submitQuickConfig` reads from this map for
+  // required-config wallets only — defaulted wallets fall through to
+  // `buildConfigFromDefaults`.
+  const walletConfigRefs = useRef<Map<number, WalletConfigFormHandle>>(new Map())
 
   // ---------- Stage 1: Password ----------
 
@@ -92,7 +100,6 @@ export default function InitPage () {
       return
     }
 
-    const hosts: string[] = res.hosts ?? []
     const responseMnemonic: string | undefined = res.mnemonic
     setSavedPassword(password)
     setPassword('')
@@ -100,10 +107,10 @@ export default function InitPage () {
     setSeed('')
     setMnemonic(responseMnemonic)
 
-    // Build server rows.
-    setServers(hosts.map(host => ({ host, checked: true })))
-
-    // Build wallet rows from fetched user data.
+    // Build wallet rows from fetched user data. Pick the first seeded
+    // wallet definition for each asset — required-config wallets (e.g. XMR)
+    // are now included too, but get an inline WalletConfigForm and start
+    // unchecked so the user has to opt in.
     const user = await fetchUser()
     if (user) {
       const walletRows: WalletRow[] = []
@@ -111,18 +118,19 @@ export default function InitPage () {
         if (asset.token) continue
         const winfo = asset.info
         if (!winfo) continue
-        let autoConfigurable: WalletDefinition | null = null
+        let chosenDef: WalletDefinition | null = null
         for (const wDef of winfo.availablewallets) {
           if (!wDef.seeded) continue
-          if (wDef.configopts?.some(o => o.required)) continue
-          autoConfigurable = wDef
+          chosenDef = wDef
           break
         }
-        if (!autoConfigurable) continue
+        if (!chosenDef) continue
+        const needsConfig = !!chosenDef.configopts?.some(o => o.required)
         walletRows.push({
           asset,
-          walletType: autoConfigurable.type,
-          checked: true,
+          walletDef: chosenDef,
+          checked: !needsConfig,
+          needsConfig,
         })
       }
       setWallets(walletRows)
@@ -133,10 +141,6 @@ export default function InitPage () {
 
   // ---------- Stage 2: QuickConfig ----------
 
-  const toggleServer = useCallback((index: number) => {
-    setServers(prev => prev.map((s, i) => i === index ? { ...s, checked: !s.checked } : s))
-  }, [])
-
   const toggleWallet = useCallback((index: number) => {
     setWallets(prev => prev.map((w, i) => i === index ? { ...w, checked: !w.checked } : w))
   }, [])
@@ -144,39 +148,28 @@ export default function InitPage () {
   const submitQuickConfig = useCallback(async () => {
     setQuickConfigLoading(true)
     setShowErrors(false)
-    const hostFailures: string[] = []
     const walletFailures: string[] = []
 
-    // Add servers in parallel.
-    setQuickConfigMessage(t('ADDING_SERVERS'))
-    const serverPromises = servers
-      .filter(s => s.checked)
-      .map(async (s) => {
-        const res = await postJSON('/api/adddex', { addr: s.host, appPW: savedPassword })
-        if (!checkResponse(res)) hostFailures.push(s.host)
-      })
-    await Promise.all(serverPromises)
-
-    // Create wallets in parallel.
+    // Create wallets in parallel. For required-config rows, the user-supplied
+    // values come from the inline WalletConfigForm via the ref map; for
+    // auto-configurable rows we keep the default-derived config.
     setQuickConfigMessage(t('CREATING_WALLETS'))
     const walletPromises = wallets
       .filter(w => w.checked)
       .map(async (w) => {
-        const { asset, walletType } = w
-        // Find the wallet definition to build config from defaults.
-        const winfo = asset.info
-        let walletDef: WalletDefinition | null = null
-        if (winfo) {
-          for (const wDef of winfo.availablewallets) {
-            if (wDef.type === walletType) { walletDef = wDef; break }
-          }
+        const { asset, walletDef, needsConfig } = w
+        let config: Record<string, string>
+        if (needsConfig) {
+          const handle = walletConfigRefs.current.get(asset.id)
+          config = handle?.getConfigMap(asset.id) ?? {}
+        } else {
+          config = buildConfigFromDefaults(walletDef)
         }
-        const config = walletDef ? buildConfigFromDefaults(walletDef) : {}
         const res = await postJSON('/api/newwallet', {
           assetID: asset.id,
           appPass: savedPassword,
           config,
-          walletType,
+          walletType: walletDef.type,
         })
         if (!checkResponse(res)) walletFailures.push(asset.name)
       })
@@ -186,8 +179,7 @@ export default function InitPage () {
     setQuickConfigMessage('')
     await fetchUser()
 
-    if (hostFailures.length + walletFailures.length > 0) {
-      setFailedHosts(hostFailures)
+    if (walletFailures.length > 0) {
       setFailedWallets(walletFailures)
       setShowErrors(true)
       return
@@ -198,7 +190,7 @@ export default function InitPage () {
     } else {
       navigate(ROUTES.WALLETS)
     }
-  }, [servers, wallets, savedPassword, t, fetchUser, mnemonic, navigate])
+  }, [wallets, savedPassword, t, fetchUser, mnemonic, navigate])
 
   const acknowledgeErrors = useCallback(() => {
     if (mnemonic) {
@@ -324,35 +316,36 @@ export default function InitPage () {
                   <div className="fs18 mb-2">{t('QUICKCONFIG_WALLET_HEADER')}</div>
                   <div className="mt-2">
                     {wallets.map((wRow, idx) => (
-                      <label key={wRow.asset.id} className="p-1 d-flex justify-content-start align-items-center hoverbg pointer">
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={wRow.checked}
-                          onChange={() => toggleWallet(idx)}
-                        />
-                        <img
-                          className="quickconfig-asset-logo mx-2"
-                          src={logoPath(wRow.asset.symbol)}
-                          alt=""
-                        />
-                        <span className="fs20">{wRow.asset.name}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="fs18 mt-3 pt-3 border-top">{t('QUICKCONFIG_SERVER_HEADER')}</div>
-                  <div>
-                    {servers.map((srv, idx) => (
-                      <label key={srv.host} className="d-flex justify-content-start align-items-center p-1 hoverbg pointer my-1">
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={srv.checked}
-                          onChange={() => toggleServer(idx)}
-                        />
-                        <span className="ms-2 fs18 lh1">{srv.host}</span>
-                      </label>
+                      <div key={wRow.asset.id} className="my-1">
+                        <label className="p-1 d-flex justify-content-start align-items-center hoverbg pointer">
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={wRow.checked}
+                            onChange={() => toggleWallet(idx)}
+                          />
+                          <img
+                            className="quickconfig-asset-logo mx-2"
+                            src={logoPath(wRow.asset.symbol)}
+                            alt=""
+                          />
+                          <span className="fs20">{wRow.asset.name}</span>
+                        </label>
+                        {wRow.checked && wRow.needsConfig && (
+                          <div className="ms-4 ps-3 border-start mb-2">
+                            <WalletConfigForm
+                              ref={(handle) => {
+                                if (handle) walletConfigRefs.current.set(wRow.asset.id, handle)
+                                else walletConfigRefs.current.delete(wRow.asset.id)
+                              }}
+                              assetID={wRow.asset.id}
+                              configOpts={wRow.walletDef.configopts ?? []}
+                              sectionize={true}
+                              activeOrders={false}
+                            />
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
 
@@ -374,17 +367,6 @@ export default function InitPage () {
                     <div className="p-2 my-1">
                       {failedWallets.map(name => (
                         <div key={name}>{name}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {failedHosts.length > 0 && (
-                  <div className="my-1">
-                    <span className="fs16">{t('QUICKCONFIG_SERVER_ERROR_HEADER')}</span>
-                    <div className="p-2 my-1">
-                      {failedHosts.map(host => (
-                        <div key={host}>{host}</div>
                       ))}
                     </div>
                   </div>

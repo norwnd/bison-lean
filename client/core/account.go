@@ -306,9 +306,8 @@ func (c *Core) AccountImport(pw []byte, acct *Account, bonds []*db.Bond) error {
 // the connection is successful, then the cert in the database is updated.
 // Updating cert for already connected dex will return an error.
 func (c *Core) UpdateCert(host string, cert []byte) error {
-	c.connMtx.RLock()
-	dc, found := c.conns[host]
-	c.connMtx.RUnlock()
+	dc := c.existingConn(host)
+	found := dc != nil
 	if found && dc.status() == comms.Connected {
 		return errors.New("dex is already connected")
 	}
@@ -394,7 +393,7 @@ func (c *Core) UpdateDEXHost(oldHost, newHost string, appPW []byte, certI any) (
 			newDc.connMaster.Disconnect()
 			return
 		}
-		c.upgradeConnection(newDc)
+		c.addDexConnection(newDc)
 	}()
 
 	if !newDc.acct.dexPubKey.IsEqual(oldDc.acct.dexPubKey) {
