@@ -14,8 +14,9 @@ import { NewUserBanner } from './NewUserBanner'
 import { PopupNotes } from '../components/notifications/PopupNotes'
 import { ActionRequiredDialog } from '../components/notifications/ActionRequiredDialog'
 import { handleAutoBumpCapped } from '../components/notifications/autoBumpCappedToast'
+import { handleLostNonce } from '../components/notifications/lostNonceToast'
 import { networkSuffix } from '../components/notifications/actionRequiredUtils'
-import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, WalletNote } from '../stores/types'
+import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, LostNonceNote, WalletNote } from '../stores/types'
 
 export function AppLayout () {
   const { t } = useTranslation()
@@ -133,6 +134,16 @@ export function AppLayout () {
               const assetName = asset?.name || `asset ${cw.assetID}`
               const network = networkSuffix(allAssets, cw.assetID, t)
               handleAutoBumpCapped(inner, cw.assetID, assetName, network, t)
+              break
+            }
+            case 'lostNonce': {
+              const cw = wn.payload as CustomWalletNote
+              const inner = cw.payload as LostNonceNote
+              const allAssets = useAuthStore.getState().assets
+              const asset = allAssets[cw.assetID]
+              const assetName = asset?.name || `asset ${cw.assetID}`
+              const network = networkSuffix(allAssets, cw.assetID, t)
+              handleLostNonce(inner, cw.assetID, assetName, network, t)
               break
             }
           }

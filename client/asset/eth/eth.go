@@ -414,6 +414,23 @@ type ethFetcher interface {
 	syncProgress(context.Context) (progress *ethereum.SyncProgress, tipTime uint64, err error)
 	transactionConfirmations(context.Context, common.Hash) (uint32, error)
 	getTransaction(context.Context, common.Hash) (*types.Transaction, int64, error)
+	// blockByNumber fetches a block (header + body) by number. Used by the
+	// lost-nonce auto-resolver to identify the external tx that consumed
+	// our nonce.
+	blockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+	// nonceAt returns the account's transaction count at the given block
+	// number. Used by the lost-nonce auto-resolver to binary-search for
+	// the block where the chain accepted an external tx at our nonce.
+	nonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error)
+	// transactionInAnyProvider explicitly polls every RPC provider's
+	// view of the tx, rather than short-circuiting on the first response.
+	// Returns:
+	//   - found=true: at least one provider has the tx (in mempool or mined)
+	//   - found=false, anyErrored=false: every provider definitively
+	//     returned not-found; the tx is missing from every node we know
+	//   - anyErrored=true: at least one provider returned a non-NotFound
+	//     error (transient/network); caller treats as inconclusive
+	transactionInAnyProvider(ctx context.Context, txHash common.Hash) (found, anyErrored bool)
 	txOpts(ctx context.Context, val, maxGas uint64, maxFeeRate, tipCap, nonce *big.Int) (*bind.TransactOpts, error)
 	currentFees(ctx context.Context) (baseFees, tipCap *big.Int, err error)
 	unlock(pw string) error
@@ -4008,9 +4025,15 @@ func (w *ETHWallet) Swap(ctx context.Context, swaps *asset.Swaps) ([]asset.Recei
 	}
 	txHash := tx.Hash()
 
+	locators := make([][]byte, n)
+	for i, c := range swaps.Contracts {
+		locators[i] = acToLocator(contractVer, c, dexeth.GweiToWei(c.Value), w.addr)
+	}
+
 	w.opMtx.Lock()
 	op = w.opLog.findOrCreate(key, OpSwap)
 	op.ContractVer = contractVer
+	op.Locators = locators
 	op.Attempts = append(op.Attempts, &Attempt{
 		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
 		Outcome:    AttemptPending,
@@ -4163,9 +4186,15 @@ func (w *TokenWallet) Swap(ctx context.Context, swaps *asset.Swaps) ([]asset.Rec
 	}
 	txHash := tx.Hash()
 
+	locators := make([][]byte, n)
+	for i, c := range swaps.Contracts {
+		locators[i] = acToLocator(contractVer, c, w.evmify(c.Value), w.addr)
+	}
+
 	w.opMtx.Lock()
 	op = w.opLog.findOrCreate(key, OpSwap)
 	op.ContractVer = contractVer
+	op.Locators = locators
 	op.Attempts = append(op.Attempts, &Attempt{
 		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
 		Outcome:    AttemptPending,
@@ -4849,11 +4878,19 @@ func (w *assetWallet) Redeem(ctx context.Context, form *asset.RedeemForm) ([]dex
 
 	txHash := tx.Hash()
 
+	locators := make([][]byte, len(form.Redemptions))
+	for i, r := range form.Redemptions {
+		if _, loc, decErr := dexeth.DecodeContractData(r.Spends.Contract); decErr == nil {
+			locators[i] = loc
+		}
+	}
+
 	// Register the Op + Attempt + Candidate so subsequent calls short-circuit.
 	w.opMtx.Lock()
 	op = w.opLog.findOrCreate(key, OpRedeem)
 	op.RedeemedValue = redeemedValue
 	op.ContractVer = contractVer
+	op.Locators = locators
 	op.Attempts = append(op.Attempts, &Attempt{
 		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
 		Outcome:    AttemptPending,
@@ -6395,6 +6432,7 @@ func (w *assetWallet) Refund(ctx context.Context, _, contract dex.Bytes, feeRate
 	w.opMtx.Lock()
 	op = w.opLog.findOrCreate(key, OpRefund)
 	op.ContractVer = contractVer
+	op.Locators = [][]byte{locator}
 	op.Attempts = append(op.Attempts, &Attempt{
 		Nonce:      new(big.Int).SetUint64(tx.Nonce()),
 		Outcome:    AttemptPending,
@@ -8737,8 +8775,9 @@ func (w *baseWallet) checkPendingTxs() {
 				w.confirmedNonceAt.Add(w.confirmedNonceAt, big.NewInt(1))
 			}
 			winner := slot.winner()
-			if winner != nil && winner.savedToDB {
-				if i == keepFromIndex {
+			if winner != nil {
+				w.finalizeAttemptForWinner(winner)
+				if winner.savedToDB && i == keepFromIndex {
 					keepFromIndex = i + 1
 				}
 			}
@@ -8764,54 +8803,47 @@ func (w *baseWallet) checkPendingTxs() {
 	// RPC needed for them).
 	bumpTasks := w.collectAutoBumpTasks(w.autoBumpCfg)
 
-	// Phase B: classify the head slot's problem (if any) and prompt the user
-	// for it. Serialization rule: at most one prompt per tick, always on
-	// the head slot. Slots queued behind head are surfaced via the note's
-	// Blocked list so the user knows what depends on resolving head — but
-	// those slots are NOT independently prompted. Once head is resolved
-	// (mined, abandoned, or dropped from tracking), the next tick promotes
+	// Phase B: classify the head slot's problem (if any) and either prompt
+	// the user (too-cheap, dropped-from-mempool fallback) or schedule an
+	// auto-resolve task (chain-advanced lost-nonce). Serialization rule:
+	// at most one prompt per tick, always on the head slot. Slots queued
+	// behind head are surfaced via the prompt's Blocked list — but are
+	// not independently prompted. Once head is resolved (mined, abandoned,
+	// auto-resolved, or dropped from tracking), the next tick promotes
 	// the next slot to head.
+	var lostNonceTasks []*lostNonceTask
 	if headIdx := findHeadSlot(w.slots); headIdx >= 0 {
-		w.maybePromptHead(headIdx, lastConfirmed)
+		if t := w.maybePromptHead(headIdx, lastConfirmed); t != nil {
+			lostNonceTasks = append(lostNonceTasks, t)
+		}
 	}
 
 	// Drop finalized slots from the front of the slots list.
 	w.slots = w.slots[keepFromIndex:]
 
 	// Rebroadcast all live (non-mined, non-replaced, non-indexed,
-	// non-AssumedLost) candidates.
-	const rebroadcastPeriod = time.Minute * 5
-	for _, slot := range w.slots {
-		for _, c := range slot.Candidates {
-			if c.Confirmed || c.BlockNumber > 0 ||
-				c.NonceReplacement != "" || // sibling already won this slot
-				c.actionRequested ||
-				c.indexed ||
-				c.AssumedLost || // gave up on this candidate
-				time.Since(c.lastBroadcast) < rebroadcastPeriod {
-				continue
-			}
-			c.lastBroadcast = time.Now()
-			tx, err := c.tx()
-			if err != nil {
-				w.log.Errorf("Error decoding raw tx %s for rebroadcast: %v", c.ID, err)
-				continue
-			}
-			if err := w.node.sendSignedTransaction(w.ctx, tx, allowAlreadyKnownFilter); err != nil {
-				w.log.Warnf("Error rebroadcasting tx %s: %v", c.ID, err)
-			} else {
-				w.log.Infof("Rebroadcasted un-indexed transaction %s", c.ID)
-			}
-		}
-	}
+	// Mempool-probe collection. For each slot's latest live candidate,
+	// schedule a per-provider probe (post-unlock) to deterministically
+	// detect "missing from every mempool". If the probe finds the tx
+	// nowhere, the same task re-broadcasts the tx at its existing fees —
+	// no fee bump (TooCheap handles fee-bump suggestions independently).
+	// Cadence is gated by lastMempoolProbeAt to avoid hammering providers.
+	probeTasks := w.collectMempoolProbeTasks()
 
-	// Release nonceMtx before doing auto-bump RPCs so concurrent withNonce
-	// and balance-query callers don't stall on sendTransaction. Each
-	// executeOneAutoBump re-acquires nonceMtx briefly to commit.
+	// Release nonceMtx before doing the auto-bump, lost-nonce, and
+	// mempool-probe RPCs so concurrent withNonce / balance-query callers
+	// don't stall on sendTransaction or status() RPCs. Each executor
+	// re-acquires the relevant locks briefly to commit.
 	w.nonceMtx.Unlock()
 	unlocked = true
 	if len(bumpTasks) > 0 {
 		w.executeAutoBumpTasks(bumpTasks)
+	}
+	if len(lostNonceTasks) > 0 {
+		w.executeLostNonceTasks(lostNonceTasks)
+	}
+	if len(probeTasks) > 0 {
+		w.executeMempoolProbeTasks(probeTasks)
 	}
 }
 
@@ -8821,7 +8853,6 @@ var _ asset.ActionTaker = (*assetWallet)(nil)
 
 const (
 	actionTypeMissingNonces = "missingNonces"
-	actionTypeLostNonce     = "lostNonce"
 	actionTypeTooCheap      = "tooCheap"
 )
 
@@ -8851,6 +8882,43 @@ type BlockedTxInfo struct {
 // an AutoBumpCappedNote.
 const autoBumpCappedRoute = "autoBumpCapped"
 
+// lostNonceRoute is the asset.WalletEmitter Data route used to surface a
+// LostNonceNote — emitted when an external transaction has consumed a nonce
+// our pending tx was targeting and the wallet has auto-resolved the slot.
+const lostNonceRoute = "lostNonce"
+
+// LostNonceNote is the payload of the data notification emitted when the
+// chain advances past one of our slot's nonces with none of our candidates
+// having mined — i.e., an external transaction (not broadcast by this
+// wallet) won the nonce. Under the assumption that this wallet's key is not
+// used by any other instance, an external tx is unusual and may indicate
+// key compromise or an out-of-band recovery tool. The wallet auto-resolves
+// the slot based on the on-chain probe result; this notification surfaces
+// what happened so the user can investigate.
+type LostNonceNote struct {
+	// Nonce is the consumed nonce.
+	Nonce uint64 `json:"nonce"`
+	// OurTxID is the hex hash of the latest candidate the wallet had at this
+	// nonce — the tx whose mining was preempted.
+	OurTxID string `json:"ourTxID"`
+	// ExternalTxID is the hex hash of the external transaction that consumed
+	// the nonce, when the wallet was able to identify it via a block-range
+	// scan. Empty if the scan didn't find it (e.g., advance happened too far
+	// back or RPC errored). The notification still surfaces with empty
+	// ExternalTxID — the user can investigate via a block explorer.
+	ExternalTxID string `json:"externalTxID,omitempty"`
+	// OpType is the logical operation type if the slot had an associated Op
+	// ("swap", "redeem", "refund"), or "" if no Op was registered (regular
+	// Send, bridge completion, etc.).
+	OpType string `json:"opType,omitempty"`
+	// ProbeResult is one of "achieved", "not_achieved", "unknown", or
+	// "no_probe" (when no Op or OpType has no Locators-based probe).
+	ProbeResult string `json:"probeResult"`
+	// Reason is a short human-readable summary of what the wallet did and
+	// what the user should consider (key compromise, emergency tool, etc.).
+	Reason string `json:"reason"`
+}
+
 // AutoBumpCappedNote is the payload of the data notification emitted once
 // per slot when the auto fee-bump scheduler stops bumping a stuck
 // Redeem/Refund because the next bump would exceed the policy's cap
@@ -8865,13 +8933,383 @@ type AutoBumpCappedNote struct {
 	CapGwei    uint64                `json:"capGwei"`
 }
 
-// newLostNonceNote is information regarding a tx that appears to be lost.
-func newLostNonceNote(tx asset.WalletTransaction, nonce uint64, blocked []*BlockedTxInfo) *TransactionActionNote {
-	return &TransactionActionNote{
-		Tx:      &tx,
-		Nonce:   nonce,
-		Blocked: blocked,
+// lostNonceTask is a unit of work for the post-unlock lost-nonce auto-resolver.
+// Created by maybePromptHead under nonceMtx; executed without locks (probe RPC)
+// then re-acquires locks to apply the outcome.
+type lostNonceTask struct {
+	candidateID string // hex tx ID — the latest candidate at collection time
+	tokenID     *uint32
+	nonce       uint64
+	notify      bool // emit notification (false on retries after first)
+}
+
+// executeLostNonceTasks runs each scheduled auto-resolve sequentially.
+func (w *baseWallet) executeLostNonceTasks(tasks []*lostNonceTask) {
+	for _, t := range tasks {
+		w.executeOneLostNonceResolve(t)
 	}
+}
+
+// mempoolProbeInterval is the per-candidate cadence between
+// transactionInAnyProvider polls (and any rebroadcasts they trigger). Set
+// to 2 minutes — long enough to avoid provider churn, short enough to
+// recover quickly from transient mempool drops.
+const mempoolProbeInterval = 2 * time.Minute
+
+// mempoolProbeTask is a unit of work for the post-unlock mempool prober.
+// Created by collectMempoolProbeTasks under nonceMtx; executed without
+// locks (the per-provider RPC poll plus an optional rebroadcast).
+type mempoolProbeTask struct {
+	candidateID string
+	tokenID     *uint32
+	rawTx       []byte
+}
+
+// collectMempoolProbeTasks gathers a probe task for the latest live
+// candidate of each non-finalized slot whose probe hasn't run in
+// mempoolProbeInterval. Caller must hold nonceMtx. Skips candidates that
+// already have an action in flight (chainAdvanced auto-resolve, too-cheap
+// prompt, etc.) — those code paths own the slot and a probe-driven
+// rebroadcast would race with them.
+func (w *baseWallet) collectMempoolProbeTasks() []*mempoolProbeTask {
+	var tasks []*mempoolProbeTask
+	now := time.Now()
+	for _, slot := range w.slots {
+		if slot.consumed() || slot.finalized() {
+			continue
+		}
+		c := slot.latest()
+		if c == nil {
+			continue
+		}
+		if c.Confirmed || c.BlockNumber > 0 ||
+			c.NonceReplacement != "" ||
+			c.AssumedLost ||
+			c.actionRequested {
+			continue
+		}
+		if now.Sub(c.lastMempoolProbeAt) < mempoolProbeInterval {
+			continue
+		}
+		c.lastMempoolProbeAt = now
+		raw := append([]byte(nil), c.RawTx...)
+		tasks = append(tasks, &mempoolProbeTask{
+			candidateID: c.ID,
+			tokenID:     c.TokenID,
+			rawTx:       raw,
+		})
+	}
+	return tasks
+}
+
+// executeMempoolProbeTasks runs each scheduled probe sequentially.
+func (w *baseWallet) executeMempoolProbeTasks(tasks []*mempoolProbeTask) {
+	for _, t := range tasks {
+		w.executeOneMempoolProbe(t)
+	}
+}
+
+// executeOneMempoolProbe queries every RPC provider for the candidate's
+// tx hash. If every provider reports not-found (and none erred), the tx
+// is missing from every mempool we know — re-broadcast it at the same
+// fees. found / errored cases are no-ops; the wallet polls again on the
+// next interval. Fee-bump suggestions are owned by the TooCheap path and
+// run independently.
+func (w *baseWallet) executeOneMempoolProbe(task *mempoolProbeTask) {
+	txHash := common.HexToHash(task.candidateID)
+	found, anyErrored := w.node.transactionInAnyProvider(w.ctx, txHash)
+	if found || anyErrored {
+		return
+	}
+	tx := new(types.Transaction)
+	if err := tx.UnmarshalBinary(task.rawTx); err != nil {
+		w.log.Errorf("mempool-probe rebroadcast: decode tx %s: %v", task.candidateID, err)
+		return
+	}
+	if err := w.node.sendSignedTransaction(w.ctx, tx, allowAlreadyKnownFilter); err != nil {
+		w.log.Warnf("mempool-probe rebroadcast: send %s: %v", task.candidateID, err)
+		return
+	}
+	w.log.Infof("Rebroadcasted tx %s after detecting it was missing from every RPC provider's mempool", task.candidateID)
+}
+
+// lostNonceScanDepth bounds how far back from the current chain tip the
+// auto-resolver will binary-search to identify the external tx that took
+// our nonce. Beyond this window the scan gives up and the notification
+// surfaces without ExternalTxID. 200 blocks ≈ 7 minutes on Polygon at 2s
+// blocks — plenty for advances detected by the wallet's poll loop.
+const lostNonceScanDepth = 200
+
+// findExternalTxAtNonce attempts to identify the external transaction that
+// consumed `nonce` for `account` by binary-searching the recent chain for
+// the block where the account's confirmed nonce stepped past `nonce`, then
+// scanning that block for the matching tx. Best-effort: returns the zero
+// hash on any RPC error, when the advance is older than
+// lostNonceScanDepth, or when the chain hasn't actually advanced past
+// `nonce` (caller treats this as "couldn't identify"). Must be called
+// without locks held.
+func (w *baseWallet) findExternalTxAtNonce(ctx context.Context, account common.Address, nonce, currentTip uint64) common.Hash {
+	if currentTip == 0 {
+		return common.Hash{}
+	}
+	low := uint64(0)
+	if currentTip > lostNonceScanDepth {
+		low = currentTip - lostNonceScanDepth
+	}
+	high := currentTip
+	// Confirm the account is at >nonce at the tip. If not, the chain
+	// hasn't actually advanced past nonce, so no external tx exists.
+	nTip, err := w.node.nonceAt(ctx, account, new(big.Int).SetUint64(high))
+	if err != nil || nTip <= nonce {
+		return common.Hash{}
+	}
+	// Confirm the account is at <=nonce at the lower bound. If not, the
+	// advance happened earlier than our scan window — give up.
+	if low > 0 {
+		nLow, err := w.node.nonceAt(ctx, account, new(big.Int).SetUint64(low))
+		if err != nil || nLow > nonce {
+			return common.Hash{}
+		}
+	}
+	// Binary search [low, high] for the first block where nonceAt > nonce.
+	for low+1 < high {
+		mid := low + (high-low)/2
+		n, err := w.node.nonceAt(ctx, account, new(big.Int).SetUint64(mid))
+		if err != nil {
+			return common.Hash{}
+		}
+		if n > nonce {
+			high = mid
+		} else {
+			low = mid
+		}
+	}
+	// The chain accepted the external tx at block `high`. Fetch and scan
+	// for the tx whose sender matches our account and nonce matches.
+	block, err := w.node.blockByNumber(ctx, new(big.Int).SetUint64(high))
+	if err != nil || block == nil {
+		return common.Hash{}
+	}
+	signer := types.LatestSigner(w.node.chainConfig())
+	for _, tx := range block.Transactions() {
+		if tx.Nonce() != nonce {
+			continue
+		}
+		from, err := signer.Sender(tx)
+		if err != nil {
+			continue
+		}
+		if from == account {
+			return tx.Hash()
+		}
+	}
+	return common.Hash{}
+}
+
+// executeOneLostNonceResolve probes the on-chain effect of the slot's
+// associated Operation, then either marks the Op Confirmed (achieved),
+// finalizes its active Attempt as Lost (not_achieved), or holds for retry
+// (unknown). Emits a LostNonceNote on first run; retries (due to "unknown"
+// results) do not re-notify. Slots without an Op (or without persisted
+// Locators — pre-Locators legacy state) are cleared with reason "no_probe".
+func (w *baseWallet) executeOneLostNonceResolve(task *lostNonceTask) {
+	assetID := w.baseChainID
+	if task.tokenID != nil {
+		assetID = *task.tokenID
+	}
+	w.walletsMtx.RLock()
+	aw := w.wallets[assetID]
+	w.walletsMtx.RUnlock()
+	if aw == nil {
+		w.log.Errorf("lost-nonce resolve: no asset wallet for assetID %d", assetID)
+		return
+	}
+
+	// Snapshot the Op so the probe runs without holding opMtx.
+	txHash := common.HexToHash(task.candidateID)
+	var (
+		opSnapshot Operation
+		opType     OpType
+		hasOp      bool
+	)
+	w.opMtx.Lock()
+	if op := w.opLog.findByTx(txHash); op != nil {
+		opSnapshot = *op
+		if len(op.Locators) > 0 {
+			opSnapshot.Locators = append([][]byte(nil), op.Locators...)
+		}
+		opType = op.Type
+		hasOp = true
+	}
+	w.opMtx.Unlock()
+
+	var (
+		achieved, unknown bool
+		probeResult       string
+	)
+	if hasOp && len(opSnapshot.Locators) > 0 {
+		var err error
+		achieved, unknown, err = aw.probeOpAchieved(w.ctx, &opSnapshot)
+		if err != nil && !unknown {
+			w.log.Errorf("lost-nonce probe error for tx %s: %v", task.candidateID, err)
+		}
+		switch {
+		case achieved:
+			probeResult = "achieved"
+		case unknown:
+			probeResult = "unknown"
+		default:
+			probeResult = "not_achieved"
+		}
+	} else {
+		probeResult = "no_probe"
+	}
+
+	externalHex := ""
+	if h := w.findExternalTxAtNonce(w.ctx, w.addr, task.nonce, w.tipHeight()); h != (common.Hash{}) {
+		externalHex = h.Hex()
+	}
+	note := &LostNonceNote{
+		Nonce:        task.nonce,
+		OurTxID:      task.candidateID,
+		ExternalTxID: externalHex,
+		OpType:       string(opType),
+		ProbeResult:  probeResult,
+		Reason:       lostNonceReason(opType, probeResult),
+	}
+
+	if probeResult == "unknown" {
+		// Hold the slot. Don't finalize the Attempt — the next tick will
+		// re-detect chainAdvanced and re-probe (rate-limited via
+		// lostNonceProbedAt). Emit notification only on first run.
+		if task.notify {
+			aw.emit.Data(lostNonceRoute, note)
+		}
+		w.applyLostNonceResolve(task.candidateID, false, task.notify)
+		return
+	}
+
+	// Conclusive outcome (achieved / not_achieved / no_probe): finalize the
+	// active Attempt as Lost and clear the slot. If achieved, also flip Op
+	// state to Confirmed.
+	if hasOp {
+		w.opMtx.Lock()
+		if op := w.opLog.get(opSnapshot.Key); op != nil {
+			if a := op.activeAttempt(); a != nil {
+				a.Outcome = AttemptLost
+				a.FinalizedAt = time.Now().Unix()
+			}
+			if achieved && op.State == OpStatePending {
+				op.State = OpStateConfirmed
+				op.ConfirmedAt = time.Now().Unix()
+				w.markProbeAchieved(op.Key)
+			}
+			_ = w.txDB.storeOp(op)
+		}
+		w.opMtx.Unlock()
+	}
+	w.applyLostNonceResolve(task.candidateID, true, task.notify)
+	if task.notify {
+		aw.emit.Data(lostNonceRoute, note)
+	}
+}
+
+// finalizeAttemptForWinner sets the Operation's active Attempt outcome
+// based on the slot's mined winner. AbandonReplacement → AttemptAbandoned.
+// Otherwise: success receipt → AttemptMinedEffective, revert →
+// AttemptMinedIneffective. The Op's State transitions to Confirmed
+// independently via the probe-first pattern in Redeem/Refund/Swap on the
+// next core call. No-op if winner has no associated Op or its Attempt is
+// already finalized (e.g., a sibling abandon-replacement won earlier).
+// Caller may hold nonceMtx; this function takes opMtx briefly. There is
+// no opMtx → nonceMtx path elsewhere, so the nesting is safe.
+func (w *baseWallet) finalizeAttemptForWinner(winner *extendedWalletTx) {
+	w.opMtx.Lock()
+	defer w.opMtx.Unlock()
+	op := w.opLog.findByTx(winner.txHash)
+	if op == nil {
+		return
+	}
+	a := op.activeAttempt()
+	if a == nil {
+		return
+	}
+	switch {
+	case winner.Purpose == CandidateAbandonReplacement:
+		a.Outcome = AttemptAbandoned
+	case winner.Receipt != nil && winner.Receipt.Status == 1:
+		a.Outcome = AttemptMinedEffective
+	default:
+		a.Outcome = AttemptMinedIneffective
+	}
+	a.FinalizedAt = time.Now().Unix()
+	_ = w.txDB.storeOp(op)
+}
+
+// applyLostNonceResolve commits the post-probe slot mutation under
+// nonceMtx. For conclusive outcomes (conclusive=true), all candidates in
+// the slot are marked AssumedLost and the slot is dropped from the
+// tracking list. For unknown (conclusive=false), the candidates'
+// actionRequested flag is cleared so the next tick can re-detect
+// chainAdvanced and re-probe. markNotified, when true, also sets the
+// candidate's lostNonceNotified flag so subsequent retries (if any) skip
+// re-emitting the notification.
+func (w *baseWallet) applyLostNonceResolve(candidateID string, conclusive, markNotified bool) {
+	w.nonceMtx.Lock()
+	defer w.nonceMtx.Unlock()
+
+	slotIdx, slot, candidate := findCandidateByID(w.slots, candidateID)
+	if slot == nil || candidate == nil {
+		return
+	}
+
+	if markNotified {
+		candidate.lostNonceNotified = true
+	}
+
+	if !conclusive {
+		for _, c := range slot.Candidates {
+			c.actionRequested = false
+		}
+		return
+	}
+
+	for _, c := range slot.Candidates {
+		if !c.AssumedLost {
+			c.AssumedLost = true
+			w.tryStoreDBTx(c)
+		}
+	}
+	slot.Candidates = nil
+	if slot.Nonce.Cmp(w.confirmedNonceAt) == 0 {
+		w.nextNonceAt.Add(w.nextNonceAt, big.NewInt(-1))
+	}
+	w.dropEmptySlot(slotIdx)
+}
+
+// lostNonceReason builds the human-readable reason text for a LostNonceNote.
+// All reasons end with the same security framing — the assumption is that
+// the wallet's key is not used by any other wallet instance, so an external
+// tx warrants user attention regardless of probe outcome.
+func lostNonceReason(opType OpType, probeResult string) string {
+	const compromiseHint = "If you didn't initiate the external transaction, your wallet's private key may be compromised — consider moving funds and rotating keys."
+	switch probeResult {
+	case "achieved":
+		if opType == "" {
+			return "An external transaction consumed this nonce. " + compromiseHint
+		}
+		return fmt.Sprintf("An external transaction consumed this nonce; the %s effect is already on-chain. %s", opType, compromiseHint)
+	case "not_achieved":
+		if opType == "" {
+			return "An external transaction consumed this nonce; the local transaction did not complete. " + compromiseHint
+		}
+		return fmt.Sprintf("An external transaction consumed this nonce; the %s did not complete and will be retried. %s", opType, compromiseHint)
+	case "unknown":
+		return "An external transaction consumed this nonce; the on-chain probe was inconclusive and will be retried. " + compromiseHint
+	case "no_probe":
+		return "An external transaction consumed this nonce; the local transaction's intent is not probable so completion can't be verified automatically. " + compromiseHint
+	}
+	return "An external transaction consumed this nonce. " + compromiseHint
 }
 
 // newLowFeeNote is data about a tx that is stuck in mempool with too-low fees.
@@ -8904,67 +9342,83 @@ func (w *baseWallet) collectBlockedTxInfos(headIdx int) []*BlockedTxInfo {
 	return blocked
 }
 
-// maybePromptHead emits at most one user-action note for the head slot in
-// w.slots — either lost-nonce or too-cheap. Slots queued behind head (per
-// the Phase A scan) are summarized in the note's Blocked list so the user
-// can see what's waiting on this resolution. Caller must hold nonceMtx.
-func (w *baseWallet) maybePromptHead(headIdx, lastConfirmed int) {
+// maybePromptHead handles the head slot's problem (if any). For the
+// chainAdvanced case (an external tx consumed our nonce), it returns a
+// lostNonceTask for the post-unlock auto-resolver — no user prompt is
+// emitted. For the dropped-from-mempool fallback and too-cheap cases, it
+// emits at most one user-action note. Slots queued behind head (per the
+// Phase A scan) are summarized in the note's Blocked list. Caller must hold
+// nonceMtx. Returns nil if no auto-resolve work is needed.
+func (w *baseWallet) maybePromptHead(headIdx, lastConfirmed int) *lostNonceTask {
 	head := w.slots[headIdx]
 	if head.anyActionRequested() {
-		return
+		return nil
 	}
 	latest := head.latest()
-	if time.Since(latest.lastActionRejected) < txActionPromptFrequency {
-		return
+
+	// Chain-advanced lost-nonce: confirmed nonce passed this slot without
+	// any of our candidates mining. Auto-resolve via probe — runs
+	// post-unlock. No user prompt; a LostNonceNote will be emitted from
+	// the resolver. Rate-limit re-probes via lostNonceProbedAt so an
+	// "unknown" result doesn't churn the RPC every tick.
+	chainAdvanced := (headIdx < lastConfirmed) || w.confirmedNonceAt.Cmp(head.Nonce) > 0
+	if chainAdvanced {
+		if time.Since(latest.lostNonceProbedAt) < txActionPromptFrequency {
+			return nil
+		}
+		latest.lostNonceProbedAt = time.Now()
+		// Suppress rebroadcast and auto-bump for every candidate in this
+		// slot while the auto-resolve task is in flight — the chain
+		// advanced past this nonce, so no candidate of ours can mine.
+		// The unknown-probe branch of executeOneLostNonceResolve clears
+		// these flags so the next tick can re-probe.
+		for _, c := range head.Candidates {
+			c.actionRequested = true
+		}
+		return &lostNonceTask{
+			candidateID: latest.ID,
+			tokenID:     latest.TokenID,
+			nonce:       head.Nonce.Uint64(),
+			notify:      !latest.lostNonceNotified,
+		}
 	}
 
-	// Lost-nonce: either the chain advanced past this slot's nonce without
-	// any of our candidates being the tx that mined (an external tx
-	// consumed the nonce), OR none of the slot's candidates have been
-	// indexed by the network for long enough that we suspect the tx was
-	// dropped from mempool entirely. Both cases manifest the same to the
-	// user: this nonce can't progress until they Abandon (drop from
-	// tracking) or supply the external tx hash that took it. The
-	// indexed-timeout fallback gives us a path out of mempool-drop
-	// situations that the chain-advance check never sees. Set the
-	// timeout above the 5-minute rebroadcast period so a transient RPC
-	// hiccup doesn't prompt the user before we've even tried to
-	// rebroadcast.
-	const indexedTimeout = 10 * time.Minute
-	chainAdvanced := (headIdx < lastConfirmed) || w.confirmedNonceAt.Cmp(head.Nonce) > 0
-	droppedFromMempool := !head.anyIndexed() && head.original().age() > indexedTimeout
-	if chainAdvanced || droppedFromMempool {
-		req := newLostNonceNote(*latest.WalletTransaction, head.Nonce.Uint64(), w.collectBlockedTxInfos(headIdx))
-		latest.actionRequested = true
-		w.requestAction(actionTypeLostNonce, latest.ID, req, latest.TokenID)
-		return
+	if time.Since(latest.lastActionRejected) < txActionPromptFrequency {
+		return nil
 	}
+
+	// Note: the "dropped from mempool" case is no longer handled here.
+	// It's covered deterministically by the mempool-probe rebroadcast
+	// loop, which polls every RPC provider every mempoolProbeInterval and
+	// re-sends the tx (at the same fees) when every provider reports
+	// not-found. TooCheap below still fires independently for fee-bump
+	// suggestions when the tx's fee falls below the current network rate.
 
 	// Too-cheap: latest candidate's fee is below current network rate.
 	const feeCheckInterval = 2 * time.Minute
 	if time.Since(latest.lastFeeCheck) < feeCheckInterval {
-		return
+		return nil
 	}
 	latest.lastFeeCheck = time.Now()
 	tx, err := latest.tx()
 	if err != nil {
 		w.log.Errorf("Error decoding raw tx %s for fee check: %v", latest.ID, err)
-		return
+		return nil
 	}
 	currentFeeRate, err := w.currentFeeRate(w.ctx)
 	if err != nil {
 		w.log.Errorf("Error getting network fees: %v", err)
-		return
+		return nil
 	}
 	if tx.GasFeeCap().Cmp(currentFeeRate) >= 0 {
 		w.log.Tracef("Pending transaction %s fees seem fine with respect to current network conditions", latest.ID)
-		return
+		return nil
 	}
 	latest.feesBumps++
 	baseRate, tipRate, err := w.currentNetworkFees(w.ctx)
 	if err != nil {
 		w.log.Errorf("Error getting network fees: %v", err)
-		return
+		return nil
 	}
 	w.log.Tracef("Requesting user action to bump fees transaction %s to adapt it to current network conditions", latest.ID)
 
@@ -8978,6 +9432,7 @@ func (w *baseWallet) maybePromptHead(headIdx, lastConfirmed int) {
 	req := newLowFeeNote(*latest.WalletTransaction, dexeth.WeiToGweiCeil(bumpedMaxFees), w.collectBlockedTxInfos(headIdx))
 	latest.actionRequested = true
 	w.requestAction(actionTypeTooCheap, latest.ID, req, latest.TokenID)
+	return nil
 }
 
 // amendPendingTx is called with a function that intends to modify a pending
@@ -9402,95 +9857,6 @@ func (w *baseWallet) tryStoreDBTx(wt *extendedWalletTx) {
 	wt.savedToDB = err == nil
 }
 
-// userActionNonceReplacement is a request by a user to resolve a
-// actionTypeLostNonce condition.
-func (w *assetWallet) userActionNonceReplacement(actionB []byte) error {
-	var action struct {
-		TxID          string `json:"txID"`
-		Abandon       *bool  `json:"abandon"`
-		ReplacementID string `json:"replacementID"`
-	}
-	if err := json.Unmarshal(actionB, &action); err != nil {
-		return fmt.Errorf("error unmarshaling user action: %v", err)
-	}
-	if action.Abandon == nil {
-		return fmt.Errorf("no abandon value provided for user action for tx %s", action.TxID)
-	}
-	abandon := *action.Abandon
-	if !abandon && action.ReplacementID == "" { // keep waiting
-		return w.amendPendingTx(action.TxID, func(_ common.Hash, _ *types.Transaction, _ int, _ *nonceSlot, candidate *extendedWalletTx) error {
-			candidate.lastActionRejected = time.Now()
-			return nil
-		})
-	}
-	if abandon {
-		// "Lost nonce" abandon means the user is telling us an external tx
-		// (sent from this account by another tool) has consumed the nonce
-		// our local tx targeted. A 0-value self-send replacement at this
-		// nonce would be rejected as "nonce too low" because the chain has
-		// already accepted something else there — so this path keeps the
-		// "drop from local tracking" semantics. The actionTypeTooCheap
-		// abandon path uses true 0-value replacement; that's the right
-		// behavior when our tx is still alive in the mempool.
-		return w.amendPendingTx(action.TxID, func(txHash common.Hash, _ *types.Transaction, slotIdx int, slot *nonceSlot, wt *extendedWalletTx) error {
-			w.log.Infof("Abandoning transaction %s via user action", txHash)
-			wt.AssumedLost = true
-			w.tryStoreDBTx(wt)
-			slot.removeCandidate(wt.ID)
-			// Preserve the legacy nextNonceAt adjustment when the abandoned
-			// candidate empties its slot at confirmedNonceAt.
-			if len(slot.Candidates) == 0 && slot.Nonce.Cmp(w.confirmedNonceAt) == 0 {
-				w.nextNonceAt.Add(w.nextNonceAt, big.NewInt(-1))
-			}
-			w.dropEmptySlot(slotIdx)
-			return nil
-		})
-	}
-
-	replacementHash := common.HexToHash(action.ReplacementID)
-	replacementTx, _, err := w.node.getTransaction(w.ctx, replacementHash)
-	if err != nil {
-		return fmt.Errorf("error fetching nonce replacement tx: %v", err)
-	}
-
-	from, err := types.LatestSigner(w.node.chainConfig()).Sender(replacementTx)
-	if err != nil {
-		return fmt.Errorf("error parsing originator address from specified replacement tx %s: %w", from, err)
-	}
-	if from != w.addr {
-		return fmt.Errorf("specified replacement tx originator %s is not you", from)
-	}
-
-	return w.amendPendingTx(action.TxID, func(txHash common.Hash, oldTx *types.Transaction, _ int, slot *nonceSlot, candidate *extendedWalletTx) error {
-		if replacementTx.Nonce() != candidate.Nonce.Uint64() {
-			return fmt.Errorf("nonce replacement doesn't have the right nonce. %d != %s", replacementTx.Nonce(), candidate.Nonce)
-		}
-		recipient := w.addr.Hex()
-		newCandidate := w.extendedTx(&genTxResult{
-			tx:        replacementTx,
-			txType:    asset.Unknown,
-			amt:       0,
-			recipient: &recipient,
-		})
-		candidate.NonceReplacement = newCandidate.ID
-		var oldTo, newTo common.Address
-		if oldAddr := oldTx.To(); oldAddr != nil {
-			oldTo = *oldAddr
-		}
-		if newAddr := replacementTx.To(); newAddr != nil {
-			newTo = *newAddr
-		}
-		if bytes.Equal(oldTx.Data(), replacementTx.Data()) && oldTo == newTo {
-			candidate.FeeReplacement = true
-			newCandidate.Purpose = CandidateFeeBump
-		}
-		w.tryStoreDBTx(candidate)
-		w.tryStoreDBTx(newCandidate)
-		slot.addCandidate(newCandidate)
-		return nil
-	})
-}
-
 // userActionRecoverNonces, if recover is true, examines our confirmed and
 // pending nonces and our pendingTx set and sends zero-value txs to ourselves
 // to fill any gaps or replace any rogue transactions. This should never happen
@@ -9618,8 +9984,6 @@ func (w *assetWallet) TakeAction(actionID string, actionB []byte) error {
 		return w.userActionStuckDueToLowFees(actionB)
 	case actionTypeMissingNonces:
 		return w.userActionRecoverNonces(actionB)
-	case actionTypeLostNonce:
-		return w.userActionNonceReplacement(actionB)
 	default:
 		return fmt.Errorf("unknown action %q", actionID)
 	}

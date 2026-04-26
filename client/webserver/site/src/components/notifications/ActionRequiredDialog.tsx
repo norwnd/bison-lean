@@ -3,7 +3,6 @@ import { FormOverlay } from '../common/FormOverlay'
 import { postTakeAction } from '../../services/api'
 import { useActionRequiredStore } from '../../stores/useActionRequiredStore'
 import { TooCheapDialog } from './TooCheapDialog'
-import { LostNonceDialog } from './LostNonceDialog'
 import { MissingNoncesDialog } from './MissingNoncesDialog'
 import type { TransactionActionNote } from '../../stores/types'
 
@@ -12,7 +11,6 @@ import type { TransactionActionNote } from '../../stores/types'
 // action type is added there, mirror it here and add a dispatch arm
 // below.
 export const ActionTypeTooCheap = 'tooCheap'
-export const ActionTypeLostNonce = 'lostNonce'
 export const ActionTypeMissingNonces = 'missingNonces'
 
 // ActionRequiredDialog is the single global mount point for all
@@ -39,15 +37,15 @@ export function ActionRequiredDialog () {
   // backdrop click without explicitly choosing an in-dialog button.
   //
   // Naïve dismissal (just removing from the local queue) is destructive
-  // for tooCheap / lostNonce: the wallet's per-candidate
-  // `actionRequested` flag would stay true server-side, and
-  // maybePromptHead's `slot.anyActionRequested()` short-circuit would
-  // suppress all future re-emissions for that slot. Fire-and-forget
-  // the equivalent of the dialog's "Wait" button server-side so the
-  // flag clears, the cooldown resets, and the prompt can re-fire later
-  // if the underlying condition still holds. The wallet's
-  // actionResolved emission will arrive shortly and remove the head
-  // from the store; we also remove eagerly so the UI doesn't lag.
+  // for tooCheap: the wallet's per-candidate `actionRequested` flag
+  // would stay true server-side, and maybePromptHead's
+  // `slot.anyActionRequested()` short-circuit would suppress all future
+  // re-emissions for that slot. Fire-and-forget the equivalent of the
+  // dialog's "Wait" button server-side so the flag clears, the cooldown
+  // resets, and the prompt can re-fire later if the underlying
+  // condition still holds. The wallet's actionResolved emission will
+  // arrive shortly and remove the head from the store; we also remove
+  // eagerly so the UI doesn't lag.
   //
   // missingNonces doesn't use actionRequested (it uses
   // recoveryRequestSent which latches until restart), so a UI-only
@@ -67,11 +65,6 @@ export function ActionRequiredDialog () {
         fire({ txID: tx.id, bump: false })
         break
       }
-      case ActionTypeLostNonce: {
-        const tx = (head.payload as TransactionActionNote).tx
-        fire({ txID: tx.id, abandon: false })
-        break
-      }
     }
     resolve(head.uniqueID)
   }
@@ -80,9 +73,6 @@ export function ActionRequiredDialog () {
   switch (head.actionID) {
     case ActionTypeTooCheap:
       body = <TooCheapDialog note={head} />
-      break
-    case ActionTypeLostNonce:
-      body = <LostNonceDialog note={head} />
       break
     case ActionTypeMissingNonces:
       body = <MissingNoncesDialog note={head} />

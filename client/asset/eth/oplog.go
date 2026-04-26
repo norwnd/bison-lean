@@ -60,6 +60,13 @@ const (
 	// self-send at the same nonce) mined, replacing the original tx in the
 	// network.
 	AttemptAbandoned AttemptOutcome = "abandoned"
+	// AttemptLost indicates an external transaction (not broadcast by this
+	// wallet) mined at this attempt's nonce, so none of our candidates will
+	// ever mine. Set by the lost-nonce auto-resolver. The Operation's State is
+	// independent: it may still transition to Confirmed if the on-chain probe
+	// finds the effect was achieved (e.g., Y was an emergency redeem of the
+	// same swap).
+	AttemptLost AttemptOutcome = "lost"
 )
 
 // CandidatePurpose distinguishes how a candidate tx came to be broadcast at a
@@ -92,6 +99,12 @@ type Operation struct {
 	// ContractVer is the swap contract version this op runs against. Cached
 	// alongside RedeemedValue.
 	ContractVer uint32 `json:"contractVer,omitempty"`
+	// Locators is the per-swap locator(s) needed to re-run the on-chain probe
+	// without the original input structs. For OpRedeem and OpSwap this is one
+	// locator per swap (decoded from the redemption / contract input). For
+	// OpRefund this is a single locator. Set at Op creation; the lost-nonce
+	// auto-resolver uses this together with ContractVer to call the probe.
+	Locators [][]byte `json:"locators,omitempty"`
 }
 
 // Attempt is one nonce's worth of broadcast attempts. A new Attempt is opened

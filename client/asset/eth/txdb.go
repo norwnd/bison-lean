@@ -79,6 +79,18 @@ type extendedWalletTx struct {
 	// is used to make sure every next bump pays higher fee than previous ones since
 	// otherwise network will not accept replacement transaction "due to low fee"
 	feesBumps int64
+	// lostNonceProbedAt is the last time the lost-nonce auto-resolver ran a
+	// probe for this candidate's slot. Used to rate-limit re-probes when the
+	// initial probe returned `unknown`.
+	lostNonceProbedAt time.Time
+	// lostNonceNotified is true once a LostNonceNote has been emitted for
+	// this candidate's slot, so re-probes on subsequent ticks don't spam
+	// duplicate notifications.
+	lostNonceNotified bool
+	// lastMempoolProbeAt is the last time the auto-rebroadcast path
+	// queried every RPC provider for this tx. Used to rate-limit
+	// per-provider mempool probes (one every mempoolProbeInterval).
+	lastMempoolProbeAt time.Time
 }
 
 const (

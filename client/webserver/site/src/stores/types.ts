@@ -508,6 +508,36 @@ export interface AutoBumpCappedNote {
   capGwei: number
 }
 
+// LostNonceNote arrives on the wallet's data-note channel under
+// route="lostNonce" when the eth-wallet's auto-resolver detects that an
+// external transaction (one this wallet didn't broadcast) consumed a
+// nonce one of our pending txs was targeting. Under the assumption that
+// this wallet's key is not used by any other wallet instance, an external
+// tx is unusual and may indicate key compromise or an out-of-band
+// recovery tool. The wallet auto-handles the slot based on the on-chain
+// probe result; this note surfaces what happened so the user can
+// investigate.
+export interface LostNonceNote {
+  nonce: number
+  // ourTxID is the hex hash of the latest candidate at this nonce — the
+  // tx whose mining was preempted.
+  ourTxID: string
+  // externalTxID is the hex hash of the external transaction, when the
+  // wallet was able to identify it via a recent-blocks scan. May be empty
+  // if the scan didn't find it (advance happened too far back, or RPC
+  // errored). When empty, the user can investigate via a block explorer.
+  externalTxID?: string
+  // opType is the logical operation type ("swap", "redeem", "refund") if
+  // the slot had an associated Op, or "" for non-Op slots (regular Send,
+  // bridge completion, etc.).
+  opType?: string
+  // probeResult is one of "achieved", "not_achieved", "unknown",
+  // "no_probe".
+  probeResult: string
+  // reason is a short human-readable summary including a security caveat.
+  reason: string
+}
+
 export interface WalletNote extends CoreNote {
   payload: BaseWalletNote
 }

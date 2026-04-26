@@ -2038,6 +2038,47 @@ func (m *multiRPCClient) HeaderByNumber(ctx context.Context, number *big.Int) (h
 	})
 }
 
+func (m *multiRPCClient) blockByNumber(ctx context.Context, number *big.Int) (block *types.Block, err error) {
+	return block, m.withAny(ctx, func(ctx context.Context, p *provider) error {
+		block, err = p.ec.BlockByNumber(ctx, number)
+		return err
+	})
+}
+
+func (m *multiRPCClient) nonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (n uint64, err error) {
+	return n, m.withAny(ctx, func(ctx context.Context, p *provider) error {
+		n, err = p.ec.NonceAt(ctx, account, blockNumber)
+		return err
+	})
+}
+
+// transactionInAnyProvider iterates every RPC provider and queries
+// TransactionByHash. Used by the auto-rebroadcast path to deterministically
+// detect "missing from every mempool" without relying on a time-based age
+// heuristic. Early-returns found=true on the first provider that has the
+// tx; otherwise tallies NotFound vs other-error responses across all
+// providers.
+func (m *multiRPCClient) transactionInAnyProvider(ctx context.Context, txHash common.Hash) (found, anyErrored bool) {
+	m.providerMtx.RLock()
+	providers := make([]*provider, len(m.providers))
+	copy(providers, m.providers)
+	m.providerMtx.RUnlock()
+	for _, p := range providers {
+		tx, _, err := p.ec.TransactionByHash(ctx, txHash)
+		if err == nil && tx != nil {
+			return true, false
+		}
+		if errors.Is(err, ethereum.NotFound) {
+			continue
+		}
+		// Some other error (timeout, 5xx, malformed response, etc.) —
+		// note it but keep checking remaining providers in case one of
+		// them has the tx.
+		anyErrored = true
+	}
+	return false, anyErrored
+}
+
 func (m *multiRPCClient) PendingCodeAt(ctx context.Context, account common.Address) (code []byte, err error) {
 	return code, m.withAny(ctx, func(ctx context.Context, p *provider) error {
 		code, err = p.ec.PendingCodeAt(ctx, account)

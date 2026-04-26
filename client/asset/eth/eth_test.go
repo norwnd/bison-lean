@@ -356,6 +356,20 @@ func (n *testNode) l1FeeFromReceipt(ctx context.Context, txHash common.Hash) (*b
 	return new(big.Int), nil
 }
 
+func (n *testNode) blockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+	return nil, errors.New("blockByNumber: not implemented in testNode")
+}
+
+func (n *testNode) nonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
+	return 0, errors.New("nonceAt: not implemented in testNode")
+}
+
+func (n *testNode) transactionInAnyProvider(ctx context.Context, txHash common.Hash) (found, anyErrored bool) {
+	// Default to anyErrored=true so the auto-rebroadcast path treats
+	// the result as inconclusive in tests that don't exercise it.
+	return false, true
+}
+
 func (n *testNode) setBalanceError(w *assetWallet, err error) {
 	n.balErr = err
 	n.tokenContractor.balErr = err
@@ -1240,16 +1254,20 @@ func TestCheckPendingTxs(t *testing.T) {
 			noncesAfter: []uint64{1},
 		},
 		{
+			// chainAdvanced auto-resolve: slot 3 is finalized but slot 2's
+			// candidate didn't mine, meaning some external tx took nonce 2.
+			// The lost-nonce auto-resolver clears slot 2 (no Op registered
+			// in this fixture, so the probe path returns "no_probe" and the
+			// slot is finalized as Lost without a user prompt).
 			name: "second one is confirmed first",
 			pendingTxs: []*extendedWalletTx{
 				extendedTx(2, 0, 0, rebroadcastable),
 				extendedTx(3, finalized, finalizedStamp, finalizedStamp),
 			},
-			noncesAfter: []uint64{2, 3},
+			noncesAfter: []uint64{3},
 			receipts:    []*types.Receipt{nil, nil},
 			txs:         []bool{false, true},
 			receiptErrs: []error{asset.CoinNotFoundError, nil},
-			actionID:    actionTypeLostNonce,
 		},
 		{
 			name: "confirm one with receipt",
@@ -1259,6 +1277,13 @@ func TestCheckPendingTxs(t *testing.T) {
 			receipts: []*types.Receipt{newReceipt(txConfsNeededToConfirm)},
 		},
 		{
+			// Aged-out un-indexed tx: dropped-from-mempool detection no
+			// longer fires a dedicated prompt — auto-rebroadcast handles
+			// missing-from-mempool transparently, and TooCheap fires for
+			// the fee-bump suggestion when the tx's fee is below network
+			// rate (which it is in this fixture). testNode's
+			// transactionInAnyProvider mock returns anyErrored=true, so
+			// no actual rebroadcast is attempted here.
 			name: "old and unindexed",
 			pendingTxs: []*extendedWalletTx{
 				extendedTx(5, 0, 0, agedOut),
@@ -1267,7 +1292,7 @@ func TestCheckPendingTxs(t *testing.T) {
 			receipts:    []*types.Receipt{nil},
 			receiptErrs: []error{asset.CoinNotFoundError},
 			txs:         []bool{false},
-			actionID:    actionTypeLostNonce,
+			actionID:    actionTypeTooCheap,
 		},
 		{
 			name: "mature and indexed, low fees",
@@ -2021,37 +2046,6 @@ func TestTakeAction(t *testing.T) {
 	}
 	if len(eth.slots) != 1 {
 		t.Fatalf("slot was removed")
-	}
-
-	// Nonce-replaced tx
-	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
-	lostNonceAction := []byte(fmt.Sprintf(`{"txID":"%s","abandon":true}`, pendingTx.ID))
-	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err != nil {
-		t.Fatalf("TakeAction replacment=false, abandon=true error: %v", err)
-	}
-	if len(eth.slots) != 0 {
-		t.Fatalf("slot wasn't removed after abandon")
-	}
-	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
-	node.getTxRes = replacementTx
-	lostNonceAction = []byte(fmt.Sprintf(`{"txID":"%s","abandon":false,"replacementID":"%s"}`, pendingTx.ID, replacementTx.Hash()))
-	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err != nil {
-		t.Fatalf("TakeAction replacment=true, error: %v", err)
-	}
-	newPendingTx = eth.slots[0].latest()
-	if newPendingTx.txHash != replacementTx.Hash() {
-		t.Fatalf("replacement tx wasn't accepted")
-	}
-	// wrong nonce is an error though
-	pendingTx = eth.extendedTx(&genTxResult{
-		tx:     node.newTransaction(5050, aGwei),
-		txType: asset.Send,
-		amt:    1,
-	})
-	eth.slots = []*nonceSlot{newNonceSlot(pendingTx)}
-	lostNonceAction = []byte(fmt.Sprintf(`{"txID":"%s","abandon":false,"replacementID":"%s"}`, pendingTx.ID, replacementTx.Hash()))
-	if err := eth.TakeAction(actionTypeLostNonce, lostNonceAction); err == nil {
-		t.Fatalf("no error for wrong nonce")
 	}
 
 	// Missing nonces

@@ -199,3 +199,48 @@ func (w *assetWallet) probeSwapOnChain(ctx context.Context, contracts []*asset.C
 	w.markProbeAchieved(key)
 	return true, false, nil
 }
+
+// probeOpAchieved probes the on-chain effect of a logical Operation using the
+// locators persisted on the Op, without requiring the original input structs.
+// Used by the lost-nonce auto-resolver, which has the Op (via the slot's
+// candidate's tx-hash → OpKey reverse index) but not the original
+// asset.Redemption / asset.Contract inputs.
+//
+// Returns the same three signals as the typed probes: achieved, unknown, err.
+// An Op with no persisted locators (e.g., OpBridgeComplete, or a pre-Locators
+// Op loaded from the DB) returns (false, false, nil) — caller should treat as
+// "no probe available" and fall through to the no-Op branch.
+func (w *assetWallet) probeOpAchieved(ctx context.Context, op *Operation) (achieved, unknown bool, err error) {
+	if op == nil || len(op.Locators) == 0 {
+		return false, false, nil
+	}
+	if w.probeAchieved(op.Key) {
+		return true, false, nil
+	}
+	contractVer := op.ContractVer
+	var match func(dexeth.SwapStep) bool
+	switch op.Type {
+	case OpRedeem:
+		match = func(s dexeth.SwapStep) bool { return s == dexeth.SSRedeemed }
+	case OpRefund:
+		match = func(s dexeth.SwapStep) bool { return s == dexeth.SSRefunded }
+	case OpSwap:
+		match = func(s dexeth.SwapStep) bool { return s >= dexeth.SSInitiated }
+	default:
+		return false, false, nil
+	}
+	for _, loc := range op.Locators {
+		if len(loc) == 0 {
+			return false, false, nil
+		}
+		status, statusErr := w.status(ctx, loc, contractVer)
+		if statusErr != nil {
+			return false, true, fmt.Errorf("probeOpAchieved: status query failed: %w", statusErr)
+		}
+		if !match(status.Step) {
+			return false, false, nil
+		}
+	}
+	w.markProbeAchieved(op.Key)
+	return true, false, nil
+}
