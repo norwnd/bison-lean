@@ -236,6 +236,11 @@ interface TickerGroup {
   // largest USD value near the top; falling back to totalNative would
   // mix unrelated units (e.g. ETH vs USDC).
   totalFiat: number
+  // ID of the first variant whose wallet is mid-connect (enabled but
+  // its `Running` flag is false), or undefined if none is. Drives the
+  // tiny spinner next to the ticker — post-login this surfaces the
+  // transient boot window between `walletstate` notes.
+  connectingAssetID: number | undefined
 }
 
 // tickerOf normalizes an asset's symbol to the ticker used for sidebar
@@ -261,7 +266,8 @@ function buildTickerGroups (
         assetIDs: [],
         hasWallet: false,
         totalNative: 0,
-        totalFiat: 0
+        totalFiat: 0,
+        connectingAssetID: undefined
       }
     }
     const g = groups[ticker]
@@ -284,6 +290,10 @@ function buildTickerGroups (
   const ordered = Object.values(groups)
   for (const g of ordered) {
     g.assetIDs.sort((a, b) => assets[a].symbol.localeCompare(assets[b].symbol))
+    // connectingAssetID picks the first variant (in sorted order)
+    // whose wallet is mid-connect. Computed after the sort so the
+    // chosen asset is deterministic across renders.
+    g.connectingAssetID = g.assetIDs.find(id => walletConnecting(assets[id]?.wallet))
   }
   return ordered.sort((a, b) => {
     if (a.hasWallet !== b.hasWallet) {
@@ -764,64 +774,54 @@ export default function WalletsPage () {
         style={{ minWidth: 240 }}
       >
         {/* Ticker balance rows */}
-        <div className="flex-stretch-column border-bottom">
+        <div className="flex-stretch-column">
           {tickerGroups.map((g) => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
-            // LI-ASYNC Batch 9: tiny spinner when any asset in the group
-            // has a wallet mid-connect (user hasn't disabled it, but its
-            // `Running` flag is false). Post-login this is the
-            // transient boot window between `walletstate` notes.
-            // Computed inline rather than on the `TickerGroup` aggregate
-            // just to keep `buildTickerGroups` untouched in this pass;
-            // since CL-ASSETS-STALE-MEMO `tickerGroups` re-runs on
-            // every `walletstate` setState, promoting this into the
-            // aggregate is a safe follow-up refactor.
-            const connectingAsset = g.assetIDs.find(id => walletConnecting(assets[id]?.wallet))
-            // Expand the per-chain breakdown when (a) the group is
-            // selected, OR (b) any variant (parent OR token) in the
-            // group has a non-zero wallet balance. POL is a parent
-            // (non-token) on Polygon and a token on Ethereum, so
-            // restricting this to tokens-only would leave POL groups
-            // collapsed on first render even though the user holds
-            // POL on Polygon.
-            const hasAnyBalance = g.assetIDs.some(id => {
-              const a = assets[id]
-              if (!a?.wallet) return false
-              const bal = a.wallet.balance
-              return (bal.available + bal.locked + bal.immature) > 0
-            })
-            // Expansion shows only the visible variants (those whose
-            // parent has a wallet). Suppress entirely when fewer than
-            // 2 are visible — at 1 visible variant the aggregate row
+            // Expansion is gated to the selected group only — non-
+            // selected groups stay collapsed regardless of balance,
+            // keeping the sidebar quiet until the user drills in.
+            // Only the visible variants (those whose parent has a
+            // wallet) count; suppressed entirely when fewer than 2
+            // are visible — at 1 visible variant the aggregate row
             // already conveys the same info and the tree would be a
             // single dangling branch with nothing to navigate between.
             const visibleCount = visibleVariantsOf(g, assets).length
-            const showNetworks = visibleCount >= 2 && (selected || hasAnyBalance)
+            const showNetworks = visibleCount >= 2 && selected
             return (
               <div key={g.ticker}>
                 <div
                   className={`flex-stretch-column pt-2 pb-1 px-2 ${selected ? '' : 'hoverbg'} pointer`}
                   onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
-                  style={selected
-                    ? {
-                        // Bg fill plus a 2px bottom accent — the top
-                        // edge stays on the row above's regular 1px
-                        // border so only the bottom boundary reads as
-                        // "bold".
-                        backgroundColor: 'var(--tertiary-bg)',
-                        boxShadow: 'inset 0 -2px 0 var(--text-color)',
-                        color: 'var(--text-color)',
-                      }
-                    : undefined}
+                  style={{
+                    // L-bracket frame for the selected group: 3px
+                    // left + 2px bottom in --text-color. Non-selected
+                    // rows reserve the same 3px left border (transparent)
+                    // so selecting / deselecting doesn't shift content
+                    // horizontally; their 2px bottom border stays
+                    // visible as the regular row separator. With
+                    // hover painting bg under the border (default
+                    // border-box clip), the bg ends at this visible
+                    // line — without it, the hover bg would extend
+                    // past the perceived row boundary and look
+                    // "shifted down".
+                    borderLeft: `3px solid ${selected ? 'var(--text-color)' : 'transparent'}`,
+                    borderBottom: `2px solid ${selected ? 'var(--text-color)' : 'var(--border-color)'}`,
+                    ...(selected
+                      ? {
+                          backgroundColor: 'var(--tertiary-bg)',
+                          color: 'var(--text-color)',
+                        }
+                      : {}),
+                  }}
                 >
                   <div className="d-flex justify-content-between align-items-center">
                     <div className="flex-center me-4 lh1">
                       <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
                       <span className="ms-1 fs18 fw-bold">{g.ticker}</span>
-                      {connectingAsset !== undefined && (
+                      {g.connectingAssetID !== undefined && (
                         <span
                           className="ico-spinner spinner fs11 ms-2"
-                          title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[connectingAsset].symbol) })}
+                          title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[g.connectingAssetID].symbol) })}
                         />
                       )}
                     </div>
@@ -831,19 +831,14 @@ export default function WalletsPage () {
                         : <span className="grey me-1">—</span>}
                     </div>
                   </div>
-                  {/* Inner row separator — kept for layout height
-                      stability. Hidden on the selected row since its
-                      2px bottom accent already serves as the divider;
-                      Bootstrap's `.border-bottom` ships `!important`
-                      so the whole border is applied via inline style
-                      to allow `transparent` to win. */}
+                  {/* Layout-only spacer — preserves the historical row
+                      height (mt-2 + 1px placeholder) now that the
+                      visible row separator is the row's own
+                      border-bottom. Border kept transparent. */}
                   <div
                     className="mt-2"
                     style={{
-                      borderBottom: '1px solid',
-                      borderBottomColor: selected
-                        ? 'transparent'
-                        : 'var(--border-color)',
+                      borderBottom: '1px solid transparent',
                     }}
                   ></div>
                 </div>
@@ -1416,17 +1411,41 @@ function SidebarNetworksExpansion ({
                 zIndex: stubBold ? 2 : 1,
               }}
             />
-            {/* Chain LOGO is the chain "symbol" — no spelled-out
-                network name. Row reads as: tree → chain logo →
-                share-of-group-balance. The full chain name still
-                surfaces on hover via the row's `title` attr above. */}
+            {/* Row reads as: tree → chain logo → chain-link glyph →
+                share-of-group-balance. The chain-link glyph is a
+                generic "this is a blockchain/network" indicator
+                (visual rhyme with the word "chain"); the specific
+                network is identified by the logo to its left, and
+                the full chain name still surfaces on hover via the
+                row's `title` attr above. */}
             <img
               src={logoPath((parentAsset ?? a).symbol)}
               alt={networkLabel}
               width={18}
               height={18}
-              className="me-2"
+              className="me-1"
             />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              className="grey"
+              aria-hidden="true"
+            >
+              {/* Three connected blocks — a literal "blockchain"
+                  glyph. Two short connector lines link adjacent
+                  blocks so the trio reads as "linked blocks", not
+                  "three independent boxes". */}
+              <rect x="2" y="9" width="6" height="6" rx="1" />
+              <rect x="9" y="9" width="6" height="6" rx="1" />
+              <rect x="16" y="9" width="6" height="6" rx="1" />
+              <line x1="8" y1="12" x2="9" y2="12" />
+              <line x1="15" y1="12" x2="16" y2="12" />
+            </svg>
             <span className="flex-grow-1" />
             {creatingTokenIDs.has(id) && (
               <span className="ico-spinner spinner fs12 me-1 grey" />
