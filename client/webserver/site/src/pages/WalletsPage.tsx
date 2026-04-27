@@ -76,6 +76,11 @@ interface PendingForce {
 // BIP-44 coin type.
 const TX_HISTORY_PAGE_SIZE = 10
 
+// Sidebar (asset list column) width in px. Single source of truth so
+// the holdings "Total: $X" block in the global header stays exactly
+// aligned with the column edges below it.
+const SIDEBAR_WIDTH = 240
+
 const txTypeUnknown = 0
 const txTypeSend = 1
 const txTypeReceive = 2
@@ -580,6 +585,16 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
+  // Hide non-wallet groups by default — the sidebar only shows assets
+  // the user actually holds. Clicking the "Show all" footer flips this
+  // on (one-way; resets on remount, no localStorage persistence).
+  const [showAllAssets, setShowAllAssets] = useState(false)
+  const visibleGroups = useMemo(
+    () => showAllAssets ? tickerGroups : tickerGroups.filter(g => g.hasWallet),
+    [tickerGroups, showAllAssets]
+  )
+  const hiddenGroupCount = tickerGroups.length - visibleGroups.length
+
   // Null signals "fiat rates haven't loaded yet" — render "—" instead
   // of a misleading "$0" in the Holdings total. See totalFiatBalance.
   const holdingsFiat = useMemo(
@@ -611,6 +626,19 @@ export default function WalletsPage () {
     const first = tickerGroups.find(g => g.hasWallet)
     if (first) setSelectedAssetID(pickVariantForGroup(first, lastVariantByTicker, assets))
   }, [tickerGroups, selectedAssetID, lastVariantByTicker, assets])
+
+  // Clear selection if its group falls out of visibleGroups while
+  // showAllAssets is false (e.g. the asset's last wallet was removed
+  // and the group is now hidden). Without this, the right-column
+  // detail keeps rendering the orphaned asset while the sidebar can't
+  // highlight it — a confusing "ghost selection". The auto-select
+  // effect above then picks a wallet-bearing replacement.
+  useEffect(() => {
+    if (selectedAssetID === null) return
+    if (showAllAssets) return
+    const inVisible = visibleGroups.some(g => g.assetIDs.includes(selectedAssetID))
+    if (!inVisible) setSelectedAssetID(null)
+  }, [selectedAssetID, visibleGroups, showAllAssets])
 
   // Persist the current selection so /wallets restores the same view
   // after the user navigates to /markets, /settings, etc. and back.
@@ -749,20 +777,17 @@ export default function WalletsPage () {
 
   return (
     <div className="d-flex fill-abs">
-      {/* Holdings "Total: $X" block — portalled into the global header's
-          headerSlot. Width matches the sidebar's minWidth so "Total:" sits
-          at the coin-column's left edge and the $ figure at its right
-          edge. Click clears the selection (returns to the asset-picker
-          placeholder), same as the prior in-sidebar block. */}
+      {/* Holdings "Total: $X" block — portalled into the global
+          header's headerSlot. Single string (left-aligned), no
+          right-side alignment of the $ value with the column below.
+          Static — purely informational. */}
       {headerSlot && createPortal(
         <div
-          className="d-flex justify-content-between align-items-center px-2 hoverbg pointer h-100"
-          style={{ width: 240, flex: '0 0 240px' }}
-          onClick={() => setSelectedAssetID(null)}
+          className="d-flex align-items-center px-2 h-100"
+          style={{ width: SIDEBAR_WIDTH, flex: `0 0 ${SIDEBAR_WIDTH}px` }}
         >
-          <span className="fs18 fw-bold lh1">{t('Total')}:</span>
           <span className="fs18 fw-bold lh1">
-            {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
+            {t('TOTAL')}: {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
           </span>
         </div>,
         headerSlot
@@ -771,11 +796,11 @@ export default function WalletsPage () {
       {/* ---- Left Sidebar: Asset List ---- */}
       <section
         className="w-auto d-flex flex-column align-items-stretch overflow-y-auto hidden-overflow"
-        style={{ minWidth: 240 }}
+        style={{ minWidth: SIDEBAR_WIDTH }}
       >
         {/* Ticker balance rows */}
         <div className="flex-stretch-column">
-          {tickerGroups.map((g) => {
+          {visibleGroups.map((g) => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
             // Expansion is gated to the selected group only — non-
             // selected groups stay collapsed regardless of balance,
@@ -790,20 +815,28 @@ export default function WalletsPage () {
             return (
               <div key={g.ticker}>
                 <div
-                  className={`flex-stretch-column pt-2 pb-1 px-2 ${selected ? '' : 'hoverbg'} pointer`}
+                  className={`d-flex justify-content-between align-items-center ${selected ? '' : 'hoverbg'} pointer`}
                   onClick={() => setSelectedAssetID(pickVariantForGroup(g, lastVariantByTicker, assets))}
                   style={{
                     // L-bracket frame for the selected group: 3px
                     // left + 2px bottom in --text-color. Non-selected
-                    // rows reserve the same 3px left border (transparent)
-                    // so selecting / deselecting doesn't shift content
-                    // horizontally; their 2px bottom border stays
-                    // visible as the regular row separator. With
-                    // hover painting bg under the border (default
-                    // border-box clip), the bg ends at this visible
-                    // line — without it, the hover bg would extend
-                    // past the perceived row boundary and look
-                    // "shifted down".
+                    // rows reserve the same 3px left border
+                    // (transparent) so selecting / deselecting
+                    // doesn't shift content horizontally; their 2px
+                    // bottom border stays visible as the regular row
+                    // separator.
+                    //
+                    // Padding is asymmetric (top 10, bottom 8) on
+                    // purpose: top = bottom + border-bottom so the
+                    // 20px-tall content (logo height) lands at the
+                    // row's geometric center. Without this
+                    // compensation the content sits ~1px above
+                    // center because the 2px bottom border weighs
+                    // the row down.
+                    paddingTop: 10,
+                    paddingBottom: 8,
+                    paddingLeft: 8,
+                    paddingRight: 8,
                     borderLeft: `3px solid ${selected ? 'var(--text-color)' : 'transparent'}`,
                     borderBottom: `2px solid ${selected ? 'var(--text-color)' : 'var(--border-color)'}`,
                     ...(selected
@@ -814,33 +847,21 @@ export default function WalletsPage () {
                       : {}),
                   }}
                 >
-                  <div className="d-flex justify-content-between align-items-center">
-                    <div className="flex-center me-4 lh1">
-                      <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
-                      <span className="ms-1 fs18 fw-bold">{g.ticker}</span>
-                      {g.connectingAssetID !== undefined && (
-                        <span
-                          className="ico-spinner spinner fs11 ms-2"
-                          title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[g.connectingAssetID].symbol) })}
-                        />
-                      )}
-                    </div>
-                    <div className="d-flex flex-column align-items-end">
-                      {g.hasWallet
-                        ? <span className="fs18 fw-bold lh1">{formatBestWeCan(g.totalNative, 8)}</span>
-                        : <span className="grey me-1">—</span>}
-                    </div>
+                  <div className="flex-center me-4 lh1">
+                    <img src={logoPath(g.symbol)} alt={g.ticker} className="mini-icon me-1" />
+                    <span className="ms-1 fs18 fw-bold">{g.ticker}</span>
+                    {g.connectingAssetID !== undefined && (
+                      <span
+                        className="ico-spinner spinner fs11 ms-2"
+                        title={t('CONNECTING_WALLET', { asset: shortSymbol(assets[g.connectingAssetID].symbol) })}
+                      />
+                    )}
                   </div>
-                  {/* Layout-only spacer — preserves the historical row
-                      height (mt-2 + 1px placeholder) now that the
-                      visible row separator is the row's own
-                      border-bottom. Border kept transparent. */}
-                  <div
-                    className="mt-2"
-                    style={{
-                      borderBottom: '1px solid transparent',
-                    }}
-                  ></div>
+                  <div className="d-flex flex-column align-items-end">
+                    {g.hasWallet
+                      ? <span className="fs18 fw-bold lh1">{formatBestWeCan(g.totalNative, 8)}</span>
+                      : <span className="grey me-1">—</span>}
+                  </div>
                 </div>
                 {/* Per-chain expansion under the selected multi-variant
                     group — pushes the rows below it down. Tree-style
@@ -859,6 +880,42 @@ export default function WalletsPage () {
               </div>
             )
           })}
+          {/* "Show all" footer — reveals the non-wallet groups that
+              were filtered out by default. One-way: clicking expands
+              the list and the button disappears (state resets only on
+              page remount). Hidden when there's nothing to reveal.
+              Mirrors the regular row structure (pt-2 pb-1 + mt-2
+              spacer + same border pattern) so the footer reads as
+              part of the list rather than a detached button. */}
+          {!showAllAssets && hiddenGroupCount > 0 && (
+            <div
+              className="d-flex justify-content-center align-items-center hoverbg pointer"
+              style={{
+                // Same flat row structure as coin-group rows above:
+                // top padding compensates for the bottom border
+                // (10 = 8 + 2) so the centered content lands at the
+                // row's geometric center. Symmetric 3px transparent
+                // left+right borders keep the centered text at true
+                // center (regular rows reserve only the left).
+                paddingTop: 10,
+                paddingBottom: 8,
+                paddingLeft: 8,
+                paddingRight: 8,
+                borderLeft: '3px solid transparent',
+                borderRight: '3px solid transparent',
+                borderBottom: '2px solid var(--border-color)',
+              }}
+              onClick={() => setShowAllAssets(true)}
+            >
+              {/* line-height: 20 forces the span's line box to the
+                  same height as the logo-driven content height in
+                  coin-group rows above — keeps row heights
+                  consistent across the list. */}
+              <span className="grey fs14" style={{ lineHeight: '20px' }}>
+                {t('SHOW_ALL_ASSETS', { count: hiddenGroupCount })}
+              </span>
+            </div>
+          )}
         </div>
       </section>
 

@@ -266,7 +266,7 @@ export function WalletWaitForm ({
 
               {!isToken && (
                 <div className="fs14 mt-1 text-secondary">
-                  {t('Total')}: {formatCoinAtom(totalNeeded, ui)} {ui.conventional.unit}
+                  {t('TOTAL')}: {formatCoinAtom(totalNeeded, ui)} {ui.conventional.unit}
                 </div>
               )}
             </div>
