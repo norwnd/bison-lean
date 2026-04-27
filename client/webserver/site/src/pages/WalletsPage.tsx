@@ -1307,9 +1307,9 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 // buildTickerGroups). Each row is clickable — switches selectedAssetID
 // and the auto-create effect fires for any newly-eligible candidate.
 //
-// The selected variant takes a `--tertiary-bg` fill plus a darker
-// text colour, so the active chain stands out clearly against its
-// siblings.
+// The selected variant carries no background fill — the bold L-corner
+// in the tree-glyph (top-half + horizontal stub) is the sole "you are
+// here" cue, which keeps the expansion visually quiet.
 // ---------------------------------------------------------------------------
 
 function SidebarNetworksExpansion ({
@@ -1416,12 +1416,6 @@ function SidebarNetworksExpansion ({
             style={{
               paddingLeft: `${treeStubEnd + 4}px`,
               paddingRight: '0.5rem',
-              ...(isSelected
-                ? {
-                    backgroundColor: 'var(--tertiary-bg)',
-                    color: 'var(--text-color)',
-                  }
-                : {}),
             }}
             onClick={() => onSelect(id)}
             title={networkLabel}
@@ -1468,41 +1462,20 @@ function SidebarNetworksExpansion ({
                 zIndex: stubBold ? 2 : 1,
               }}
             />
-            {/* Row reads as: tree → chain logo → chain-link glyph →
-                share-of-group-balance. The chain-link glyph is a
-                generic "this is a blockchain/network" indicator
-                (visual rhyme with the word "chain"); the specific
-                network is identified by the logo to its left, and
-                the full chain name still surfaces on hover via the
-                row's `title` attr above. */}
-            <img
-              src={logoPath((parentAsset ?? a).symbol)}
-              alt={networkLabel}
-              width={18}
-              height={18}
-              className="me-1"
-            />
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinejoin="round"
-              className="grey"
-              aria-hidden="true"
-            >
-              {/* Three connected blocks — a literal "blockchain"
-                  glyph. Two short connector lines link adjacent
-                  blocks so the trio reads as "linked blocks", not
-                  "three independent boxes". */}
-              <rect x="2" y="9" width="6" height="6" rx="1" />
-              <rect x="9" y="9" width="6" height="6" rx="1" />
-              <rect x="16" y="9" width="6" height="6" rx="1" />
-              <line x1="8" y1="12" x2="9" y2="12" />
-              <line x1="15" y1="12" x2="16" y2="12" />
+            {/* Row reads as: tree → blockchain glyph → chain name →
+                share-of-group-balance. The blockchain glyph is the
+                Noto Emoji "chains" mark (Apache 2.0, sourced from
+                icon-sets.iconify.design/noto/chains/) — two
+                interlocking chain links in Google's blue-grey palette,
+                a literal "chain" picture that triggers the chain →
+                blockchain association at a glance. */}
+            <svg width="20" height="20" viewBox="0 0 128 128" aria-hidden="true" className="me-1">
+              <path fill="#84B0C1" d="M36.04 98.76c-10.66 0-19.33 8.67-19.33 19.33v5.9h10.47v-5.9c0-4.89 3.97-8.86 8.86-8.86s8.86 3.97 8.86 8.86v5.9h10.47v-5.9c0-10.65-8.67-19.33-19.33-19.33m0-59.92c-10.66 0-19.33 8.67-19.33 19.33v11.65c0 10.66 8.67 19.33 19.33 19.33s19.33-8.67 19.33-19.33V58.18c0-10.66-8.67-19.34-19.33-19.34m8.85 30.98c0 4.89-3.97 8.86-8.86 8.86s-8.86-3.97-8.86-8.86V58.18c0-4.89 3.97-8.86 8.86-8.86s8.86 3.97 8.86 8.86zm-8.85-40.58c10.66 0 19.33-8.67 19.33-19.33V4H44.89v5.91c0 4.88-3.97 8.86-8.86 8.86s-8.86-3.97-8.86-8.86V4H16.7v5.91c0 10.65 8.68 19.33 19.34 19.33M91.96 68.8c-10.66 0-19.33 8.67-19.33 19.33v11.65c0 10.66 8.67 19.33 19.33 19.33s19.33-8.67 19.33-19.33V88.14c.01-10.66-8.67-19.34-19.33-19.34m8.86 30.98c0 4.88-3.97 8.86-8.86 8.86s-8.86-3.97-8.86-8.86V88.14c0-4.89 3.97-8.86 8.86-8.86c4.88 0 8.86 3.97 8.86 8.86zm-8.86-90.9c-10.66 0-19.33 8.67-19.33 19.33v11.65c0 10.66 8.67 19.33 19.33 19.33s19.33-8.67 19.33-19.33V28.22c.01-10.66-8.67-19.34-19.33-19.34m8.86 30.98c0 4.89-3.97 8.86-8.86 8.86s-8.86-3.97-8.86-8.86V28.22c0-4.88 3.97-8.86 8.86-8.86c4.88 0 8.86 3.97 8.86 8.86z" />
+              <path fill="#2F7889" d="M36.02 89.16c-2.89 0-5.62-.66-8.09-1.8c.22-3.78.92-7.54 1.74-11.25c.01-.03.02-.07.02-.1a8.8 8.8 0 0 0 6.33 2.67c2.68 0 5.07-1.2 6.7-3.08l.09.45c.28 1.49.59 2.99 1.25 4.34c.67 1.36 1.75 2.57 3.18 3.08c.75.27 1.6.29 2.37.08c-3.49 3.46-8.29 5.61-13.59 5.61m0-59.92c-2.89 0-5.62-.66-8.09-1.8c.22-3.78.92-7.54 1.74-11.25c.01-.03.02-.07.02-.1a8.8 8.8 0 0 0 6.33 2.67c2.68 0 5.07-1.2 6.7-3.08l.09.45c.28 1.49.59 2.99 1.25 4.34c.67 1.36 1.75 2.57 3.18 3.08c.75.27 1.6.29 2.37.08a19.2 19.2 0 0 1-13.59 5.61m12.13 13.9c-.93.2-1.83.71-2.47 1.42c-1.28 1.42-1.74 3.38-1.97 5.27c-.14 1.1-.22 2.21-.4 3.31a8.85 8.85 0 0 0-7.28-3.82a8.84 8.84 0 0 0-6.8 3.19c-.41-3.87-.65-7.76-.69-11.65v-.5c2.3-.97 4.83-1.51 7.49-1.51c4.58-.01 8.8 1.61 12.12 4.29M91.98 59.2c-2.89 0-5.62-.66-8.09-1.8c.22-3.78.92-7.54 1.74-11.25c.01-.03.02-.07.02-.1a8.8 8.8 0 0 0 6.33 2.67c2.68 0 5.07-1.2 6.7-3.08l.09.45c.28 1.49.59 2.99 1.25 4.34c.67 1.36 1.75 2.57 3.18 3.08c.75.27 1.6.29 2.37.08c-3.49 3.46-8.29 5.61-13.59 5.61m12.13-46.02c-.93.2-1.83.71-2.47 1.42c-1.28 1.42-1.74 3.38-1.97 5.27c-.14 1.1-.22 2.21-.4 3.31a8.85 8.85 0 0 0-7.28-3.82a8.84 8.84 0 0 0-6.8 3.19c-.41-3.87-.65-7.76-.69-11.65v-.5c2.3-.97 4.83-1.51 7.49-1.51c4.58-.01 8.8 1.61 12.12 4.29M91.98 119.11c-2.89 0-5.62-.66-8.09-1.8c.22-3.78.92-7.54 1.74-11.25c.01-.03.02-.07.02-.1a8.8 8.8 0 0 0 6.33 2.67c2.68 0 5.07-1.2 6.7-3.08l.09.45c.28 1.49.59 2.99 1.25 4.34c.67 1.36 1.75 2.57 3.18 3.08c.75.27 1.6.29 2.37.08a19.2 19.2 0 0 1-13.59 5.61m12.13-46.01c-.93.2-1.83.71-2.47 1.42c-1.28 1.42-1.74 3.38-1.97 5.27c-.14 1.1-.22 2.21-.4 3.31a8.85 8.85 0 0 0-7.28-3.82a8.84 8.84 0 0 0-6.8 3.19c-.41-3.87-.65-7.76-.69-11.65v-.5c2.3-.97 4.83-1.51 7.49-1.51c4.58-.01 8.8 1.61 12.12 4.29" />
+              <path fill="#84B0C1" d="M91.96 41.25c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V46.49c0-2.89-2.35-5.24-5.24-5.24m0-14.42c2.89 0 5.24-2.35 5.24-5.24V4H86.73v17.59c0 2.89 2.35 5.24 5.23 5.24m0 74.34c-2.89 0-5.24 2.35-5.24 5.24V124H97.2v-17.59c0-2.89-2.35-5.24-5.24-5.24M36.44 71.63c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V76.87c0-2.89-2.35-5.24-5.24-5.24m0-59.92c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V16.95c0-2.89-2.35-5.24-5.24-5.24" />
+              <path fill="#A8E3F0" d="M33.52 17.81c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94m0 59.35c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.08-3.17 3.94M88.8 47.49c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94m0 59.35c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94" />
             </svg>
+            <span className="fs18">{networkLabel}</span>
             <span className="flex-grow-1" />
             {creatingTokenIDs.has(id) && (
               <span className="ico-spinner spinner fs12 me-1 grey" />
