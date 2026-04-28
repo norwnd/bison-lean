@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
@@ -17,11 +17,20 @@ import type {
 // loaded list. The user-facing labels render the literal "20".
 const JUMP_STEP = 20
 
-// Sentinel `n` for "← Earliest" — the backend treats n<=0 as
+// Sentinel `n` for "← Earliest" - the backend treats n<=0 as
 // no-limit (see client/asset/btc/txdb.go canIterate, client/asset/eth
 // /txdb.go iterFunc), so a single round trip walks from the current
 // tail to the oldest tx instead of chaining 10-tx pages.
 const NO_LIMIT_N = 0
+
+// Virtualization knobs. Row height is measured once after the first
+// row paints (see useLayoutEffect below); the default seeds the
+// initial render so the windowed slice is roughly viewport-sized
+// even before measurement. Buffer trades render cost against blank-
+// row flashes during fast scrolls; 20 is enough that a single
+// keypress / wheel tick stays inside the rendered window.
+const ROW_HEIGHT_DEFAULT_PX = 32
+const VIRT_BUFFER_ROWS = 20
 
 export default function WalletTransactionsPage () {
   const { t } = useTranslation()
@@ -47,6 +56,15 @@ export default function WalletTransactionsPage () {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [detailTx, setDetailTx] = useState<WalletTransaction | null>(null)
+
+  // Virtualization state. scrollTop + viewportHeight + rowHeightPx
+  // are the three numbers we need to compute the windowed slice of
+  // `merged` to actually render. They each have their own update
+  // path (scroll handler / ResizeObserver / useLayoutEffect) so the
+  // table re-renders only the rows in view + a buffer.
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  const [rowHeightPx, setRowHeightPx] = useState(ROW_HEIGHT_DEFAULT_PX)
 
   // Refs mirror the state above so async loops (jumpEarliest) and
   // event listeners that don't re-bind on each render (scroll handler)
@@ -138,6 +156,11 @@ export default function WalletTransactionsPage () {
     const el = scrollerRef.current
     if (!el) return
     const onScroll = () => {
+      // Drives both virtualization (slice + spacer recompute) and
+      // the existing infinite-scroll prefetch. Setting scrollTop on
+      // every event is fine - React 18 batches and the cost of a
+      // shallow compare + slice is negligible vs. the actual paint.
+      setScrollTop(el.scrollTop)
       if (inflightRef.current) return
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
         loadMoreRef.current()
@@ -147,10 +170,55 @@ export default function WalletTransactionsPage () {
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Track the scroller's clientHeight so the virtualization window
+  // matches whatever the layout currently gives us. ResizeObserver
+  // catches both window resizes and any future flex/grid relayout
+  // of the parent panel - we don't have to hand-wire window.resize.
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const update = () => setViewportHeight(el.clientHeight)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const merged = useMemo(
     () => mergePendingAndHistory(pendingTxs, history),
     [pendingTxs, history]
   )
+
+  // Measure the actual height of a rendered data row so the window
+  // and spacer math match the painted layout. Runs after every
+  // render where rows exist; only commits state when the height has
+  // meaningfully changed (>0.5px) so we don't spin the render loop
+  // on sub-pixel jitter from text-metrics rounding. The selector
+  // skips spacer trs (those have no .pointer class).
+  useLayoutEffect(() => {
+    if (merged.length === 0) return
+    const el = scrollerRef.current
+    if (!el) return
+    const row = el.querySelector('tbody tr.pointer')
+    if (!row) return
+    const h = (row as HTMLElement).getBoundingClientRect().height
+    if (h > 0 && Math.abs(h - rowHeightPx) > 0.5) setRowHeightPx(h)
+  }, [merged.length, rowHeightPx])
+
+  // Windowed slice: render only rows whose virtual position
+  // intersects the viewport, plus VIRT_BUFFER_ROWS above/below for
+  // smooth scroll. Top/bottom spacer trs hold the un-rendered space
+  // so the scroll bar reflects the full content height.
+  const visibleStart = viewportHeight > 0
+    ? Math.max(0, Math.floor(scrollTop / rowHeightPx) - VIRT_BUFFER_ROWS)
+    : 0
+  const visibleEnd = viewportHeight > 0
+    ? Math.min(merged.length, Math.ceil((scrollTop + viewportHeight) / rowHeightPx) + VIRT_BUFFER_ROWS)
+    : merged.length
+  const visibleTxs = merged.slice(visibleStart, visibleEnd)
+  const topSpacerPx = visibleStart * rowHeightPx
+  const bottomSpacerPx = Math.max(0, (merged.length - visibleEnd) * rowHeightPx)
 
   // ----- Jump-button handlers --------------------------------------
   // Convention: arrows describe direction in time. ← = backward
@@ -188,43 +256,37 @@ export default function WalletTransactionsPage () {
     scrollToBottom()
   }, [fetchPage])
 
-  // ± JUMP_STEP rows. Row height is measured per-call to track the
-  // table's current density (the row-border layout is stable, but
-  // we don't want to hardcode a px value that drifts as the design
-  // changes).
-  const rowHeight = useCallback((): number => {
-    const el = scrollerRef.current
-    if (!el) return 36
-    const row = el.querySelector('tbody tr')
-    return row ? (row as HTMLElement).getBoundingClientRect().height : 36
-  }, [])
+  // ± JUMP_STEP rows. Uses the same measured `rowHeightPx` that
+  // drives virtualization, so the jump distance always matches what
+  // the user sees painted (no drift between "20 rows of layout" and
+  // "20 rows of windowing").
 
-  const jumpForward = useCallback(() => { // 20 → (toward newer = up)
+  const jumpForward = useCallback(() => { // 20 -> (toward newer = up)
     const el = scrollerRef.current
     if (!el) return
     el.scrollTo({
-      top: Math.max(0, el.scrollTop - rowHeight() * JUMP_STEP),
+      top: Math.max(0, el.scrollTop - rowHeightPx * JUMP_STEP),
       behavior: 'smooth'
     })
-  }, [rowHeight])
+  }, [rowHeightPx])
 
-  const jumpBackward = useCallback(async () => { // ← 20 (toward older = down)
+  const jumpBackward = useCallback(async () => { // <- 20 (toward older = down)
     const el = scrollerRef.current
     if (!el) return
     // If we'd scroll past what's loaded, pre-load the next page so
     // the jump lands somewhere meaningful instead of being clamped
     // to the current bottom.
-    const targetTop = el.scrollTop + rowHeight() * JUMP_STEP
+    const targetTop = el.scrollTop + rowHeightPx * JUMP_STEP
     if (targetTop > el.scrollHeight - el.clientHeight && moreAvailableRef.current) {
       await loadMoreRef.current()
     }
     const el2 = scrollerRef.current
     if (!el2) return
     el2.scrollTo({
-      top: el2.scrollTop + rowHeight() * JUMP_STEP,
+      top: el2.scrollTop + rowHeightPx * JUMP_STEP,
       behavior: 'smooth'
     })
-  }, [rowHeight])
+  }, [rowHeightPx])
 
   if (!Number.isFinite(assetID)) {
     return (
@@ -313,12 +375,14 @@ export default function WalletTransactionsPage () {
         )}
         {merged.length > 0 && (
           <TxTable
-            txs={merged}
+            txs={visibleTxs}
             asset={asset}
             parentAsset={parentAsset}
             fiatRatesMap={fiatRatesMap}
             net={net}
             onRowClick={setDetailTx}
+            topSpacerPx={topSpacerPx}
+            bottomSpacerPx={bottomSpacerPx}
           />
         )}
         {loading && merged.length > 0 && (

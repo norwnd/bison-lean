@@ -161,10 +161,22 @@ export interface TxTableProps {
   fiatRatesMap: Record<number, number>
   net: number
   onRowClick: (tx: WalletTransaction) => void
+  // Optional virtualization spacers - when provided, an empty <tr>
+  // of the given pixel height is rendered above / below the visible
+  // rows inside <tbody>. Lets the parent (e.g. the full
+  // /wallets/:assetID/transactions page) render only a windowed
+  // slice of `txs` while keeping the scroll bar position correct.
+  // Defaults to 0 so the embedded section (which renders all 10
+  // entries) is unaffected.
+  topSpacerPx?: number
+  bottomSpacerPx?: number
 }
 
+const TX_TABLE_COL_COUNT = 6
+
 export function TxTable ({
-  txs, asset, parentAsset, fiatRatesMap, net, onRowClick
+  txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
+  topSpacerPx = 0, bottomSpacerPx = 0
 }: TxTableProps) {
   const { t } = useTranslation()
   const ui = asset.unitInfo
@@ -183,6 +195,11 @@ export function TxTable ({
         </tr>
       </thead>
       <tbody>
+        {topSpacerPx > 0 && (
+          <tr style={{ borderTop: 'none' }}>
+            <td colSpan={TX_TABLE_COL_COUNT} style={{ height: topSpacerPx, padding: 0 }} />
+          </tr>
+        )}
         {txs.map(tx => {
           const [sign, cls] = txSignAndClass(tx.type)
           const label = txTypeLabel(t, tx.type)
@@ -216,6 +233,11 @@ export function TxTable ({
             </tr>
           )
         })}
+        {bottomSpacerPx > 0 && (
+          <tr style={{ borderTop: 'none' }}>
+            <td colSpan={TX_TABLE_COL_COUNT} style={{ height: bottomSpacerPx, padding: 0 }} />
+          </tr>
+        )}
       </tbody>
     </table>
   )
