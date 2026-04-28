@@ -167,6 +167,13 @@ export interface TxTableProps {
   // renders the full untrimmed hash. Default true preserves the
   // historical behavior for any other caller.
   showID?: boolean
+  // fixedLayout pins column widths so they don't reflow as new
+  // rows scroll into view (otherwise auto table-layout re-computes
+  // widths every time the windowed slice changes - the user sees
+  // columns shifting around as they scroll). Currently only used
+  // by /wallets/:assetID/transactions; the embedded section's
+  // 10-row table never re-windows so it doesn't need it.
+  fixedLayout?: boolean
   // Optional virtualization spacers - when provided, an empty <tr>
   // of the given pixel height is rendered above / below the visible
   // rows inside <tbody>. Lets the parent (e.g. the full
@@ -180,7 +187,8 @@ export interface TxTableProps {
 
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
-  showID = true, topSpacerPx = 0, bottomSpacerPx = 0
+  showID = true, fixedLayout = false,
+  topSpacerPx = 0, bottomSpacerPx = 0
 }: TxTableProps) {
   const { t } = useTranslation()
   const ui = asset.unitInfo
@@ -191,7 +199,26 @@ export function TxTable ({
   const colCount = showID ? 6 : 5
 
   return (
-    <table className="compact row-border row-hover">
+    <table
+      className="compact row-border row-hover"
+      style={fixedLayout ? { tableLayout: 'fixed', width: '100%' } : undefined}
+    >
+      {/* <colgroup> only kicks in when fixedLayout=true. The
+          percentage widths are tuned for the 6-column layout
+          (showID=true): a wide ID column for the full hash, narrow
+          numeric columns, comfortable Type/Status columns. The
+          embedded section never sets fixedLayout, so it keeps its
+          auto layout and these widths don't apply. */}
+      {fixedLayout && (
+        <colgroup>
+          <col style={{ width: '15%' }} />
+          {showID && <col style={{ width: '35%' }} />}
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '17%' }} />
+        </colgroup>
+      )}
       <thead className="fs15">
         <tr>
           <th>{t('Type')}</th>

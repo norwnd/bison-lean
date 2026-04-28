@@ -378,6 +378,7 @@ export default function WalletTransactionsPage () {
             fiatRatesMap={fiatRatesMap}
             net={net}
             onRowClick={setDetailTx}
+            fixedLayout
             topSpacerPx={topSpacerPx}
             bottomSpacerPx={bottomSpacerPx}
           />
