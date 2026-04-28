@@ -7,7 +7,7 @@ import { useNotifications } from '../hooks/useNotifications'
 import {
   formatCoinAtom, formatRateToRateStep,
   formatCoinAtomToLotSizeBaseCurrency, formatCoinAtomToLotSizeQuoteCurrency,
-  conventionalRate, shortSymbol, logoPath
+  conventionalRate, shortSymbol, logoPath, ageSince
 } from '../hooks/useFormatters'
 import {
   isMarketBuy, averageRate, baseToQuote,
@@ -44,30 +44,6 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function ageSince (ms: number): string {
-  let dur = Date.now() - ms
-  if (dur < 1000) return '0s'
-  const units: [number, string][] = [
-    [31536000000, 'y'],
-    [2592000000, 'mo'],
-    [86400000, 'd'],
-    [3600000, 'h'],
-    [60000, 'min'],
-    [1000, 's']
-  ]
-  let chunks = 0
-  let result = ''
-  for (const [divisor, label] of units) {
-    const n = Math.floor(dur / divisor)
-    dur %= divisor
-    if (n === 0 && chunks === 0) continue
-    result += `${n}${label} `
-    chunks++
-    if (chunks >= 2) break
-  }
-  return result.trim()
-}
 
 // Shared "match-card timestamp" formatter. Used for both the
 // per-match `matchTime` and the pending-refund `refundAfterStr`.

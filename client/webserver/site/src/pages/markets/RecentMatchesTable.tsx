@@ -2,10 +2,10 @@ import { useState } from 'react'
 import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,
-  shortSymbol
+  shortSymbol, ageSince
 } from '../../hooks/useFormatters'
 import type { RecentMatch, UnitInfo, Market } from '../../stores/types'
-import { ageSince, useSecondTicker, RECENT_MATCHES_AGE_WINDOW_MS } from './helpers'
+import { useSecondTicker, RECENT_MATCHES_AGE_WINDOW_MS } from './helpers'
 
 // ---------------------------------------------------------------------------
 // RecentMatchesTable — extracted so its `useSecondTicker()` re-render is

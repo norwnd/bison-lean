@@ -18,7 +18,7 @@ import { AssetSymbol } from '../components/common/AssetSymbol'
 import {
   formatCoinAtom, formatBestWeCan, formatFiat, atomToConventional,
   formatRateToRateStep, formatCoinAtomToLotSizeBaseCurrency, conventionalRate,
-  shortSymbol, logoPath
+  shortSymbol, logoPath, ageSince
 } from '../hooks/useFormatters'
 import { explorerURL } from '../components/CoinExplorers'
 import { filled, haveActiveOrders } from '../components/AccountUtils'
@@ -27,7 +27,7 @@ import { allBridgePaths } from '../components/bridging/bridgeApi'
 import { ROUTES, walletTransactionsPath } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
 import {
-  TX_HISTORY_PAGE_SIZE, ageSince, mergePendingAndHistory,
+  TX_HISTORY_PAGE_SIZE, mergePendingAndHistory,
   TxTable, TxDetailModal
 } from '../components/walletTx'
 import type {

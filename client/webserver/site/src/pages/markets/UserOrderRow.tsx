@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   formatCoinAtomToLotSizeBaseCurrency,
   formatRateAtomToRateStep,
-  shortSymbol
+  shortSymbol, ageSince
 } from '../../hooks/useFormatters'
 import {
   filled, settled, isCancellable, hasActiveMatches
@@ -13,7 +13,7 @@ import { orderPath } from '../../router/routes'
 import type { Order, UnitInfo, Market } from '../../stores/types'
 import { OrderTypeMarket, StatusExecuted } from '../../stores/types'
 import {
-  ageSince, typeString,
+  typeString,
   marketOrderRateString, useSecondTicker
 } from './helpers'
 import { orderStatusDisplay } from '../../components/OrderStages'

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import {
-  formatCoinAtom, formatFiat, atomToConventional
+  formatCoinAtom, formatFiat, atomToConventional, ageSince
 } from '../hooks/useFormatters'
 import { explorerURL } from './CoinExplorers'
 import { CopyButton } from './common/CopyButton'
@@ -78,26 +78,6 @@ export const TX_TYPE_KEYS: Record<number, string> = {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-export function ageSince (ms: number): string {
-  let dur = Date.now() - ms
-  if (dur < 1000) return '0s'
-  const units: [number, string][] = [
-    [31536000000, 'y'], [2592000000, 'mo'], [86400000, 'd'],
-    [3600000, 'h'], [60000, 'min'], [1000, 's']
-  ]
-  let chunks = 0
-  let result = ''
-  for (const [divisor, label] of units) {
-    const n = Math.floor(dur / divisor)
-    dur %= divisor
-    if (n === 0 && chunks === 0) continue
-    result += `${n}${label} `
-    chunks++
-    if (chunks >= 2) break
-  }
-  return result.trim()
-}
 
 export function txTypeLabel (t: (k: string) => string, txType: number): string {
   const key = TX_TYPE_KEYS[txType] ?? 'TX_TYPE_UNKNOWN'

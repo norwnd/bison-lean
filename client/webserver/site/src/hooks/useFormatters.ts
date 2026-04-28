@@ -137,3 +137,28 @@ export function logoPath (symbol: string): string {
   if (s === 'weth') s = 'eth'
   return `/img/coins/${s}.png`
 }
+
+// ageSince renders the elapsed wall-clock duration since `ms` (a UNIX
+// epoch ms timestamp) as a compact "Ny Mmo", "Nd Nh", "Nh Nmin",
+// "Nmin Ns" string — the largest two non-zero units. Returns "0s"
+// for any positive sub-second duration so the caller always renders
+// something (rather than a flicker of empty string between 0–999ms).
+export function ageSince (ms: number): string {
+  let dur = Date.now() - ms
+  if (dur < 1000) return '0s'
+  const units: [number, string][] = [
+    [31536000000, 'y'], [2592000000, 'mo'], [86400000, 'd'],
+    [3600000, 'h'], [60000, 'min'], [1000, 's']
+  ]
+  let chunks = 0
+  let result = ''
+  for (const [divisor, label] of units) {
+    const n = Math.floor(dur / divisor)
+    dur %= divisor
+    if (n === 0 && chunks === 0) continue
+    result += `${n}${label} `
+    chunks++
+    if (chunks >= 2) break
+  }
+  return result.trim()
+}
