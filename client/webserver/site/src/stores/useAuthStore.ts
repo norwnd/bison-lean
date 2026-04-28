@@ -3,8 +3,22 @@ import { getJSON, postJSON } from '../services/api'
 import { useNotificationStore } from './useNotificationStore'
 import { useActionRequiredStore } from './useActionRequiredStore'
 import { applyRateStepMagnifyingFactors } from './rateStepConfig'
-import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse } from './types'
+import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakingStatus, CoreNote, UserResponse, LoginResponse, ReputationNote, BondNote } from './types'
 
+// Live-store invariant for `exchanges` / `assets` / friends:
+//
+//   - Hydrated up-front by `applyUserResponse` (login response + WS-
+//     open `fetchUser`).
+//   - Kept in sync thereafter by typed merge functions — one per WS
+//     note that changes persistent state (`applyReputationNote`,
+//     `applyBondPostNote`, etc.). New note types should add a typed
+//     merge here, wired into the AppLayout dispatcher; do NOT route
+//     them through pages.
+//   - Pages subscribe to store slices via `useAuthStore(s => ...)`
+//     and re-render automatically. They should never call fetchUser
+//     or trigger forceReRender to "see fresh data" — the invariant
+//     above guarantees the slice is current.
+//
 // LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
 // distinguishes "request failed → show server msg" from "request ok →
 // process notes/pokes and continue". The discriminated union surfaces the
@@ -56,6 +70,20 @@ export interface AuthState {
   logout: (force?: boolean) => Promise<LogoutResult>
   setAuthFailed: (host: string, msg: string) => void
   setInitInProgress: (v: boolean) => void
+  // applyReputationNote merges the `rep` payload of a `reputation`
+  // note into `exchanges[host].auth.rep` and recomputes
+  // `effectiveTier` (BondedTier − Penalties, mirroring server
+  // `Reputation.EffectiveTier()` in `server/account/account.go`).
+  // No-op if the host is not yet in the store — the next /api/user
+  // refresh will catch it.
+  applyReputationNote: (note: ReputationNote) => void
+  // applyBondPostNote merges a `bondpost` note. When `note.auth` is
+  // present, the server has handed us the full updated ExchangeAuth
+  // for the host (post-confirmation, post-registration, expiry,
+  // BondAuthUpdate) — replace auth wholesale. When `note.auth` is
+  // null, the note is informational (in-flight confirmation count
+  // or error) and we skip the merge.
+  applyBondPostNote: (note: BondNote) => void
 }
 
 function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number, WalletState> {
@@ -244,6 +272,48 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
     setInitInProgress: (v: boolean) => {
       set({ initInProgress: v })
+    },
+
+    applyReputationNote: (note: ReputationNote) => {
+      const { exchanges } = get()
+      const xc = exchanges[note.host]
+      if (!xc?.auth) return
+      const rep = note.rep
+      // EffectiveTier mirrors `(*Reputation).EffectiveTier()` in
+      // server/account/account.go: BondedTier − Penalties. The note
+      // doesn't carry effectiveTier explicitly, so we recompute it
+      // here. Trivial formula, low drift risk, but if the server
+      // ever changes this calculation, both sides need to move.
+      const effectiveTier = rep.bondedTier - rep.penalties
+      set({
+        exchanges: {
+          ...exchanges,
+          [note.host]: {
+            ...xc,
+            auth: {
+              ...xc.auth,
+              rep,
+              effectiveTier,
+            },
+          },
+        },
+      })
+    },
+
+    applyBondPostNote: (note: BondNote) => {
+      if (!note.auth) return
+      const { exchanges } = get()
+      const xc = exchanges[note.dex]
+      if (!xc) return
+      set({
+        exchanges: {
+          ...exchanges,
+          [note.dex]: {
+            ...xc,
+            auth: note.auth,
+          },
+        },
+      })
     },
   }
 })

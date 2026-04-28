@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
-import { useNotifications } from '../hooks/useNotifications'
 import { FormOverlay } from '../components/common/FormOverlay'
 import { DEXAddressForm } from '../components/common/DEXAddressForm'
 import { FeeAssetSelectionForm } from '../components/common/FeeAssetSelectionForm'
@@ -39,9 +38,6 @@ export default function DexSettingsPage () {
 
   const exchange = exchanges[host]
   const auth = exchange?.auth
-
-  // -- Connection status state (refreshed via WS) --
-  const [connStatusKey, setConnStatusKey] = useState(0)
 
   // -- Account disabled state --
   const [accountDisabled, setAccountDisabled] = useState(() => exchange?.disabled ?? false)
@@ -82,27 +78,12 @@ export default function DexSettingsPage () {
   const certFileRef = useRef<HTMLInputElement>(null)
   const [certUpdateMsg, setCertUpdateMsg] = useState('')
 
-  // -- WS note handlers --
-  // All five note types share the same handler: bump `connStatusKey`
-  // to force a local re-render. The auth store is already updated by
-  // the global note dispatcher in `AppLayout`; this component reads
-  // `exchange.auth` and `exchange.connectionStatus` directly, so it
-  // just needs a render trigger to pick up the fresh values.
-  // `walletstate` is included (DSP-01) because wallet readiness
-  // affects bond-posting capability — a wallet going locked or
-  // unsynced leaves the user unable to post bonds, and the connection
-  // panel + tier displays should reflect that.
-  const forceReRender = useCallback(() => setConnStatusKey(prev => prev + 1), [])
-  useNotifications(useMemo(() => ({
-    conn: forceReRender,
-    reputation: forceReRender,
-    feepayment: forceReRender,
-    bondpost: forceReRender,
-    walletstate: forceReRender,
-  }), [forceReRender]))
-
   // -- Derived values --
-  // Read from exchanges on each render (may be updated by store).
+  // Read from exchanges on each render. The store is kept live by
+  // AppLayout's WS dispatcher (typed merges for `reputation` /
+  // `bondpost`, fetchUser on every WS open and on `feepayment`), so
+  // this component re-renders automatically as the exchange data
+  // changes — no local note subscription needed.
   const currentExchange = exchanges[host]
   const currentAuth = currentExchange?.auth
   const connectionStatus = currentExchange?.connectionStatus
@@ -401,7 +382,7 @@ export default function DexSettingsPage () {
       default:
         return { text: t('Unknown'), connected: false }
     }
-  }, [currentExchange, connectionStatus, accountDisabled, t, connStatusKey])
+  }, [currentExchange, connectionStatus, accountDisabled, t])
 
   if (!exchange) {
     return (

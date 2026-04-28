@@ -62,7 +62,13 @@ export class MessageSocket {
     if (this.connection) this.connection.close()
   }
 
-  connect (uri: string, onReconnect: () => void) {
+  // `onOpen` fires on every successful WebSocket open — both the
+  // first one after `connect()` and every reconnect. It is the
+  // place to refresh server-derived state (`/api/user`, etc.) so
+  // the store catches up on whatever happened while the WS was
+  // closed (or, on first connect, any auth/notification activity
+  // that landed between login and the WS subscriber being live).
+  connect (uri: string, onOpen: () => void) {
     this.uri = uri
 
     let retrys = 0
@@ -97,9 +103,7 @@ export class MessageSocket {
 
       conn.onopen = () => {
         clearTimeout(timeout)
-        if (retrys > 0) {
-          onReconnect()
-        }
+        onOpen()
         retrys = 0
         forward('open', null, this.handlers)
         const queue = this.queue

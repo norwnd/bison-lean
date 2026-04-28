@@ -16,7 +16,7 @@ import type {
   MiniOrder, MarketOrderBook, Order,
   OrderNote, MatchNote, EpochNote, BookUpdate,
   Candle, OrderFilter,
-  ConnEventNote, BondNote, RemainderUpdate, SupportedAsset
+  ConnEventNote, RemainderUpdate, SupportedAsset
 } from '../../stores/types'
 import {
   OrderTypeLimit, OrderTypeMarket, StatusEpoch, StatusBooked, StatusExecuted,
@@ -82,7 +82,6 @@ export default function MarketsPage () {
   const assets = useAuthStore(s => s.assets)
   const walletMap = useAuthStore(s => s.walletMap)
   const fiatRatesMap = useAuthStore(s => s.fiatRatesMap)
-  const fetchUser = useAuthStore(s => s.fetchUser)
   const authFailed = useAuthStore(s => s.authFailed)
   // CL-MP-NARROW-SELECTOR (Fix A): the broad `exchanges` subscription used
   // to live here. It was the dominant render multiplier on MarketsPage:
@@ -836,25 +835,22 @@ export default function MarketsPage () {
         return changed ? next : prev
       })
     },
-    bondpost: (note: BondNote) => {
-      if (!selected) return
-      if (note.dex !== selected.host) return
-      fetchUser()
-    },
     conn: (note: ConnEventNote) => {
       if (!selected) return
       if (note.host !== selected.host) return
-      // MP-64: mirror vanilla `handleConnNote`.
+      // MP-64: mirror vanilla `handleConnNote` — re-snapshot active
+      // orders on (re)connect / admin toggle. The fetchUser side of
+      // vanilla's handler now lives in AppLayout's `conn` dispatcher
+      // (DEXConnected / DEXEnabled), so we no longer call it here.
       if (
         note.topic === 'DEXDisabled' ||
         note.topic === 'DEXEnabled' ||
         note.connectionStatus === ConnectionStatus.Connected
       ) {
-        fetchUser()
         snapshotActiveOrders()
       }
     }
-  }), [selected, currentMktId, snapshotActiveOrders, fetchUser])
+  }), [selected, currentMktId, snapshotActiveOrders])
 
   useNotifications(noteHandlers)
 

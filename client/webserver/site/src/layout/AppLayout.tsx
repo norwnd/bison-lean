@@ -18,11 +18,38 @@ import { handleLostNonce } from '../components/notifications/lostNonceToast'
 import { networkSuffix } from '../components/notifications/actionRequiredUtils'
 import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, LostNonceNote, WalletNote } from '../stores/types'
 
+// Data-freshness contract for the React app:
+//
+//   1. After every successful WS open (initial connect AND every
+//      reconnect), `fetchUser()` runs. This is the foundation —
+//      anything that happened between login and the WS subscriber
+//      being live (post-login DEX auth completion, server-side state
+//      change before our handlers were registered, etc.) is caught up
+//      via /api/user before pages render off the store.
+//
+//   2. Every WS note that changes persistent state has a typed merge
+//      handler in this dispatcher. Notes carrying the new payload
+//      (`reputation`, `bondpost`) feed `applyReputationNote` /
+//      `applyBondPostNote` which mutate the auth slice in place — no
+//      /api/user round trip. Notes that only carry signals or partial
+//      payloads (`feepayment`) fall back to fetchUser.
+//
+//   3. Pages SHOULD NOT call fetchUser, force re-renders, or
+//      otherwise duplicate this dispatcher's job. They subscribe to
+//      store slices and re-render automatically. Page-level
+//      `useNotifications` hooks are reserved for *ephemeral* effects
+//      (toasts, animations, in-flight wizard state, route-bound
+//      reload triggers) — never for "make my page see fresh data".
+//
+// If a page exhibits stale data, the fix is in this dispatcher (or
+// in the relevant store's typed merge), not in the page.
 export function AppLayout () {
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const fetchUser = useAuthStore(s => s.fetchUser)
   const fetchBuildInfo = useAuthStore(s => s.fetchBuildInfo)
+  const applyReputationNote = useAuthStore(s => s.applyReputationNote)
+  const applyBondPostNote = useAuthStore(s => s.applyBondPostNote)
   const connect = useWebSocketStore(s => s.connect)
   const subscribe = useWebSocketStore(s => s.subscribe)
   const notify = useNotificationStore(s => s.notify)
@@ -65,7 +92,12 @@ export function AppLayout () {
     const wsUri = `${proto}://${window.location.host}/ws`
 
     connect(wsUri, () => {
-      // On reconnect, refetch user to sync state.
+      // Fires on every WS open — first connect AND every reconnect.
+      // Refetching here is the foundation of the store's "live after
+      // open" invariant: any auth completion / notification activity
+      // that happened between login and this subscriber being live
+      // (or while the WS was closed) is caught up via /api/user before
+      // pages start rendering off the store.
       fetchUser()
     })
 
@@ -81,22 +113,34 @@ export function AppLayout () {
         case 'spots': handleSpotPriceNote(note); break
         case 'fiatrateupdate': handleRateNote(note); break
         case 'createwallet': handleWalletCreationNote(note); break
-        case 'conn': handleConnEventNote(note); break
-        // MP-65 / MP-66 reputation refresh — vanilla (markets.ts L544-545)
-        // calls `updateReputation()` from its own per-page `feepayment` and
-        // `reputation` feeders, which is a local re-render against
-        // `app().exchanges[host].auth`. Vanilla's auth is kept fresh by a
-        // global note-dispatcher in `app.ts` (the equivalent of this
-        // switch). We don't have the per-note merge logic for reputation
-        // payloads in the React store yet, so the safest reactive
-        // equivalent is to refetch the user — `fetchUser` re-pulls
-        // `/api/user`, which includes `auth.effectiveTier`,
-        // `auth.pendingStrength`, `auth.rep`, etc. Once the auth state
-        // refreshes, every page's `tierData` / reputation memo
-        // recomputes automatically. This benefits MarketsPage,
-        // DexSettingsPage, MMPage, and any other reputation-aware view.
+        case 'conn': {
+          handleConnEventNote(note)
+          // DEX (re)connection or admin enable can change more than
+          // just connectionStatus — markets list, bondAssets, fee
+          // configs, even auth state may have changed during the
+          // outage / while disabled. Refresh the full /api/user so
+          // pages reading from the store see the updated shape; on
+          // disconnect/disable, skip the fetch (the note itself is
+          // the new truth — nothing to retrieve).
+          if (note.topic === 'DEXConnected' || note.topic === 'DEXEnabled') {
+            fetchUser()
+          }
+          break
+        }
+        // Reputation / bondpost notes carry the new auth state in their
+        // payloads, so we merge directly instead of refetching /api/user.
+        // `reputation` carries just `rep`; effectiveTier is recomputed
+        // from rep client-side (mirrors server's
+        // `(*Reputation).EffectiveTier()`). `bondpost` may carry the full
+        // ExchangeAuth (`note.auth`) on confirmation/registration/expiry
+        // edges; informational variants (in-flight confirmation count,
+        // errors) carry `auth=null` and the merge no-ops on those.
+        // `feepayment` notes are emitted only on errors
+        // (TopicAccountUnlockError / TopicWalletUnlockError) and don't
+        // carry auth — fetchUser is a defensive re-sync.
         case 'feepayment': fetchUser(); break
-        case 'reputation': fetchUser(); break
+        case 'reputation': applyReputationNote(note); break
+        case 'bondpost': applyBondPostNote(note); break
         // `dex_auth` covers both auth-success and auth-failure edges,
         // plus unrelated housekeeping (UnknownOrders, OrdersReconciled) —
         // filter by topic. DexAuthError* with authenticated=false means
