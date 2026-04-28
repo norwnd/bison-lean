@@ -879,10 +879,6 @@ export default function WalletsPage () {
         </div>
       </FormOverlay>
 
-      {/* The old txHistory FormOverlay was deleted: tx browsing now
-          lives at /wallets/:assetID/transactions, with the embedded
-          TransactionsSection providing a 10-row quick view. */}
-
       <FormOverlay bare show={activeForm === 'config'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380 }}>
           {selectedAsset && selectedWallet && (
@@ -1576,8 +1572,6 @@ function WalletDetail ({
           )}
         </div>
       </section>
-
-      {/* Exchange Rate moved to top of RightColumn (was here). */}
 
       {/* ---- Transaction Costs ---- */}
       {wallet.feeState && (() => {
@@ -2319,12 +2313,6 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// TxHistoryView (modal): replaced by the dedicated /wallets/:assetID
-// /transactions page. The embedded TransactionsSection above plus the
-// new full page now cover both "quick peek" and "browse all" use cases.
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // RecentOrdersView (inline in right column)
