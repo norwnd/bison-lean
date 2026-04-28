@@ -161,6 +161,12 @@ export interface TxTableProps {
   fiatRatesMap: Record<number, number>
   net: number
   onRowClick: (tx: WalletTransaction) => void
+  // showID toggles the ID column on/off. The embedded /wallets
+  // section drops it (rows are too narrow to fit a full hash); the
+  // dedicated /wallets/:assetID/transactions page keeps it and
+  // renders the full untrimmed hash. Default true preserves the
+  // historical behavior for any other caller.
+  showID?: boolean
   // Optional virtualization spacers - when provided, an empty <tr>
   // of the given pixel height is rendered above / below the visible
   // rows inside <tbody>. Lets the parent (e.g. the full
@@ -172,22 +178,24 @@ export interface TxTableProps {
   bottomSpacerPx?: number
 }
 
-const TX_TABLE_COL_COUNT = 6
-
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
-  topSpacerPx = 0, bottomSpacerPx = 0
+  showID = true, topSpacerPx = 0, bottomSpacerPx = 0
 }: TxTableProps) {
   const { t } = useTranslation()
   const ui = asset.unitInfo
   const assetID = asset.id
+  // colSpan for spacer rows must match the visible column count or
+  // the row collapses to one cell width (and breaks the spacer's
+  // height under some renderers). showID flips one column in/out.
+  const colCount = showID ? 6 : 5
 
   return (
     <table className="compact row-border row-hover">
-      <thead className="unbold fs15">
+      <thead className="fs15">
         <tr>
           <th>{t('Type')}</th>
-          <th className="d-none d-sm-table-cell">{t('ID')}</th>
+          {showID && <th className="d-none d-sm-table-cell">{t('ID')}</th>}
           <th>{t('Age')}</th>
           <th className="text-end">{t('Amount')}</th>
           <th className="text-end">{t('Fee')}</th>
@@ -197,7 +205,7 @@ export function TxTable ({
       <tbody>
         {topSpacerPx > 0 && (
           <tr style={{ borderTop: 'none' }}>
-            <td colSpan={TX_TABLE_COL_COUNT} style={{ height: topSpacerPx, padding: 0 }} />
+            <td colSpan={colCount} style={{ height: topSpacerPx, padding: 0 }} />
           </tr>
         )}
         {txs.map(tx => {
@@ -211,17 +219,19 @@ export function TxTable ({
               onClick={() => onRowClick(tx)}
             >
               <td>{label}</td>
-              <td
-                className="d-none d-sm-table-cell"
-                onClick={e => e.stopPropagation()}
-              >
-                <span className="d-inline-flex align-items-center gap-1">
-                  {url
-                    ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">{tx.id.slice(0, 16)}...</a>
-                    : <span>{tx.id.slice(0, 16)}...</span>}
-                  <CopyButton text={tx.id} />
-                </span>
-              </td>
+              {showID && (
+                <td
+                  className="d-none d-sm-table-cell"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <span className="d-inline-flex align-items-center gap-1">
+                    {url
+                      ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink text-break">{tx.id}</a>
+                      : <span className="text-break">{tx.id}</span>}
+                    <CopyButton text={tx.id} />
+                  </span>
+                </td>
+              )}
               <td>{tx.timestamp > 0 ? ageSince(tx.timestamp * 1000) : t('Pending')}</td>
               <td className={`text-end ${cls}`}>
                 {noAmtTxTypes.includes(tx.type)
@@ -235,7 +245,7 @@ export function TxTable ({
         })}
         {bottomSpacerPx > 0 && (
           <tr style={{ borderTop: 'none' }}>
-            <td colSpan={TX_TABLE_COL_COUNT} style={{ height: bottomSpacerPx, padding: 0 }} />
+            <td colSpan={colCount} style={{ height: bottomSpacerPx, padding: 0 }} />
           </tr>
         )}
       </tbody>

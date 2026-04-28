@@ -195,7 +195,10 @@ export default function WalletTransactionsPage () {
   // render where rows exist; only commits state when the height has
   // meaningfully changed (>0.5px) so we don't spin the render loop
   // on sub-pixel jitter from text-metrics rounding. The selector
-  // skips spacer trs (those have no .pointer class).
+  // skips spacer trs (those have no .pointer class). Re-measures
+  // on viewport resize because the ID column shows the full hash
+  // and its line-wrap (and therefore row height) shifts as the
+  // column width does.
   useLayoutEffect(() => {
     if (merged.length === 0) return
     const el = scrollerRef.current
@@ -204,7 +207,7 @@ export default function WalletTransactionsPage () {
     if (!row) return
     const h = (row as HTMLElement).getBoundingClientRect().height
     if (h > 0 && Math.abs(h - rowHeightPx) > 0.5) setRowHeightPx(h)
-  }, [merged.length, rowHeightPx])
+  }, [merged.length, viewportHeight, rowHeightPx])
 
   // Windowed slice: render only rows whose virtual position
   // intersects the viewport, plus VIRT_BUFFER_ROWS above/below for
@@ -221,9 +224,15 @@ export default function WalletTransactionsPage () {
   const bottomSpacerPx = Math.max(0, (merged.length - visibleEnd) * rowHeightPx)
 
   // ----- Jump-button handlers --------------------------------------
-  // Convention: arrows describe direction in time. ← = backward
-  // (older / down the list, since newest is at top). → = forward
-  // (newer / up the list).
+  // Convention: arrows describe scroll direction (matching what the
+  // scrollbar does), not direction in time. ← = scroll up = toward
+  // the top of the list (which holds the latest txs). → = scroll
+  // down = toward the bottom (which holds the earliest txs).
+  //
+  // Pairs of handlers below are split by intent:
+  //   jumpLatest / jumpEarliest = jump to top / bottom of the list
+  //   scrollUp20 / scrollDown20 = step ±JUMP_STEP rows in scroll dir
+  // Buttons (in render order) wire to: ← Latest, ← 20, 20 →, Earliest →.
 
   const jumpLatest = useCallback(() => {
     scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -261,7 +270,7 @@ export default function WalletTransactionsPage () {
   // the user sees painted (no drift between "20 rows of layout" and
   // "20 rows of windowing").
 
-  const jumpForward = useCallback(() => { // 20 -> (toward newer = up)
+  const scrollUp20 = useCallback(() => { // ← 20 (toward top = latest)
     const el = scrollerRef.current
     if (!el) return
     el.scrollTo({
@@ -270,7 +279,7 @@ export default function WalletTransactionsPage () {
     })
   }, [rowHeightPx])
 
-  const jumpBackward = useCallback(async () => { // <- 20 (toward older = down)
+  const scrollDown20 = useCallback(async () => { // 20 → (toward bottom = earliest)
     const el = scrollerRef.current
     if (!el) return
     // If we'd scroll past what's loaded, pre-load the next page so
@@ -324,42 +333,6 @@ export default function WalletTransactionsPage () {
         </div>
       </div>
 
-      {/* ---- Sticky jump-button row ---- */}
-      <div className="d-flex align-items-center justify-content-center gap-2 px-3 py-2 border-bottom">
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          onClick={jumpEarliest}
-          disabled={!moreAvailable && history.length === 0}
-        >
-          ← {t('Earliest')}
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          onClick={jumpBackward}
-          disabled={merged.length === 0}
-        >
-          ← {JUMP_STEP}
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          onClick={jumpForward}
-          disabled={merged.length === 0}
-        >
-          {JUMP_STEP} →
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          onClick={jumpLatest}
-          disabled={merged.length === 0}
-        >
-          {t('Latest')} →
-        </button>
-      </div>
-
       {/* ---- Scrollable list ---- */}
       <div ref={scrollerRef} className="flex-grow-1" style={{ overflowY: 'auto' }}>
         {error && (
@@ -390,6 +363,45 @@ export default function WalletTransactionsPage () {
             <span className="ico-spinner spinner"></span>
           </div>
         )}
+      </div>
+
+      {/* ---- Jump-button row (bottom) ----
+          Buttons stay in the same render order; only the labels and
+          click handlers swap pairwise. The new convention: arrows
+          describe scroll direction. */}
+      <div className="d-flex align-items-center justify-content-center gap-2 px-3 py-2 border-top">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          onClick={jumpLatest}
+          disabled={merged.length === 0}
+        >
+          ← {t('Latest')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          onClick={scrollUp20}
+          disabled={merged.length === 0}
+        >
+          ← {JUMP_STEP}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          onClick={scrollDown20}
+          disabled={merged.length === 0}
+        >
+          {JUMP_STEP} →
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          onClick={jumpEarliest}
+          disabled={!moreAvailable && history.length === 0}
+        >
+          {t('Earliest')} →
+        </button>
       </div>
 
       <TxDetailModal

@@ -1790,9 +1790,17 @@ function TransactionsSection ({
 
   return (
     <section className="border-top">
-      <div className="d-flex align-items-center justify-content-between m-3">
-        <h4 className="mb-0">{t('Transactions')}</h4>
-        <Link to={walletTransactionsPath(asset.id)} className="fs16">
+      {/* 3-column grid keeps the title visually centered in the row
+          while the View All link sits flush right. The first column
+          is an empty mirror of the link so equal padding falls on
+          either side of the centered <h4>. */}
+      <div
+        className="d-grid align-items-center m-3"
+        style={{ gridTemplateColumns: '1fr auto 1fr' }}
+      >
+        <span />
+        <h4 className="mb-0 text-center">{t('Transactions')}</h4>
+        <Link to={walletTransactionsPath(asset.id)} className="fs16 text-end">
           {t('VIEW_ALL')}
         </Link>
       </div>
@@ -1815,6 +1823,7 @@ function TransactionsSection ({
           fiatRatesMap={fiatRatesMap}
           net={net}
           onRowClick={setDetailTx}
+          showID={false}
         />
       )}
 
@@ -1844,7 +1853,7 @@ function MarketsSection ({ assetName, marketRows, assets }: {
 
   return (
     <section>
-      <h4 className="m-3">{assetName} {t('Markets')}</h4>
+      <h4 className="m-3 text-center">{assetName} {t('Markets')}</h4>
       {marketRows.length === 0 && (
         <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('NO_MARKETS')}</div>
       )}
@@ -2348,8 +2357,14 @@ function RecentOrdersView ({ assetID, assets }: {
 
   return (
     <section className="d-flex flex-column pb-3 border-bottom">
-      <div className="d-flex align-items-center justify-content-between m-3">
-        <h4 className="mb-0">{t('Recent')} {asset.name} {t('Activity')}</h4>
+      {/* 3-column grid keeps the title centered; same approach as the
+          Transactions section so the two sections line up visually. */}
+      <div
+        className="d-grid align-items-center m-3"
+        style={{ gridTemplateColumns: '1fr auto 1fr' }}
+      >
+        <span />
+        <h4 className="mb-0 text-center">{t('Recent')} {asset.name} {t('Activity')}</h4>
         {/* WP-21: "View All" link to the orders page pre-filtered to
             this asset. The OrdersPage `assets` URL param is consumed
             by its initial filter state. Uses `<Link>` (rather than a
@@ -2358,7 +2373,7 @@ function RecentOrdersView ({ assetID, assets }: {
             for new-tab, and reads as a link to assistive tech. */}
         <Link
           to={`${ROUTES.ORDERS}?assets=${assetID}`}
-          className="fs16"
+          className="fs16 text-end"
         >
           {t('VIEW_ALL')}
         </Link>
