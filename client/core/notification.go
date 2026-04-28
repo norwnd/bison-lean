@@ -84,7 +84,13 @@ func (c *Core) Broadcast(n Notification) {
 // sufficient severity, it is stored in the database.
 func (c *Core) notify(n Notification) {
 	if n.Severity() >= db.Success {
-		c.db.SaveNotification(n.DBNote())
+		// A silent failure here is what produced the long-standing
+		// "notification not found" symptom in AckNotes — the note
+		// reached the UI via the channel below but never made it
+		// into the bucket, so the eventual ack had nothing to find.
+		if err := c.db.SaveNotification(n.DBNote()); err != nil {
+			c.log.Errorf("Error saving %s notification %q: %v", n.Severity(), n.Subject(), err)
+		}
 	} else if n.Severity() == db.Poke {
 		c.pokesCache.add(n.DBNote())
 	}

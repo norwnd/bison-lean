@@ -763,8 +763,10 @@ func (s *WebServer) Connect(ctx context.Context) (*sync.WaitGroup, error) {
 	}()
 
 	// Configure the websocket handler before starting the server.
+	// `s.isAuthed(r)` snapshots auth at upgrade time — see
+	// `wsClient.authed` for why a snapshot is acceptable here.
 	s.mux.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		s.wsServer.HandleConnect(ctx, w, r)
+		s.wsServer.HandleConnect(ctx, w, r, s.isAuthed(r))
 	})
 
 	for _, listener := range listeners {

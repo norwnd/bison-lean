@@ -335,8 +335,12 @@ func (s *RPCServer) Connect(ctx context.Context) (*sync.WaitGroup, error) {
 	}()
 
 	// Configure the websocket handler before starting the server.
+	// rpcserver gates every request (including /ws) behind basic-auth
+	// via `authMiddleware` mounted above, so by the time we reach
+	// HandleConnect the request is already authenticated. Pass
+	// `authed=true` so sensitive WS routes (e.g. acknotes) accept it.
 	s.mux.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		s.wsServer.HandleConnect(ctx, w, r)
+		s.wsServer.HandleConnect(ctx, w, r, true)
 	})
 
 	s.wg.Add(1)

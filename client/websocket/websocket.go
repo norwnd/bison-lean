@@ -43,14 +43,25 @@ type wsClient struct {
 	*ws.WSLink
 	cid int32
 
+	// authed is captured at connect time from the upgrading
+	// http.Request. It is a snapshot, not a live check — the only
+	// session-sensitive WS route today is `acknotes`, and a stale
+	// authed=true after a server-side logout is an idempotent
+	// no-op (sets ackKey=true on a bucket the user previously
+	// owned). When new sensitive routes are added, prefer adding
+	// them to authed-required handling here over re-checking auth
+	// per-message.
+	authed bool
+
 	feedMtx sync.RWMutex
 	feed    *bookFeed
 }
 
-func newWSClient(addr string, conn ws.Connection, hndlr func(msg *msgjson.Message) *msgjson.Error, logger dex.Logger) *wsClient {
+func newWSClient(addr string, conn ws.Connection, authed bool, hndlr func(msg *msgjson.Message) *msgjson.Error, logger dex.Logger) *wsClient {
 	return &wsClient{
 		WSLink: ws.NewWSLink(addr, conn, pingPeriod, hndlr, logger),
 		cid:    atomic.AddInt32(&cidCounter, 1),
+		authed: authed,
 	}
 }
 
@@ -109,7 +120,11 @@ func (s *Server) Shutdown() {
 // canceled after ServerHTTP returns, a separate context must be provided to be
 // able to cancel the hijacked connection handler at a later time since this
 // function is not blocking.
-func (s *Server) HandleConnect(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+//
+// `authed` reflects the request's authentication state at upgrade time
+// (callers compute via their own auth middleware, e.g. webserver's
+// `s.isAuthed(r)`). It is a snapshot — see `wsClient.authed`.
+func (s *Server) HandleConnect(ctx context.Context, w http.ResponseWriter, r *http.Request, authed bool) {
 	wsConn, err := ws.NewConnection(w, r, pongWait)
 	if err != nil {
 		s.log.Errorf("ws connection error: %v", err)
@@ -123,20 +138,20 @@ func (s *Server) HandleConnect(ctx context.Context, w http.ResponseWriter, r *ht
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.connect(ctx, wsConn, r.RemoteAddr)
+		s.connect(ctx, wsConn, r.RemoteAddr, authed)
 	}()
 }
 
 // connect handles a new websocket client by creating a new wsClient, starting
 // it, and blocking until the connection closes. This method should be
 // run as a goroutine.
-func (s *Server) connect(ctx context.Context, conn ws.Connection, addr string) {
+func (s *Server) connect(ctx context.Context, conn ws.Connection, addr string, authed bool) {
 	s.log.Debugf("New websocket client %s", addr)
 	// Create a new websocket client to handle the new websocket connection
 	// and wait for it to shut down.  Once it has shutdown (and hence
 	// disconnected), remove it.
 	var cl *wsClient
-	cl = newWSClient(addr, conn, func(msg *msgjson.Message) *msgjson.Error {
+	cl = newWSClient(addr, conn, authed, func(msg *msgjson.Message) *msgjson.Error {
 		return s.handleMessage(cl, msg)
 	}, s.log.SubLogger(addr))
 
@@ -422,7 +437,16 @@ type ackNoteIDs []dex.Bytes
 
 // wsAckNotes is the handler for the 'acknotes' websocket route. It informs the
 // Core that the user has seen the specified notifications.
-func wsAckNotes(s *Server, _ *wsClient, msg *msgjson.Message) *msgjson.Error {
+func wsAckNotes(s *Server, cl *wsClient, msg *msgjson.Message) *msgjson.Error {
+	if !cl.authed {
+		// Drop silently. An unauthed client sending `acknotes` is
+		// either a stale FE replaying queued requests across a
+		// session change (the bug this gate protects against) or a
+		// curious local probe — neither case warrants returning a
+		// detailed error.
+		s.log.Debugf("ignoring acknotes from unauthed ws client %s", cl.Addr())
+		return nil
+	}
 	ids := make(ackNoteIDs, 0)
 	err := msg.Unmarshal(&ids)
 	if err != nil {

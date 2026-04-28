@@ -69,20 +69,54 @@ function buildWalletMap (assets: Record<number, SupportedAsset>): Record<number,
 }
 
 export const useAuthStore = create<AuthState>((set, get) => {
+  // sessionResetState is the slice of AuthState that represents
+  // "no logged-in user, no per-session cache". Shared by `logout()` and
+  // the user=null branch of applyUserResponse so the two paths stay in
+  // sync — every per-session field that one clears, the other clears too.
+  const sessionResetState = {
+    user: null,
+    authed: false,
+    seedGenTime: 0,
+    assets: {},
+    exchanges: {},
+    walletMap: {},
+    fiatRatesMap: {},
+    mmStatus: null,
+    authFailed: {},
+  } as const
+
+  // clearSessionCaches resets the per-session caches that live in OTHER
+  // stores (notification + action-required). Called alongside a
+  // `set(sessionResetState)` whenever the auth store transitions to a
+  // logged-out state.
+  const clearSessionCaches = () => {
+    const noteStore = useNotificationStore.getState()
+    noteStore.setNotes([])
+    noteStore.setPokes([])
+    useActionRequiredStore.getState().reset()
+  }
+
   // applyUserResponse hydrates the store from a `/api/user` or `/api/login`
   // payload. Returns the hydrated User or null when the response carries no
-  // user (e.g. unauthenticated `/api/user` call on first page load).
+  // user (e.g. unauthenticated `/api/user` call on first page load, or a
+  // reconnect after the server restarted on a wiped DB). The user=null
+  // branch mirrors `logout()` so a server-driven session loss can't leave
+  // stale per-session caches (notes, pokes, exchanges, action-required
+  // queue) sitting in the store. Without this, e.g. the bell's `ackNotes`
+  // would later send IDs from the prior session over the WS, and Core
+  // would log "notification not found" against a fresh DB.
   const applyUserResponse = (resp: UserResponse): User | null => {
     const user = resp.user
     if (!user) {
       set({
+        ...sessionResetState,
         inited: resp.inited,
-        authed: false,
         initialFetchDone: true,
         lang: resp.lang,
         onionUrl: resp.onionUrl,
         companionAppPaired: resp.companionAppPaired,
       })
+      clearSessionCaches()
       return null
     }
     // Clear authFailed entries for any host that is now authed — a stale
@@ -195,26 +229,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (!res.requestSuccessful || !res.ok) {
         return { ok: false, msg: res.msg, code: res.code }
       }
-      set({
-        user: null,
-        authed: false,
-        assets: {},
-        exchanges: {},
-        walletMap: {},
-        fiatRatesMap: {},
-        mmStatus: null,
-        authFailed: {},
-      })
-      // Clear the notification cache too so a subsequent re-login starts
-      // from a clean slate. Without this, stale notes/pokes from the
-      // previous session would briefly remain visible until the next
-      // `login()` overwrites them via `setNotes`/`setPokes`.
-      const noteStore = useNotificationStore.getState()
-      noteStore.setNotes([])
-      noteStore.setPokes([])
-      // Same for the action-required queue: any prompt left over from
-      // the previous session would otherwise stay open across logout.
-      useActionRequiredStore.getState().reset()
+      // Reset the auth slice and the per-session caches in one go so a
+      // subsequent re-login starts from a clean slate — stale notes,
+      // pokes, or action-required prompts from the previous session
+      // would otherwise stay visible until `login()` overwrites them.
+      set(sessionResetState)
+      clearSessionCaches()
       return { ok: true }
     },
 

@@ -119,7 +119,7 @@ func newLink() *tLink {
 		close:     make(chan struct{}, 1),
 	}
 	ipk := dex.IPKey{16, 16, 120, 120 /* ipv6 1010:7878:: */}
-	cl := newWSClient(ipk.String(), conn, func(*msgjson.Message) *msgjson.Error { return nil }, dex.StdOutLogger("ws_TEST", dex.LevelTrace))
+	cl := newWSClient(ipk.String(), conn, true, func(*msgjson.Message) *msgjson.Error { return nil }, dex.StdOutLogger("ws_TEST", dex.LevelTrace))
 	return &tLink{
 		cl:   cl,
 		conn: conn,
@@ -278,7 +278,7 @@ func TestClientMap(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		ipk := dex.IPKey{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255 /* ipv4 */, 127, 0, 0, 1}
-		srv.connect(ctx, conn, ipk.String())
+		srv.connect(ctx, conn, ipk.String(), true)
 		wg.Done()
 	}()
 

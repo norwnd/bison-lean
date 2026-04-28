@@ -82,6 +82,12 @@ export class MessageSocket {
       conn.onclose = (evt: CloseEvent) => {
         clearTimeout(timeout)
         conn = this.connection = null
+        // Drop any queued requests on disconnect. The queue is meant to
+        // bridge the narrow gap between `request()` being called and
+        // the first `onopen`; replaying it across a reconnect can fire
+        // session-sensitive payloads (e.g. `acknotes`) at a server
+        // whose state has since changed (restart, DB wipe, etc.).
+        this.queue = []
         forward('close', null, this.handlers)
         retrys++
         const delay = Math.min(Math.pow(1.25, retrys), 10)
