@@ -135,18 +135,32 @@ export function feeUSD (
 
 // mergePendingAndHistory combines pending txs (live, from
 // `wallet.pendingTxs`) with historical txs (from /api/txhistory) into a
-// single list with pending first. A tx that's still pending locally
-// might also appear in a fetched history page once it's been observed
-// by the wallet - when that happens we keep the pending state (which
-// has the freshest confirms data) and drop the history copy.
+// single list with pending first. Dedupes by tx id across BOTH lists
+// AND within each list, so:
+//   - a tx that's pending locally and also appears in a fetched
+//     history page only renders once (pending wins, since it has the
+//     freshest confirms data)
+//   - any duplicates introduced by chained loadMore calls (the
+//     /api/txhistory endpoint includes the refID tx in its response,
+//     so the first row of each new page is the last row of the
+//     previous one) get squashed.
 export function mergePendingAndHistory (
   pending: WalletTransaction[],
   history: WalletTransaction[]
 ): WalletTransaction[] {
-  if (pending.length === 0) return history
-  const seen = new Set(pending.map(p => p.id))
-  const filteredHistory = history.filter(h => !seen.has(h.id))
-  return [...pending, ...filteredHistory]
+  const seen = new Set<string>()
+  const out: WalletTransaction[] = []
+  for (const tx of pending) {
+    if (seen.has(tx.id)) continue
+    seen.add(tx.id)
+    out.push(tx)
+  }
+  for (const tx of history) {
+    if (seen.has(tx.id)) continue
+    seen.add(tx.id)
+    out.push(tx)
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------

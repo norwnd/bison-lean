@@ -132,13 +132,20 @@ export default function WalletTransactionsPage () {
   // calls (e.g. jumpEarliest's loop) see the freshly-fetched tail
   // without waiting for React's re-render. Returns true iff non-zero
   // new rows were appended.
+  //
+  // /api/txhistory's response includes the refID tx itself (per the
+  // comment in client/asset/eth/txdb.go and the BTC iterator's
+  // it.Seek+Next behavior). Strip it before appending so chained
+  // pagination doesn't introduce a duplicate of the previous page's
+  // last entry.
   const loadMore = useCallback(async (): Promise<boolean> => {
     if (!moreAvailableRef.current) return false
     if (historyRef.current.length === 0) return false
     const refID = historyRef.current[historyRef.current.length - 1].id
     const next = await fetchPage(refID)
     if (!next) return false
-    const newTxs = next.txs ?? []
+    const fetched = next.txs ?? []
+    const newTxs = fetched[0]?.id === refID ? fetched.slice(1) : fetched
     historyRef.current = [...historyRef.current, ...newTxs]
     moreAvailableRef.current = !!next.moreAvailable
     setHistory(historyRef.current)
@@ -278,10 +285,11 @@ export default function WalletTransactionsPage () {
     // Single round trip with n=0 (no-limit). Backend walks from refID
     // to the earliest tx and returns everything in one shot - replaces
     // the previous chained 10-tx walk that needed up to 200 round
-    // trips for long histories.
+    // trips for long histories. Same include-refID strip as loadMore.
     const res = await fetchPage(refID, NO_LIMIT_N)
     if (!res) return
-    const newTxs = res.txs ?? []
+    const fetched = res.txs ?? []
+    const newTxs = fetched[0]?.id === refID ? fetched.slice(1) : fetched
     historyRef.current = [...historyRef.current, ...newTxs]
     moreAvailableRef.current = !!res.moreAvailable
     setHistory(historyRef.current)
