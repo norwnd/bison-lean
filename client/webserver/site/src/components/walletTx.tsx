@@ -199,15 +199,12 @@ export interface TxTableProps {
   bottomSpacerPx?: number
 }
 
-// Per-column absolute pixel widths sized to fit the worst-case
-// content with no extra padding. Pixels (rather than percentages
-// of a 100%-width table) keep the cells tight to their content -
-// previously percentages forced the table to fill the viewport and
-// each column ended up with trailing empty space proportional to
-// its share. Switching to fixed px + dropping width:100% on the
-// table makes it size to sum-of-cols, which is also narrower than
-// the previous min-width-1500 floor so it fits more viewports
-// without horizontal scroll.
+// Per-column minimum pixel widths sized to fit the worst-case
+// content. Each column actually renders at `min + extra/N` where
+// extra is the table's leftover width past the sum of mins and N
+// is the visible column count, so any space the viewport gives us
+// past the content minimums is split evenly across all columns
+// (the ID column doesn't hog its share).
 const COL_PX = {
   type: 130,    // longest TX_TYPE_* label "Revoke Token Approval"
   id: 760,     // 64-char hash + CopyButton + cell padding
@@ -216,6 +213,14 @@ const COL_PX = {
   fee: 70,    // "$12345.67"
   status: 100, // "999/999 confs" / "Confirmed"
 }
+const COL_PX_TOTAL = COL_PX.type + COL_PX.id + COL_PX.age +
+  COL_PX.amount + COL_PX.fee + COL_PX.status
+
+// colWidth distributes the table's leftover width past the minimums
+// equally across N columns. Pure-px calc() to avoid the ch quirks
+// that mis-sized this earlier.
+const colWidth = (minPx: number, n: number) =>
+  `calc(${minPx}px + max(0px, (100% - ${COL_PX_TOTAL}px) / ${n}))`
 
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
@@ -236,30 +241,34 @@ export function TxTable ({
       style={fixedLayout
         ? {
             tableLayout: 'fixed',
-            // No width or min-width: the table sizes itself to the
-            // sum of <col> widths (~1480px). Cells stay tight to
-            // their content (no proportional empty padding from
-            // width:100% stretching), and on viewports >= total
-            // width the table just fits without horizontal scroll.
-            // Below that, the parent's overflowX: auto provides
-            // scrolling.
+            // width: 100% lets the table fill the scroller so the
+            // calc() in <col> resolves `(100% - mins)/N` against
+            // the full viewport - that's what gives every column
+            // an equal share of the leftover space instead of the
+            // ID column hogging it as natural slack.
+            width: '100%',
+            // Floor so narrow viewports don't shrink columns below
+            // their content - the parent's overflowX:auto kicks in
+            // for a horizontal scrollbar instead.
+            minWidth: `${COL_PX_TOTAL}px`,
+            // Cascades to all cells; keeps every entry on one row.
             whiteSpace: 'nowrap'
           }
         : undefined}
     >
-      {/* <colgroup> only kicks in when fixedLayout=true. Absolute
-          px widths keep columns tight to their content; the
-          embedded section uses showID=false (skipping fixedLayout
-          via WalletDetail's TransactionsSection) so it keeps auto
-          layout. */}
+      {/* <colgroup> only kicks in when fixedLayout=true. Each
+          column gets its content min plus an equal share of any
+          extra table width via calc(). The embedded section uses
+          showID=false (skipping fixedLayout via WalletDetail's
+          TransactionsSection) so it keeps auto layout. */}
       {fixedLayout && (
         <colgroup>
-          <col style={{ width: `${COL_PX.type}px` }} />
-          {showID && <col style={{ width: `${COL_PX.id}px` }} />}
-          <col style={{ width: `${COL_PX.age}px` }} />
-          <col style={{ width: `${COL_PX.amount}px` }} />
-          <col style={{ width: `${COL_PX.fee}px` }} />
-          <col style={{ width: `${COL_PX.status}px` }} />
+          <col style={{ width: colWidth(COL_PX.type, colCount) }} />
+          {showID && <col style={{ width: colWidth(COL_PX.id, colCount) }} />}
+          <col style={{ width: colWidth(COL_PX.age, colCount) }} />
+          <col style={{ width: colWidth(COL_PX.amount, colCount) }} />
+          <col style={{ width: colWidth(COL_PX.fee, colCount) }} />
+          <col style={{ width: colWidth(COL_PX.status, colCount) }} />
         </colgroup>
       )}
       <thead className="fs15">

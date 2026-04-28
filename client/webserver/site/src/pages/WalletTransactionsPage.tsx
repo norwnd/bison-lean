@@ -412,7 +412,7 @@ export default function WalletTransactionsPage () {
           onClick={jumpLatest}
           disabled={merged.length === 0}
         >
-          ← {t('Latest')}
+          ← {t('Recent')}
         </button>
         <button
           type="button"
@@ -436,7 +436,7 @@ export default function WalletTransactionsPage () {
           onClick={jumpEarliest}
           disabled={!moreAvailable && history.length === 0}
         >
-          {t('Earliest')} →
+          {t('Oldest')} →
         </button>
       </div>
 
