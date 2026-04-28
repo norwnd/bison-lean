@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useBotConfigState, useBotConfigDispatch } from './utils/BotConfig'
 import PlacementsChartWrapper from './PlacementsChartWrapper'
 import { NumberInput, PanelHeader } from './FormComponents'
-import Tooltip from './Tooltip'
+import Tooltip from '../common/Tooltip'
 import { useBootstrapBreakpoints } from '../../hooks/usePageSizeBreakpoints'
 
 const LevelsPerSideSelector: React.FC = () => {

@@ -19,7 +19,7 @@ import {
   fetchRoundTripFeesAndLimits,
   projectedAllocations
 } from './utils/BotConfig'
-import Tooltip from './Tooltip'
+import Tooltip from '../common/Tooltip'
 import { PanelHeader, NumberInput } from './FormComponents'
 import { useMMSettingsSetError, useMMSettingsSetLoading } from './MMSettings'
 import { formatCoinAtom, logoPath } from '../../hooks/useFormatters'

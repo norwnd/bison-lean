@@ -16,7 +16,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useBotConfigState, useBotConfigDispatch } from './utils/BotConfig'
-import Tooltip from './Tooltip'
+import Tooltip from '../common/Tooltip'
 import { requiredDexAssets, type AllocationDetail } from './utils/AllocationUtil'
 import { PanelHeader, NumberInput } from './FormComponents'
 import { CEXDisplayInfos } from './cexDisplayInfo'

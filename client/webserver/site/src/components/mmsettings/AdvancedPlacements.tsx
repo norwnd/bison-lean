@@ -15,7 +15,7 @@ import { useBotConfigState, useBotConfigDispatch } from './utils/BotConfig'
 import PlacementsChartWrapper from './PlacementsChartWrapper'
 import { PlacementsPanelHeader } from './QuickPlacements'
 import { NumberInput, IconButton, ErrorMessage } from './FormComponents'
-import Tooltip from './Tooltip'
+import Tooltip from '../common/Tooltip'
 
 type UnifiedPlacement = OrderPlacement | ArbMarketMakingPlacement
 

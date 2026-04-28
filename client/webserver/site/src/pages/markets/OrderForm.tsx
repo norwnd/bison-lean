@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../../services/api'
 import { orderDisclaimerAckedLK, fetchLocal, storeLocal } from '../../services/state'
 import { FormOverlay } from '../../components/common/FormOverlay'
-import Tooltip from '../../components/mmsettings/Tooltip'
+import Tooltip from '../../components/common/Tooltip'
 import {
   formatRateAtomToRateStep,
   formatCoinAtomToLotSizeBaseCurrency,

@@ -1,10 +1,7 @@
-// Portal-based tooltip ported from vanilla
-// `mmsettings/components/Tooltip.tsx`.
-//
-// Wraps a single child element, attaches hover listeners, and portals
-// the tooltip body into `document.body` so it is not clipped by any
-// overflow: hidden ancestor (mmsettings has several). Position is
-// computed in viewport coordinates at hover time.
+// Portal-based tooltip. Wraps a single child element, attaches hover and
+// focus listeners, and portals the tooltip body into `document.body` so it
+// is not clipped by any `overflow: hidden` ancestor. Position is computed
+// in viewport coordinates at hover time.
 
 import React from 'react'
 import { createPortal } from 'react-dom'
@@ -12,9 +9,13 @@ import { createPortal } from 'react-dom'
 interface TooltipProps {
   content: string
   children: React.ReactElement
+  // CSS cursor applied to the wrapped child while content is non-empty.
+  // Defaults to 'help'. Pass an explicit value (e.g. 'pointer', 'inherit')
+  // when the wrapped element already implies a different cursor.
+  cursor?: string
 }
 
-const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
+const Tooltip: React.FC<TooltipProps> = ({ content, children, cursor = 'help' }) => {
   const [isVisible, setIsVisible] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
   const triggerRef = React.useRef<HTMLElement>(null)
@@ -53,7 +54,7 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
     onFocus: handleShow,
     onBlur: handleHide,
     style: content
-      ? { cursor: 'help', ...(children.props?.style || {}) }
+      ? { cursor, ...(children.props?.style || {}) }
       : children.props?.style
   })
 

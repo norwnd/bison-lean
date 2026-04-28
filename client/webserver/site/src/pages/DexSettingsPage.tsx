@@ -12,6 +12,7 @@ import { WalletWaitForm } from '../components/common/WalletWaitForm'
 import { ConfirmRegistrationForm } from '../components/common/ConfirmRegistrationForm'
 import { ReputationMeter } from '../components/common/ReputationMeter'
 import { SuccessCheckmarkModal } from '../components/common/SuccessCheckmarkModal'
+import Tooltip from '../components/common/Tooltip'
 import { strongTier } from '../components/AccountUtils'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import { ConnectionStatus, PrepaidBondID } from '../stores/types'
@@ -442,22 +443,30 @@ export default function DexSettingsPage () {
       <div className="mb-4">
         <h5>{t('Reputation')}</h5>
         <div className="d-flex flex-wrap gap-4 mb-2">
-          <div>
-            <span className="text-secondary fs14">{t('TARGET_TIER')}: </span>
-            <strong>{targetTier}</strong>
-          </div>
-          <div>
-            <span className="text-secondary fs14">{t('EFFECTIVE_TIER')}: </span>
-            <strong>{effectiveTier}</strong>
-          </div>
-          <div>
-            <span className="text-secondary fs14">{t('Penalties')}: </span>
-            <strong>{penalties}</strong>
-          </div>
-          <div>
-            <span className="text-secondary fs14">{t('BONDS_PENDING_REFUND')}: </span>
-            <strong>{expiredBondsCount}</strong>
-          </div>
+          <Tooltip content={t('TARGET_TIER_TOOLTIP')}>
+            <div>
+              <span className="text-secondary fs14">{t('TARGET_TIER')}: </span>
+              <strong>{targetTier}</strong>
+            </div>
+          </Tooltip>
+          <Tooltip content={t('EFFECTIVE_TIER_TOOLTIP')}>
+            <div>
+              <span className="text-secondary fs14">{t('EFFECTIVE_TIER')}: </span>
+              <strong>{effectiveTier}</strong>
+            </div>
+          </Tooltip>
+          <Tooltip content={t('PENALTIES_TOOLTIP')}>
+            <div>
+              <span className="text-secondary fs14">{t('PENALTIES')}: </span>
+              <strong>{penalties}</strong>
+            </div>
+          </Tooltip>
+          <Tooltip content={t('BONDS_PENDING_REFUND_TOOLTIP')}>
+            <div>
+              <span className="text-secondary fs14">{t('BONDS_PENDING_REFUND')}: </span>
+              <strong>{expiredBondsCount}</strong>
+            </div>
+          </Tooltip>
         </div>
         <ReputationMeter host={host} />
       </div>
