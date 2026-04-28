@@ -3,6 +3,7 @@
 
   "dynamicCallSites": {
     "src/components/OrderStages.ts": 1,
+    "src/components/notifications/actionRequiredUtils.ts": 1,
     "src/components/walletTx.tsx": 1,
     "src/pages/OrderPage.tsx": 1,
     "src/pages/OrdersPage.tsx": 1,
@@ -62,6 +63,29 @@
       "TX_TYPE_MIX",
       "TX_TYPE_BRIDGE_INITIATION",
       "TX_TYPE_BRIDGE_COMPLETION"
+    ],
+    "actionRequiredUtils_TX_TYPE_KEYS": [
+      "TX_TYPE_UNKNOWN",
+      "TX_TYPE_SEND",
+      "TX_TYPE_RECEIVE",
+      "TX_TYPE_SWAP",
+      "TX_TYPE_REDEEM",
+      "TX_TYPE_REFUND",
+      "TX_TYPE_SPLIT",
+      "TX_TYPE_CREATE_BOND",
+      "TX_TYPE_REDEEM_BOND",
+      "TX_TYPE_APPROVE_TOKEN",
+      "TX_TYPE_ACCELERATION",
+      "TX_TYPE_SELF_SEND",
+      "TX_TYPE_REVOKE_TOKEN_APPROVAL",
+      "TX_TYPE_TICKET_PURCHASE",
+      "TX_TYPE_TICKET_VOTE",
+      "TX_TYPE_TICKET_REVOCATION",
+      "TX_TYPE_SWAP_OR_SEND",
+      "TX_TYPE_MIX",
+      "TX_TYPE_INITIATE_BRIDGE",
+      "TX_TYPE_COMPLETE_BRIDGE",
+      "TX_TYPE_DEPLOY_CONTRACT"
     ],
     "WalletsPage_TICKET_STATUS_KEYS": [
       "TICKET_STATUS_UNKNOWN",

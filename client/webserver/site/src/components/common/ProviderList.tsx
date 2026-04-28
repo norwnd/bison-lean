@@ -180,7 +180,7 @@ export function ProviderList ({ assetID, value, onChange, disabled, live = false
                 className="btn btn-sm btn-link text-danger p-0"
                 onClick={() => handleDelete(p.url)}
                 disabled={disabled}
-                title={t('DELETE')}
+                title={t('Delete')}
               >
                 ✕
               </button>
