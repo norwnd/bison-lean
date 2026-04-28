@@ -17,6 +17,7 @@ const LoginPage = lazy(() => import('../pages/LoginPage'))
 const InitPage = lazy(() => import('../pages/InitPage'))
 const MarketsPage = lazy(() => import('../pages/markets'))
 const WalletsPage = lazy(() => import('../pages/WalletsPage'))
+const WalletTransactionsPage = lazy(() => import('../pages/WalletTransactionsPage'))
 const OrdersPage = lazy(() => import('../pages/OrdersPage'))
 const OrderPage = lazy(() => import('../pages/OrderPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <IndexRedirect /> },
           { path: ROUTES.WALLETS, element: <PageSuspense><WalletsPage /></PageSuspense> },
+          { path: ROUTES.WALLET_TRANSACTIONS, element: <PageSuspense><WalletTransactionsPage /></PageSuspense> },
           { path: ROUTES.SETTINGS, element: <PageSuspense><SettingsPage /></PageSuspense> },
           { path: ROUTES.PROPOSALS, element: <PageSuspense><ProposalsPage /></PageSuspense> },
           { path: ROUTES.PROPOSAL, element: <PageSuspense><ProposalPage /></PageSuspense> },

@@ -3,6 +3,7 @@ export const ROUTES = {
   INIT: '/init',
   MARKETS: '/markets',
   WALLETS: '/wallets',
+  WALLET_TRANSACTIONS: '/wallets/:assetID/transactions',
   ORDERS: '/orders',
   ORDER: '/order/:oid',
   SETTINGS: '/settings',
@@ -25,6 +26,10 @@ export function dexSettingsPath (host: string): string {
 
 export function proposalPath (token: string): string {
   return `/proposal/${token}`
+}
+
+export function walletTransactionsPath (assetID: number): string {
+  return `/wallets/${assetID}/transactions`
 }
 
 // T18#4: MMLogsPage's `?returnPage=...` query param identifies where

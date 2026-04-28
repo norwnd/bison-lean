@@ -24,11 +24,15 @@ import { explorerURL } from '../components/CoinExplorers'
 import { filled, haveActiveOrders } from '../components/AccountUtils'
 import BridgingPopup from '../components/bridging/BridgingPopup'
 import { allBridgePaths } from '../components/bridging/bridgeApi'
-import { ROUTES } from '../router/routes'
+import { ROUTES, walletTransactionsPath } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
+import {
+  TX_HISTORY_PAGE_SIZE, ageSince, mergePendingAndHistory,
+  TxTable, TxDetailModal
+} from '../components/walletTx'
 import type {
   SupportedAsset, WalletState, WalletDefinition,
-  WalletTransaction, TxHistoryResult, Order, UnitInfo,
+  WalletTransaction, Order, UnitInfo,
   CoreNote, TicketStakingStatus, VotingServiceProvider,
   Exchange, Spot,
   WalletPeer, WalletRestoration,
@@ -70,82 +74,14 @@ interface PendingForce {
   req: { assetID: number; force?: boolean }
 }
 
-// T18#6: previously declared `DCR_ASSET_ID = 42` locally here,
-// duplicating the shared `DCRAssetID` constant from stores/types.
-// Now imported from there -- single source of truth for the DCR
-// BIP-44 coin type.
-const TX_HISTORY_PAGE_SIZE = 10
-
 // Sidebar (asset list column) width in px. Single source of truth so
 // the holdings "Total: $X" block in the global header stays exactly
 // aligned with the column edges below it.
 const SIDEBAR_WIDTH = 240
 
-const txTypeUnknown = 0
-const txTypeSend = 1
-const txTypeReceive = 2
-const txTypeSwap = 3
-const txTypeRedeem = 4
-const txTypeRefund = 5
-const txTypeSplit = 6
-const txTypeCreateBond = 7
-const txTypeRedeemBond = 8
-const txTypeApproveToken = 9
-const txTypeAcceleration = 10
-const txTypeSelfSend = 11
-const txTypeRevokeTokenApproval = 12
-const txTypeTicketPurchase = 13
-const txTypeTicketVote = 14
-const txTypeTicketRevocation = 15
-const txTypeSwapOrSend = 16
-const txTypeMixing = 17
-const txTypeBridgeInitiation = 18
-const txTypeBridgeCompletion = 19
-
-const positiveTxTypes = [
-  txTypeReceive, txTypeRedeem, txTypeRefund, txTypeRedeemBond,
-  txTypeTicketVote, txTypeTicketRevocation, txTypeBridgeCompletion
-]
-const negativeTxTypes = [
-  txTypeSend, txTypeSwap, txTypeCreateBond, txTypeTicketPurchase,
-  txTypeSwapOrSend, txTypeBridgeInitiation
-]
-const noAmtTxTypes = [
-  txTypeSplit, txTypeApproveToken, txTypeAcceleration,
-  txTypeRevokeTokenApproval
-]
-
-// WP-10: tx-type i18n keys. Mirrors vanilla `wallets.ts` L154-176
-// `txTypeTranslationKeys` array indexed by tx type, then resolved
-// via `intl.prep(txTypeTranslationKeys[txType])`. The previous
-// hardcoded English `TX_TYPE_LABELS` would never translate.
-const TX_TYPE_KEYS: Record<number, string> = {
-  [txTypeUnknown]: 'TX_TYPE_UNKNOWN',
-  [txTypeSend]: 'TX_TYPE_SEND',
-  [txTypeReceive]: 'TX_TYPE_RECEIVE',
-  [txTypeSwap]: 'TX_TYPE_SWAP',
-  [txTypeRedeem]: 'TX_TYPE_REDEEM',
-  [txTypeRefund]: 'TX_TYPE_REFUND',
-  [txTypeSplit]: 'TX_TYPE_SPLIT',
-  [txTypeCreateBond]: 'TX_TYPE_CREATE_BOND',
-  [txTypeRedeemBond]: 'TX_TYPE_REDEEM_BOND',
-  [txTypeApproveToken]: 'TX_TYPE_APPROVE_TOKEN',
-  [txTypeAcceleration]: 'TX_TYPE_ACCELERATION',
-  [txTypeSelfSend]: 'TX_TYPE_SELF_TRANSFER',
-  [txTypeRevokeTokenApproval]: 'TX_TYPE_REVOKE_TOKEN_APPROVAL',
-  [txTypeTicketPurchase]: 'TX_TYPE_TICKET_PURCHASE',
-  [txTypeTicketVote]: 'TX_TYPE_TICKET_VOTE',
-  [txTypeTicketRevocation]: 'TX_TYPE_TICKET_REVOCATION',
-  [txTypeSwapOrSend]: 'TX_TYPE_SWAP_OR_SEND',
-  [txTypeMixing]: 'TX_TYPE_MIX',
-  [txTypeBridgeInitiation]: 'TX_TYPE_BRIDGE_INITIATION',
-  [txTypeBridgeCompletion]: 'TX_TYPE_BRIDGE_COMPLETION',
-}
-
-function txTypeLabel (t: (k: string) => string, txType: number): string {
-  const key = TX_TYPE_KEYS[txType] ?? 'TX_TYPE_UNKNOWN'
-  return t(key)
-}
+// Tx-type constants, label/sign helpers and TX_HISTORY_PAGE_SIZE live
+// in components/walletTx so they can be reused by the dedicated
+// /wallets/:assetID/transactions page.
 
 // WP-13: ticket-status i18n keys, indexed by the numeric ticket
 // status returned in `Ticket.status`. Mirrors vanilla `wallets.ts`
@@ -168,36 +104,6 @@ const TICKET_STATUS_KEYS = [
 // mempool" passed to `/api/ticketpage` on the first call.
 const TICKET_PAGE_SIZE = 10
 const SCAN_START_MEMPOOL = -1
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function ageSince (ms: number): string {
-  let dur = Date.now() - ms
-  if (dur < 1000) return '0s'
-  const units: [number, string][] = [
-    [31536000000, 'y'], [2592000000, 'mo'], [86400000, 'd'],
-    [3600000, 'h'], [60000, 'min'], [1000, 's']
-  ]
-  let chunks = 0
-  let result = ''
-  for (const [divisor, label] of units) {
-    const n = Math.floor(dur / divisor)
-    dur %= divisor
-    if (n === 0 && chunks === 0) continue
-    result += `${n}${label} `
-    chunks++
-    if (chunks >= 2) break
-  }
-  return result.trim()
-}
-
-function txSignAndClass (txType: number): [string, string] {
-  if (positiveTxTypes.includes(txType)) return ['+', 'text-success']
-  if (negativeTxTypes.includes(txType)) return ['-', 'text-danger']
-  return ['', '']
-}
 
 // Returns null when no asset has a usable fiat rate (so the caller can
 // render a placeholder like "—" instead of misleading "$0"). Zero is
@@ -534,10 +440,11 @@ export default function WalletsPage () {
   // dispatched `walletnote` route='tipChange' and route='transaction'
   // for per-asset sync-height updates and tx-history refresh. Those
   // update paths haven't been ported (sync height is currently
-  // refreshed via `walletsync` notes alone, and TxHistoryView fetches
-  // its own pages on mount and doesn't auto-refresh on tx notes). If
-  // either becomes a visible problem, the right fix is a typed merge
-  // in useMarketStore (mirroring `handleBalanceNote` /
+  // refreshed via `walletsync` notes alone, and the embedded
+  // TransactionsSection / WalletTransactionsPage fetch their pages
+  // on mount and don't auto-refresh on tx notes). If either becomes
+  // a visible problem, the right fix is a typed merge in
+  // useMarketStore (mirroring `handleBalanceNote` /
   // `handleWalletStateNote`), not a parent-level forceReRender.
   // The DCR staking flow has its own useNotifications hook below
   // (route='ticketPurchaseUpdate' / 'tipChange') and remains live.
@@ -906,6 +813,7 @@ export default function WalletsPage () {
                       fiatRatesMap={fiatRatesMap}
                       setActiveForm={setActiveForm}
                       hasBridge={hasBridge}
+                      net={net}
                     />
                   )}
                   {!selectedWallet && creatingTokenIDs.has(selectedAsset.id) && (
@@ -935,10 +843,9 @@ export default function WalletsPage () {
                   {selectedWallet && (
                     <RightColumn
                       asset={selectedAsset}
-                      wallet={selectedWallet}
                       assets={assets}
+                      fiatRatesMap={fiatRatesMap}
                       exchanges={exchanges}
-                      net={net}
                     />
                   )}
                 </div>
@@ -972,17 +879,9 @@ export default function WalletsPage () {
         </div>
       </FormOverlay>
 
-      <FormOverlay bare show={activeForm === 'txHistory'} onClose={() => setActiveForm(null)}>
-        <div className="bg-body border rounded p-4" style={{ minWidth: 500, maxHeight: '80vh', overflowY: 'auto' }}>
-          {selectedAssetID !== null && (
-            <TxHistoryView
-              assetID={selectedAssetID}
-              assets={assets}
-              net={net}
-            />
-          )}
-        </div>
-      </FormOverlay>
+      {/* The old txHistory FormOverlay was deleted: tx browsing now
+          lives at /wallets/:assetID/transactions, with the embedded
+          TransactionsSection providing a 10-row quick view. */}
 
       <FormOverlay bare show={activeForm === 'config'} onClose={() => setActiveForm(null)}>
         <div className="bg-body border rounded p-4" style={{ minWidth: 380 }}>
@@ -1483,11 +1382,15 @@ interface WalletDetailProps {
   // parent from the global bridge topology + the selected ticker's
   // network siblings.
   hasBridge: boolean
+  // Net is needed by the embedded Transactions section to build
+  // explorer links for tx ids and to round-trip into the per-tx
+  // detail modal.
+  net: number
 }
 
 function WalletDetail ({
   asset, wallet, assets, fiatRatesMap,
-  setActiveForm, hasBridge
+  setActiveForm, hasBridge, net
 }: WalletDetailProps) {
   const { t } = useTranslation()
   const bal = wallet.balance
@@ -1674,19 +1577,7 @@ function WalletDetail ({
         </div>
       </section>
 
-      {/* ---- Exchange Rate ---- */}
-      {fiatRate > 0 && (
-        <section className="flex-stretch-column">
-          <div className="flex-center py-2 fs15 demi">{t('EXCHANGE_RATE')}</div>
-          <div className="mx-2 border-bottom"></div>
-          <div className="flex-grow-1 flex-center py-2">
-            {/* Single span keeps the $ and digits on the same baseline
-                / font size — splitting them caused a visible
-                misalignment in flex centering. */}
-            <span className="fs22 demi lh1">${formatFiat(fiatRate)}</span>
-          </div>
-        </section>
-      )}
+      {/* Exchange Rate moved to top of RightColumn (was here). */}
 
       {/* ---- Transaction Costs ---- */}
       {wallet.feeState && (() => {
@@ -1769,11 +1660,14 @@ function WalletDetail ({
         <MixingToggle assetID={asset.id} />
       )}
 
-      {/* ---- Transaction History link ---- */}
-      <div className="flex-center p-2 pointer hoverbg border-top" onClick={() => setActiveForm('txHistory')}>
-        <span className="ico-textfile me-1"></span>
-        <span className="fs18">{t('TRANSACTION_HISTORY')}</span>
-      </div>
+      {/* ---- Transactions (merged: pending first, then history) ---- */}
+      <TransactionsSection
+        asset={asset}
+        wallet={wallet}
+        parentAsset={parentAsset}
+        fiatRatesMap={fiatRatesMap}
+        net={net}
+      />
 
       {/* Sync status */}
       {!wallet.synced && wallet.syncStatus && (
@@ -1792,19 +1686,16 @@ function WalletDetail ({
 
 interface RightColumnProps {
   asset: SupportedAsset
-  wallet: WalletState
   assets: Record<number, SupportedAsset>
+  fiatRatesMap: Record<number, number>
   exchanges: Record<string, Exchange>
-  net: number
 }
 
 function RightColumn ({
-  asset, wallet, assets, exchanges, net
+  asset, assets, fiatRatesMap, exchanges
 }: RightColumnProps) {
-  // Pending transactions
-  const pendingTxs = wallet.pendingTxs
-    ? Object.values(wallet.pendingTxs)
-    : []
+  const { t } = useTranslation()
+  const fiatRate = fiatRatesMap[asset.id] ?? 0
 
   // Markets for this asset
   const marketRows = useMemo(
@@ -1814,13 +1705,19 @@ function RightColumn ({
 
   return (
     <div>
-      {/* ---- Pending Transactions ---- */}
-      <PendingTransactions
-        txs={pendingTxs}
-        ui={asset.unitInfo}
-        assetID={asset.id}
-        net={net}
-      />
+      {/* ---- Exchange Rate ---- */}
+      {fiatRate > 0 && (
+        <section className="flex-stretch-column">
+          <div className="flex-center py-2 fs15 demi">{t('EXCHANGE_RATE')}</div>
+          <div className="mx-2 border-bottom"></div>
+          <div className="flex-grow-1 flex-center py-2">
+            {/* Single span keeps the $ and digits on the same baseline
+                / font size — splitting them caused a visible
+                misalignment in flex centering. */}
+            <span className="fs22 demi lh1">${formatFiat(fiatRate)}</span>
+          </div>
+        </section>
+      )}
 
       {/* ---- Markets ---- */}
       <MarketsSection
@@ -1839,81 +1736,102 @@ function RightColumn ({
 }
 
 // ---------------------------------------------------------------------------
-// PendingTransactions
+// TransactionsSection — embedded /wallets section (left column).
+//
+// Replaces the old "Transaction History" link + standalone Pending
+// Transactions section. Shows up to TX_HISTORY_PAGE_SIZE entries:
+// pending txs first (deduped), then the latest historical page.
+// Click a row → TxDetailModal. "View All" → /wallets/:id/transactions.
 // ---------------------------------------------------------------------------
 
-function PendingTransactions ({ txs, ui, assetID, net }: {
-  txs: WalletTransaction[]
-  ui: UnitInfo
-  assetID: number
+function TransactionsSection ({
+  asset, wallet, parentAsset, fiatRatesMap, net
+}: {
+  asset: SupportedAsset
+  wallet: WalletState
+  parentAsset: SupportedAsset | null
+  fiatRatesMap: Record<number, number>
   net: number
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(true)
+  const [history, setHistory] = useState<WalletTransaction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [detailTx, setDetailTx] = useState<WalletTransaction | null>(null)
+
+  // Snapshot pending txs from the live wallet state. Updated on every
+  // re-render when the parent passes a fresh `wallet` ref (driven by
+  // useMarketStore notes — see CL-ASSETS-STALE-MEMO).
+  const pendingTxs = useMemo(
+    () => wallet.pendingTxs ? Object.values(wallet.pendingTxs) : [],
+    [wallet.pendingTxs]
+  )
+
+  // Fetch the latest history page on mount + when assetID changes.
+  // We don't auto-refetch on `walletnote transaction` notes: that
+  // sync path isn't wired in the React port yet (see top-of-file
+  // comment) and the user can always navigate to the full page for
+  // an authoritative view.
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      const res = await postJSON('/api/txhistory', {
+        assetID: asset.id,
+        n: TX_HISTORY_PAGE_SIZE,
+        past: true
+      })
+      if (cancelled) return
+      setLoading(false)
+      if (!checkResponse(res)) return
+      setHistory(res.txs ?? [])
+    }
+    load()
+    return () => { cancelled = true }
+  }, [asset.id])
+
+  const merged = useMemo(
+    () => mergePendingAndHistory(pendingTxs, history).slice(0, TX_HISTORY_PAGE_SIZE),
+    [pendingTxs, history]
+  )
 
   return (
-    <section>
-      <div className="flex-center py-3 fs18">
-        {txs.length === 0
-          ? <span>{t('NO_PENDING_TRANSACTIONS')}</span>
-          : <span>
-              <span>{txs.length}</span>{' '}
-              <span>{t('PENDING_TRANSACTIONS')}</span>{' '}
-              <span
-                className="p-1 pointer hoverbg fs11 ico-arrowdown"
-                onClick={() => setExpanded(!expanded)}
-              ></span>
-            </span>}
+    <section className="border-top">
+      <div className="d-flex align-items-center justify-content-between m-3">
+        <h4 className="mb-0">{t('Transactions')}</h4>
+        <Link to={walletTransactionsPath(asset.id)} className="fs16">
+          {t('VIEW_ALL')}
+        </Link>
       </div>
-      {expanded && txs.length > 0 && (
-        <div className="px-2 pb-3">
-          <table className="compact row-border border-top">
-            <thead className="unbold fs15">
-              <tr>
-                <th>{t('Type')}</th>
-                <th className="d-none d-sm-table-cell">{t('ID')}</th>
-                <th>{t('Age')}</th>
-                <th className="text-end">{t('Amount')}</th>
-                <th>{t('Confirms')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {txs.map(tx => {
-                const [sign, cls] = txSignAndClass(tx.type)
-                // WP-10: locale-aware tx type label (was hardcoded English).
-                const label = txTypeLabel(t, tx.type)
-                const url = explorerURL(assetID, tx.id, net)
-                return (
-                  <tr key={tx.id}>
-                    <td>{label}</td>
-                    <td className="d-none d-sm-table-cell">
-                      {/* WP-11: copy-to-clipboard button on transaction ID,
-                          mirroring vanilla `setupCopyBtn()` next to TX
-                          IDs in the wallets page. Uses the shared
-                          CopyButton from B-L9. */}
-                      <span className="d-inline-flex align-items-center gap-1">
-                        {url
-                          ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink">{tx.id.slice(0, 16)}...</a>
-                          : <span>{tx.id.slice(0, 16)}...</span>}
-                        <CopyButton text={tx.id} />
-                      </span>
-                    </td>
-                    <td>{ageSince(tx.timestamp * 1000)}</td>
-                    <td className={`text-end ${cls}`}>
-                      {noAmtTxTypes.includes(tx.type)
-                        ? '-'
-                        : `${sign}${formatCoinAtom(tx.amount, ui)}`}
-                    </td>
-                    <td>{tx.confirms
-                      ? `${tx.confirms.current}/${tx.confirms.target}`
-                      : '-'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+
+      {loading && merged.length === 0 && (
+        <div className="text-center py-3">
+          <span className="ico-spinner spinner"></span>
         </div>
       )}
+
+      {!loading && merged.length === 0 && (
+        <div className="flex-center p-2 mb-3 mx-3 fs18 border">{t('NO_TRANSACTIONS')}</div>
+      )}
+
+      {merged.length > 0 && (
+        <TxTable
+          txs={merged}
+          asset={asset}
+          parentAsset={parentAsset}
+          fiatRatesMap={fiatRatesMap}
+          net={net}
+          onRowClick={setDetailTx}
+        />
+      )}
+
+      <TxDetailModal
+        tx={detailTx}
+        asset={asset}
+        parentAsset={parentAsset}
+        fiatRatesMap={fiatRatesMap}
+        net={net}
+        onClose={() => setDetailTx(null)}
+      />
     </section>
   )
 }
@@ -2403,229 +2321,10 @@ function SendForm ({ asset, wallet, assets, fiatRatesMap, onSuccess }: SendFormP
 }
 
 // ---------------------------------------------------------------------------
-// TxHistoryView
+// TxHistoryView (modal): replaced by the dedicated /wallets/:assetID
+// /transactions page. The embedded TransactionsSection above plus the
+// new full page now cover both "quick peek" and "browse all" use cases.
 // ---------------------------------------------------------------------------
-
-function TxHistoryView ({ assetID, assets, net }: {
-  assetID: number
-  assets: Record<number, SupportedAsset>
-  net: number
-}) {
-  const { t } = useTranslation()
-  const asset = assets[assetID]
-  const ui = asset?.unitInfo
-  const [pages, setPages] = useState<TxHistoryResult[]>([])
-  const [currentPage, setCurrentPage] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [detailTx, setDetailTx] = useState<WalletTransaction | null>(null)
-
-  const fetchPage = useCallback(async (refID?: string) => {
-    setLoading(true)
-    const res = await postJSON('/api/txhistory', {
-      assetID,
-      n: TX_HISTORY_PAGE_SIZE,
-      refID,
-      past: true
-    })
-    setLoading(false)
-    if (!checkResponse(res)) return null
-    return res as TxHistoryResult
-  }, [assetID])
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      const first = await fetchPage()
-      if (cancelled || !first) return
-      setPages([first])
-      setCurrentPage(0)
-    }
-    load()
-    return () => { cancelled = true }
-  }, [fetchPage])
-
-  const goNext = useCallback(async () => {
-    const nextIdx = currentPage + 1
-    if (pages[nextIdx]) {
-      setCurrentPage(nextIdx)
-      return
-    }
-    const lastPage = pages[pages.length - 1]
-    if (!lastPage?.txs?.length) return
-    const refID = lastPage.txs[lastPage.txs.length - 1].id
-    const nextPage = await fetchPage(refID)
-    if (!nextPage) return
-    setPages(prev => [...prev, nextPage])
-    setCurrentPage(nextIdx)
-  }, [currentPage, fetchPage, pages])
-
-  const goPrev = useCallback(() => {
-    if (currentPage > 0) setCurrentPage(currentPage - 1)
-  }, [currentPage])
-
-  const txPage = pages[currentPage]
-  const txs = txPage?.txs ?? []
-
-  if (!ui) return null
-
-  if (detailTx) {
-    const url = explorerURL(assetID, detailTx.id, net)
-    return (
-      <div>
-        <div className="d-flex align-items-center mb-3">
-          <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setDetailTx(null)}>
-            {t('Back')}
-          </button>
-          <span className="fs18">{t('TRANSACTION_DETAILS')}</span>
-        </div>
-
-        <div className="mb-2 fs14">
-          <span className="text-secondary">{t('Type')}:</span> {txTypeLabel(t, detailTx.type)}
-        </div>
-        <div className="mb-2 fs14">
-          <span className="text-secondary">{t('ID')}:</span>{' '}
-          <code className="text-break fs12">{detailTx.id}</code>
-          {/* WP-11: also offer copy on the detail view's full id. */}
-          <CopyButton text={detailTx.id} />
-        </div>
-        {!noAmtTxTypes.includes(detailTx.type) && (
-          <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Amount')}:</span>{' '}
-            {formatCoinAtom(detailTx.amount, ui)}
-          </div>
-        )}
-        {detailTx.fees > 0 && (
-          <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Fees')}:</span>{' '}
-            {formatCoinAtom(detailTx.fees, ui)}
-          </div>
-        )}
-        {detailTx.recipient && (
-          <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Recipient')}:</span>{' '}
-            <code className="text-break fs12">{detailTx.recipient}</code>
-          </div>
-        )}
-        <div className="mb-2 fs14">
-          <span className="text-secondary">{t('Time')}:</span>{' '}
-          {detailTx.timestamp > 0
-            ? new Date(detailTx.timestamp * 1000).toLocaleString()
-            : t('Pending')}
-        </div>
-        {detailTx.blockNumber > 0 && (
-          <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Block')}:</span>{' '}
-            {detailTx.blockNumber}
-          </div>
-        )}
-        {detailTx.confirms && (
-          <div className="mb-2 fs14">
-            <span className="text-secondary">{t('Confirmations')}:</span>{' '}
-            {detailTx.confirms.current}/{detailTx.confirms.target}
-          </div>
-        )}
-        {detailTx.bondInfo && (
-          <>
-            <div className="mb-2 fs14">
-              <span className="text-secondary">{t('BOND_ID')}:</span>{' '}
-              <code className="text-break fs12">{detailTx.bondInfo.bondID}</code>
-            </div>
-            <div className="mb-2 fs14">
-              <span className="text-secondary">{t('LOCK_TIME')}:</span>{' '}
-              {new Date(detailTx.bondInfo.lockTime * 1000).toLocaleString()}
-            </div>
-          </>
-        )}
-        {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary mt-2">
-            {t('VIEW_IN_EXPLORER')}
-          </a>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="fs18 mb-3">{t('TRANSACTION_HISTORY')}</div>
-
-      {loading && txs.length === 0 && (
-        <div className="text-center py-3">
-          <span className="spinner-border spinner-border-sm" />
-        </div>
-      )}
-
-      {!loading && txs.length === 0 && (
-        <div className="text-center py-3 text-secondary fs14">{t('NO_TRANSACTIONS')}</div>
-      )}
-
-      {txs.length > 0 && (
-        <table className="table table-sm table-hover fs12 mb-2">
-          <thead>
-            <tr>
-              <th>{t('Type')}</th>
-              <th>{t('Amount')}</th>
-              <th>{t('Fees')}</th>
-              <th>{t('Age')}</th>
-              <th>{t('Confs')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {txs.map(tx => {
-              const [sign, cls] = txSignAndClass(tx.type)
-              return (
-                <tr
-                  key={tx.id}
-                  className="cursor-pointer"
-                  onClick={() => setDetailTx(tx)}
-                >
-                  <td>{txTypeLabel(t, tx.type)}</td>
-                  <td className={cls}>
-                    {noAmtTxTypes.includes(tx.type)
-                      ? '-'
-                      : `${sign}${formatCoinAtom(tx.amount, ui)}`}
-                  </td>
-                  <td>{tx.fees > 0
-                    ? formatCoinAtom(tx.fees, ui)
-                    : '-'}</td>
-                  <td>{tx.timestamp > 0
-                    ? ageSince(tx.timestamp * 1000)
-                    : t('Pending')}</td>
-                  <td>{tx.confirms
-                    ? `${tx.confirms.current}/${tx.confirms.target}`
-                    : tx.confirmed
-                      ? '\u2713'
-                      : '-'}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
-
-      {/* Pagination */}
-      {(currentPage > 0 || txPage?.moreAvailable) && (
-        <div className="d-flex align-items-center gap-2 fs12">
-          <button
-            className="btn btn-sm btn-outline-secondary"
-            disabled={currentPage === 0}
-            onClick={goPrev}
-          >
-            {t('Prev')}
-          </button>
-          <span>{t('Page')} {currentPage + 1}</span>
-          <button
-            className="btn btn-sm btn-outline-secondary"
-            disabled={!txPage?.moreAvailable}
-            onClick={goNext}
-          >
-            {t('Next')}
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // RecentOrdersView (inline in right column)
@@ -2671,7 +2370,7 @@ function RecentOrdersView ({ assetID, assets }: {
             for new-tab, and reads as a link to assistive tech. */}
         <Link
           to={`${ROUTES.ORDERS}?assets=${assetID}`}
-          className="fs14"
+          className="fs16"
         >
           {t('VIEW_ALL')}
         </Link>
