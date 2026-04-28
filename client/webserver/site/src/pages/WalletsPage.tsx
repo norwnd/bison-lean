@@ -500,10 +500,6 @@ export default function WalletsPage () {
   // retry" gesture works without a Retry button.
   const [tokenCreateErrors, setTokenCreateErrors] = useState<Map<number, string>>(new Map())
 
-  // Force re-render on note arrival so balances refresh.
-  const [, setTick] = useState(0)
-  const bump = useCallback(() => setTick(n => n + 1), [])
-
   // WP-15: lazy-load bridge paths on mount. Failure is non-fatal --
   // the Bridge button just stays hidden. Avoid blocking the page
   // render on this.
@@ -521,60 +517,30 @@ export default function WalletsPage () {
   // -----------------------------------------------------------------------
   // WS subscriptions
   // -----------------------------------------------------------------------
-
-  // CL-ASSETS-STALE-MEMO: `balance`, `walletstate`, `walletconfig`,
-  // `walletsync`, `fiatrateupdate`, `createwallet` are dispatched
-  // globally by `AppLayout.tsx` to `useMarketStore`, which rebuilds
-  // the affected slices of `useAuthStore` with new top-level refs
-  // (see the comment block at the top of `useMarketStore.ts` for the
-  // rationale). The `useAuthStore(s => s.assets)` / `s.fiatRatesMap`
-  // selectors below fire on those setState calls, so every
-  // `useMemo([...])` in this component re-runs with the fresh refs
-  // and the view stays in sync with no per-page receiver needed. Only
-  // the notes that don't have a `useMarketStore` equivalent are
-  // listed here.
-  const noteReceivers = useMemo(() => ({
-    // WP-02: minimal `walletnote` (custom wallet note) handler.
-    // Vanilla `wallets.ts` `handleCustomWalletNote()` (L2767) switches
-    // on `payload.route` to dispatch:
-    //   - `tipChange`         → updates per-asset sync height + DCR ticket stats
-    //   - `ticketPurchaseUpdate` → processes Decred staking ticket updates
-    //   - `transaction`       → forwards to tx-history + bridging popup
-    // The DCR staking surfaces (B-L15) and the bridging popup (B-L16)
-    // haven't been ported yet, so the React handler here is a stub
-    // that just bumps the render tick for the `tipChange` /
-    // `transaction` routes (which the existing tx-history table can
-    // pick up reactively). Unknown routes are logged so they show
-    // up in dev tools without crashing.
-    walletnote: (note: CoreNote) => {
-      const n = note as { payload?: { route?: string } }
-      const route = n.payload?.route
-      switch (route) {
-        case 'tipChange':
-        case 'transaction':
-          bump()
-          break
-        case 'ticketPurchaseUpdate':
-          // Decred ticket UI is a B-L15 item; bumping the render
-          // tick is harmless until the consumer exists.
-          bump()
-          break
-        default:
-          if (route) console.debug('walletnote: unhandled route', route)
-      }
-    },
-    // WP-03 / WP-15: `bridge` notification handler. As of B-L16,
-    // BridgingPopup also subscribes to this channel directly via its
-    // own useNotifications hook, so this parent-level handler only
-    // exists to bump the page render tick -- bridge txs move balance
-    // between same-ticker network siblings, and the wallet detail
-    // view should reflect that even when the popup is closed.
-    bridge: (_note: CoreNote) => {
-      bump()
-    },
-  }), [bump])
-
-  useNotifications(noteReceivers)
+  //
+  // No page-level `walletnote` / `bridge` subscription. `balance`,
+  // `walletstate`, `walletconfig`, `walletsync`, `fiatrateupdate`,
+  // `createwallet` are dispatched globally by AppLayout to
+  // `useMarketStore`, which rebuilds the affected slices of
+  // `useAuthStore` with new top-level refs. The
+  // `useAuthStore(s => s.assets)` / `s.fiatRatesMap` selectors below
+  // fire on those setState calls, so every `useMemo([...])` in this
+  // component re-runs with the fresh refs and the view stays in sync.
+  // Bridge txs move balance between same-ticker network siblings —
+  // the resulting `balance` notes flow through the store and trigger
+  // re-renders here automatically.
+  //
+  // Vanilla's `wallets.ts handleCustomWalletNote` (L2767) also
+  // dispatched `walletnote` route='tipChange' and route='transaction'
+  // for per-asset sync-height updates and tx-history refresh. Those
+  // update paths haven't been ported (sync height is currently
+  // refreshed via `walletsync` notes alone, and TxHistoryView fetches
+  // its own pages on mount and doesn't auto-refresh on tx notes). If
+  // either becomes a visible problem, the right fix is a typed merge
+  // in useMarketStore (mirroring `handleBalanceNote` /
+  // `handleWalletStateNote`), not a parent-level forceReRender.
+  // The DCR staking flow has its own useNotifications hook below
+  // (route='ticketPurchaseUpdate' / 'tipChange') and remains live.
 
   // -----------------------------------------------------------------------
   // Sidebar
