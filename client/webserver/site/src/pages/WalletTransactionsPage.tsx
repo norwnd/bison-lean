@@ -190,6 +190,30 @@ export default function WalletTransactionsPage () {
     [pendingTxs, history]
   )
 
+  // Auto-fill on first paint. The initial fetch returns
+  // TX_HISTORY_PAGE_SIZE=10 rows; on a viewport tall enough for more
+  // (typical desktop) those rows don't overflow the scroller, the
+  // scrollbar never appears, and the infinite-scroll handler can't
+  // fire since `scroll` events don't fire without scroll motion.
+  // Result: page looks like it shows "less" than it should until
+  // the user does something that causes a fetch (resize, navigate
+  // away and back, etc).
+  //
+  // Loop loadMore until either content overflows past the
+  // infinite-scroll trigger zone (200px below clientHeight) or
+  // there's nothing more to load. inflightRef + loading guards
+  // keep this from racing the user's own scroll-driven loads.
+  useEffect(() => {
+    if (loading) return
+    if (inflightRef.current) return
+    if (!moreAvailable) return
+    if (viewportHeight === 0) return
+    const el = scrollerRef.current
+    if (!el) return
+    if (el.scrollHeight - el.clientHeight > 200) return
+    loadMoreRef.current()
+  }, [merged.length, viewportHeight, moreAvailable, loading])
+
   // Measure the actual height of a rendered data row so the window
   // and spacer math match the painted layout. Runs after every
   // render where rows exist; only commits state when the height has
