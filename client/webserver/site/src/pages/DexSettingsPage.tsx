@@ -416,18 +416,13 @@ export default function DexSettingsPage () {
 
   return (
     <div className="py-3 px-3 overflow-y-auto" style={{ height: '100%' }}>
-      {/* -- Header -- */}
+      {/* -- Header (host + connection status inline) -- */}
       <div className="d-flex align-items-center gap-3 mb-4">
         <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate(ROUTES.SETTINGS)}>
           &larr; {t('Settings')}
         </button>
         <h2 className="mb-0">{host}</h2>
-      </div>
-
-      {/* -- Connection status -- */}
-      <div className="mb-4">
-        <h5>{t('Connection')}</h5>
-        <div className="d-flex align-items-center gap-2">
+        <span className="d-inline-flex align-items-center gap-2 fs15 ms-auto">
           {connectionStatusDisplay.connected
 ? (
             <span className="ico-check text-success" />
@@ -435,49 +430,49 @@ export default function DexSettingsPage () {
 : (
             <span className="ico-cross text-danger" />
           )}
-          <span className="fs15">{connectionStatusDisplay.text}</span>
-        </div>
+          <span>{connectionStatusDisplay.text}</span>
+        </span>
       </div>
 
       {/* -- Reputation -- */}
-      <div className="mb-4">
+      <div className="mb-5">
         <h5>{t('Reputation')}</h5>
-        <div className="d-flex flex-wrap gap-4 mb-2">
+        <div className="d-flex flex-wrap gap-4 mb-3">
           <Tooltip content={t('TARGET_TIER_TOOLTIP')}>
             <div>
-              <span className="text-secondary fs14">{t('TARGET_TIER')}: </span>
-              <strong>{targetTier}</strong>
+              <div className="text-secondary fs15">{t('TARGET_TIER')}</div>
+              <strong className="fs20">{targetTier}</strong>
             </div>
           </Tooltip>
           <Tooltip content={t('EFFECTIVE_TIER_TOOLTIP')}>
             <div>
-              <span className="text-secondary fs14">{t('EFFECTIVE_TIER')}: </span>
-              <strong>{effectiveTier}</strong>
+              <div className="text-secondary fs15">{t('EFFECTIVE_TIER')}</div>
+              <strong className="fs20">{effectiveTier}</strong>
             </div>
           </Tooltip>
           <Tooltip content={t('PENALTIES_TOOLTIP')}>
             <div>
-              <span className="text-secondary fs14">{t('PENALTIES')}: </span>
-              <strong>{penalties}</strong>
+              <div className="text-secondary fs15">{t('PENALTIES')}</div>
+              <strong className="fs20">{penalties}</strong>
             </div>
           </Tooltip>
           <Tooltip content={t('BONDS_PENDING_REFUND_TOOLTIP')}>
             <div>
-              <span className="text-secondary fs14">{t('BONDS_PENDING_REFUND')}: </span>
-              <strong>{expiredBondsCount}</strong>
+              <div className="text-secondary fs15">{t('BONDS_PENDING_REFUND')}</div>
+              <strong className="fs20">{expiredBondsCount}</strong>
             </div>
           </Tooltip>
         </div>
         <ReputationMeter host={host} />
       </div>
 
-      {/* -- Tier management -- */}
-      <div className="mb-4">
-        <h5>{t('TRADING_TIER')}</h5>
-        <div className="d-flex flex-wrap gap-2 mb-2">
-          {/* DSP-10: disable when account is disabled, mirroring vanilla
-              `dexsettings.ts` which disables both the auto-renew toggle
-              and the tier wizard entry point for disabled accounts. */}
+      {/* -- Bond settings (Trading Tier change merged in at top) -- */}
+      <div className="mb-5">
+        <h5>{t('BOND_SETTINGS')}</h5>
+        {/* DSP-10: disable when account is disabled, mirroring vanilla
+            `dexsettings.ts` which disables both the auto-renew toggle
+            and the tier wizard entry point for disabled accounts. */}
+        <div className="mb-3">
           <button
             className="btn btn-outline-primary"
             onClick={openTierForm}
@@ -486,11 +481,6 @@ export default function DexSettingsPage () {
             {t('CHANGE_TIER')}
           </button>
         </div>
-      </div>
-
-      {/* -- Bond settings -- */}
-      <div className="mb-4">
-        <h5>{t('BOND_SETTINGS')}</h5>
         <div className="form-check mb-2">
           <input
             className="form-check-input"
@@ -532,8 +522,25 @@ export default function DexSettingsPage () {
           <button className="btn btn-outline-secondary" onClick={exportAccount}>
             {t('EXPORT_ACCOUNT')}
           </button>
+          <button className="btn btn-outline-secondary" onClick={() => certFileRef.current?.click()}>
+            {t('UPDATE_TLS_CERTIFICATE')}
+          </button>
+          <input
+            ref={certFileRef}
+            type="file"
+            className="d-none"
+            onChange={handleCertFileChange}
+          />
+          <button className="btn btn-outline-secondary" onClick={() => setShowUpdateHost(true)}>
+            {t('UPDATE_DEX_HOST')}
+          </button>
+          {/* Destructive action — visually separated by ms-auto and the
+              `danger` outline so it's harder to misclick when scanning
+              the row. Becomes a neutral `secondary` outline when the
+              account is already disabled (the action is then a recovery
+              re-enable, not destructive). */}
           <button
-            className="btn btn-outline-secondary"
+            className={`btn ms-auto ${accountDisabled ? 'btn-outline-secondary' : 'btn-outline-danger'}`}
             onClick={() => {
               if (accountDisabled) {
                 toggleAccountStatus(false)
@@ -546,18 +553,6 @@ export default function DexSettingsPage () {
             {accountDisabled
 ? t('ENABLE_ACCOUNT')
 : t('DISABLE_ACCOUNT')}
-          </button>
-          <button className="btn btn-outline-secondary" onClick={() => certFileRef.current?.click()}>
-            {t('UPDATE_TLS_CERTIFICATE')}
-          </button>
-          <input
-            ref={certFileRef}
-            type="file"
-            className="d-none"
-            onChange={handleCertFileChange}
-          />
-          <button className="btn btn-outline-secondary" onClick={() => setShowUpdateHost(true)}>
-            {t('UPDATE_DEX_HOST')}
           </button>
         </div>
         {exportError && (
