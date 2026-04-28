@@ -185,29 +185,29 @@ export interface TxTableProps {
   bottomSpacerPx?: number
 }
 
-// Per-column minimum widths sized to the worst-case content each
-// column can render. Mixed hex characters (0-9 + a-f) render about
-// 30% wider than the font's "0" glyph (which defines `1ch`), so
-// the ID column carries an oversized number to absorb that. The
-// row-by-row content is what should drive each column - not the
-// (similarly-short) header labels - so the values diverge a lot.
-const COL_MIN_CH = {
-  type: 28,    // longest TX_TYPE_* label is "Revoke Token Approval"
-  id: 95,     // 64-66 hex chars rendered in source-sans + button
-  age: 12,    // "365d 24h" / "999y 12mo" worst case
-  amount: 22, // "+1234567.89012345" with sign + decimals
-  fee: 10,    // "$12345.67"
-  status: 16, // "999/999 confs" worst case
+// Per-column percentages tuned so each column actually fits its
+// worst-case content (the previous `ch` + calc()-based approach
+// was silently mis-sizing the ID column - some combination of
+// `<col style="width: calc(...)">` quirks and `1ch` underestimating
+// hex-character width by ~30%). Percentages of the table width
+// are simple, explicit, and respected reliably.
+//
+// Sums to 100. Tuned for a typical desktop viewport (~1500-2000px).
+// On narrower viewports the table's `minWidth` engages so the
+// percentages still resolve to enough absolute pixels for content.
+const COL_PCT = {
+  type: 12,
+  id: 50,    // generous - covers 64-66 char hash + CopyButton at any viewport >= the minWidth floor
+  age: 7,
+  amount: 14,
+  fee: 7,
+  status: 10,
 }
-const COL_MIN_TOTAL_CH = COL_MIN_CH.type + COL_MIN_CH.id + COL_MIN_CH.age +
-  COL_MIN_CH.amount + COL_MIN_CH.fee + COL_MIN_CH.status
-
-// Each column gets its content min plus an equal share of any
-// remaining table width. clamp via max() so columns never shrink
-// below their min on narrow viewports - the table's `minWidth`
-// makes the page horizontally scrollable instead.
-const colWidth = (minCh: number) =>
-  `calc(${minCh}ch + max(0px, (100% - ${COL_MIN_TOTAL_CH}ch) / 6))`
+// Floor pulled from rough px estimates of worst-case content at
+// the project's body font (source-sans, ~16px). Below this width
+// the parent's overflowX: auto kicks in for a horizontal scroll
+// instead of cells collapsing under their content.
+const TABLE_MIN_WIDTH_PX = 1500
 
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
@@ -229,27 +229,25 @@ export function TxTable ({
         ? {
             tableLayout: 'fixed',
             width: '100%',
-            // Floor so narrow viewports get a horizontal scrollbar
-            // (via the parent's overflowX: auto) instead of cells
-            // collapsing under the per-column minimums.
-            minWidth: `${COL_MIN_TOTAL_CH}ch`,
+            minWidth: `${TABLE_MIN_WIDTH_PX}px`,
             // Cascades to all cells; keeps every entry on one row.
             whiteSpace: 'nowrap'
           }
         : undefined}
     >
-      {/* <colgroup> only kicks in when fixedLayout=true. Each
-          column gets its content-minimum plus an equal share of
-          remaining table width via calc(). The embedded section
-          never sets fixedLayout, so it keeps auto layout. */}
+      {/* <colgroup> only kicks in when fixedLayout=true. Plain
+          percentages of the table width - reliable and easy to
+          inspect in devtools, unlike the calc()-with-ch approach
+          we tried earlier. The embedded section uses showID=false
+          (which skips fixedLayout) so it keeps auto layout. */}
       {fixedLayout && (
         <colgroup>
-          <col style={{ width: colWidth(COL_MIN_CH.type) }} />
-          {showID && <col style={{ width: colWidth(COL_MIN_CH.id) }} />}
-          <col style={{ width: colWidth(COL_MIN_CH.age) }} />
-          <col style={{ width: colWidth(COL_MIN_CH.amount) }} />
-          <col style={{ width: colWidth(COL_MIN_CH.fee) }} />
-          <col style={{ width: colWidth(COL_MIN_CH.status) }} />
+          <col style={{ width: `${COL_PCT.type}%` }} />
+          {showID && <col style={{ width: `${COL_PCT.id}%` }} />}
+          <col style={{ width: `${COL_PCT.age}%` }} />
+          <col style={{ width: `${COL_PCT.amount}%` }} />
+          <col style={{ width: `${COL_PCT.fee}%` }} />
+          <col style={{ width: `${COL_PCT.status}%` }} />
         </colgroup>
       )}
       <thead className="fs15">
