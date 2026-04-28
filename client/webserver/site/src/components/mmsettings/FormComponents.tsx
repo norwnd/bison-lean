@@ -9,7 +9,7 @@
 // - `LoadingSpinner`: fullscreen-ish overlay with Bootstrap spinner
 //
 // The vanilla `prep(ID_MM_LOADING)` dictionary lookup becomes an
-// `useTranslation('MM_LOADING')` call — the key already exists in
+// `useTranslation('MM_LOADING')` call - the key already exists in
 // `i18n/en-US.json`.
 
 import React from 'react'
@@ -53,7 +53,7 @@ interface NumberInputProps {
   // If onIncrement and onDecrement are provided, the component will show up
   // and down arrows. They receive the current parsed/clamped input value
   // so callers compute the next value from it rather than from a
-  // closed-over (and potentially stale) prop — prevents the "type 5,
+  // closed-over (and potentially stale) prop - prevents the "type 5,
   // click +" race where the typed value is lost.
   onIncrement?: (current: number) => void;
   onDecrement?: (current: number) => void;
@@ -117,7 +117,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
     }
   }, [inputValue, parseClamped, precision, value, onChange])
 
-  // Current value the arrow buttons should operate on — the user's
+  // Current value the arrow buttons should operate on - the user's
   // typed-but-not-blurred input takes precedence over the last committed
   // `value` prop, so clicking +/- after typing works on the typed value.
   const currentValue = React.useCallback((): number => {

@@ -31,7 +31,7 @@ export interface UserOrderRowProps {
   // side/qty/status.
   variant: 'active' | 'completed'
   // Ref to the rightmost-panel scroll container (vanilla `orderScroller`)
-  // — the MP-37 floater menu repositions on scroll so it stays anchored
+  // - the MP-37 floater menu repositions on scroll so it stays anchored
   // to its owning row's header.
   scrollRef: React.RefObject<HTMLDivElement | null>
 }
@@ -40,7 +40,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
   const { t } = useTranslation()
   // MP-43: Force a 1 Hz re-render for active orders so the details.age
   // column ticks live (vanilla markets.ts L561-566). We deliberately do
-  // NOT tick completed rows — vanilla's interval only touches
+  // NOT tick completed rows - vanilla's interval only touches
   // `recentlyActiveUserOrders`, leaving the completed-order ages stale
   // until the user reopens the page. Preserving this quirk for strict
   // parity; the small drift on the completed-order header age (added in
@@ -54,7 +54,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
   // Separate refs track the row header (for positioning + hover-region
   // detection) and the floater element (also for hover-region detection).
   // The hideTimer is a brief grace period so that moving the mouse from
-  // the header down into the floater doesn't blink it off — mouseleave
+  // the header down into the floater doesn't blink it off - mouseleave
   // fires on the header before mouseenter fires on the floater.
   const headerRef = useRef<HTMLDivElement>(null)
   const floaterRef = useRef<HTMLDivElement>(null)
@@ -82,7 +82,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
 
   // MP-39 / MP-42: Header rate is formatted as `@ <rate>` (vanilla L2014 /
   // L2173). For market orders, `<rate>` comes from `marketOrderRateString`
-  // — either the "market" label (no matches yet) or the base-weighted
+  // - either the "market" label (no matches yet) or the base-weighted
   // average of matched rates (with a "~ " prefix when >1 matches).
   const headerRateStr = (() => {
     if (!bui || !qui || !mkt) return ''
@@ -125,7 +125,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
 
   // Vanilla L1988: active orders that are already inactive (status >=
   // StatusExecuted with no active matches) get an `inactive` class on
-  // the side-light. Completed orders don't get this class at all — the
+  // the side-light. Completed orders don't get this class at all - the
   // "inactive" styling is reserved for the active-list path.
   const isActive = order.status < StatusExecuted || hasActiveMatches(order)
   const sideLightClasses = [
@@ -145,7 +145,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
       hideTimerRef.current = null
     }
     // Vanilla L2068: floater is suppressed entirely when the details are
-    // already expanded — the details row already exposes the same links,
+    // already expanded - the details row already exposes the same links,
     // so the floater would be redundant.
     if (expanded) return
     if (!headerRef.current) return
@@ -167,7 +167,7 @@ export function UserOrderRow ({ order, bui, qui, mkt, navigate, cancelOrder, var
   // coordinates already account for scroll. Keyed on a local
   // `isFloaterOpen` flag (not the full `floaterPos` object) so the
   // listener is only attached/detached when the menu opens/closes, not
-  // on every reposition — otherwise scroll-triggered setState would
+  // on every reposition - otherwise scroll-triggered setState would
   // churn the effect.
   const isFloaterOpen = floaterPos !== null
   useEffect(() => {

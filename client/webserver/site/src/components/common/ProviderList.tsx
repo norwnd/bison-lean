@@ -15,7 +15,7 @@ interface ProviderInfo {
 
 interface Props {
   assetID: number
-  // value is the persisted "providers" setting — a space-separated list
+  // value is the persisted "providers" setting - a space-separated list
   // of user-added provider URLs. Empty string when the user hasn't
   // added any of their own.
   value: string
@@ -115,7 +115,7 @@ export function ProviderList ({ assetID, value, onChange, disabled, live = false
         out.push(apiE)
       } else if (!apiE) {
         // Locally-typed URL not yet in the active pool (typed but
-        // not saved, or just added — the next reconfigure will pick
+        // not saved, or just added - the next reconfigure will pick
         // it up). Render with "not probed" status.
         out.push({
           url: u,

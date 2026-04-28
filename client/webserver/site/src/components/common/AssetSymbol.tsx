@@ -13,7 +13,7 @@ interface Props {
 // AssetSymbol renders a token-aware ticker display. For non-token
 // assets (DCR, BTC, etc.), it's just the uppercase ticker. For tokens
 // (usdc.polygon, weth.base, etc.), it's the token's ticker followed
-// by a small parent-chain indicator — either a logo (when `useLogo`
+// by a small parent-chain indicator - either a logo (when `useLogo`
 // is true) or a superscript with the parent's symbol.
 //
 // Port of vanilla `Doc.symbolize(asset, useLogo)` from `doc.ts`
@@ -21,7 +21,7 @@ interface Props {
 // in `css/utilities.scss` (L178-189) and carry the offset styling
 // that pulls the parent indicator into the baseline-adjacent visual
 // slot. Used in contexts where a styled two-part display is wanted
-// — wallets page token allowance forms, markets page base/quote
+// - wallets page token allowance forms, markets page base/quote
 // pairs, etc.
 export function AssetSymbol ({ asset, useLogo = false }: Props) {
   const ticker = shortSymbol(asset.unitInfo?.conventional?.unit || asset.symbol)

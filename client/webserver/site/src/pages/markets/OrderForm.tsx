@@ -18,7 +18,7 @@ import { VerifyOrderForm } from './VerifyOrderForm'
 import { tradePairWalletMsg } from '../../hooks/useWalletMsg'
 
 // ---------------------------------------------------------------------------
-// OrderForm — fully independent buy/sell limit-order form
+// OrderForm - fully independent buy/sell limit-order form
 // ---------------------------------------------------------------------------
 
 // requestMax result: non-null `est` ⇒ success; null `est` ⇒ failure, with
@@ -77,7 +77,7 @@ export function OrderForm ({
   // MP-51: disclaimer ack state, persisted to localStorage. Vanilla
   // `setDisclaimerAckViz` (markets.ts L479-491) hides the disclaimer+ack
   // block once the user has acknowledged, and shows a "view warnings"
-  // toggle that re-opens it. We mirror that with a single boolean —
+  // toggle that re-opens it. We mirror that with a single boolean -
   // initial read from `fetchLocal` runs once at mount via the lazy
   // initializer so we don't re-read on every render.
   const [disclaimerAcked, setDisclaimerAcked] = useState<boolean>(
@@ -116,7 +116,7 @@ export function OrderForm ({
   const qtyBoxRef = useRef<HTMLDivElement | null>(null)
   // MP-70: refs to the actual <input> elements so the wrapper-level click
   // handlers (which let the user click anywhere in the price/qty box to
-  // focus the input — vanilla `markets.ts` L366-368, L392-394) can call
+  // focus the input - vanilla `markets.ts` L366-368, L392-394) can call
   // `.focus()` directly. The visual `.selected` border state is handled
   // entirely by the SCSS `:focus-within` rule on `.order-form-input`,
   // so no JS class toggling is needed.
@@ -133,7 +133,7 @@ export function OrderForm ({
 
   // Invalidate max caches when the relevant wallets change. Narrowed to
   // the base/quote wallet entries so unrelated WS balance notes don't
-  // churn the cache — useMarketStore's immutable updates replace only
+  // churn the cache - useMarketStore's immutable updates replace only
   // the notified asset's wallet, so these refs stay stable otherwise.
   const baseWallet = selected ? walletMap[selected.baseID] : undefined
   const quoteWallet = selected ? walletMap[selected.quoteID] : undefined
@@ -223,7 +223,7 @@ export function OrderForm ({
 
   // Sync slider position from a given qty vs max estimate. Takes qty as a
   // parameter because callers often invoke it immediately after queuing a
-  // setQtyAtom update, and state updates are asynchronous — reading the
+  // setQtyAtom update, and state updates are asynchronous - reading the
   // captured qtyAtom from a closure would see the old value.
   const syncSlider = useCallback(async (qty: number) => {
     if (!currentMkt) return
@@ -265,7 +265,7 @@ export function OrderForm ({
     // animation). React's handleRateChange is the live input path, this
     // is the commit path. Detect both invalid and rounded-down inputs by
     // re-parsing the typed value and comparing against the adjusted
-    // `rateAtom` that handleRateChange stored — if they differ, the
+    // `rateAtom` that handleRateChange stored - if they differ, the
     // input was rounded; if it parsed to 0, it was invalid (vanilla
     // L3030 animates errors in both cases).
     const typedAtom = parseConvRate(rateInput, bui, qui)
@@ -318,7 +318,7 @@ export function OrderForm ({
 
   const handleQtyBlur = useCallback(() => {
     if (!bui || !currentMkt) return
-    // MP-72: same input/change split as the rate field — flash the
+    // MP-72: same input/change split as the rate field - flash the
     // outline if the typed value is invalid or got rounded down to a
     // sub-lot value. Vanilla `qtyField{Buy,Sell}ChangeHandler` calls
     // `animateErrors(highlightOutlineRed(qtyBox*))` when parseQtyInput
@@ -365,7 +365,7 @@ export function OrderForm ({
   }, [bui, currentMkt, requestMax])
 
   // Cheap, synchronous "rate below min" check. This is the only validation
-  // we surface as a persistent message before the user clicks — it doesn't
+  // we surface as a persistent message before the user clicks - it doesn't
   // require a server round-trip, so showing it eagerly costs nothing and
   // helps the user fix the input. Insufficient-balance and similar checks
   // require requestMax() and are deferred to click time.
@@ -380,7 +380,7 @@ export function OrderForm ({
     return ''
   }, [rateAtom, currentMkt, bui, qui, isSell, t])
 
-  // Clear errorMsg when the user adjusts rate or qty — that's a deliberate
+  // Clear errorMsg when the user adjusts rate or qty - that's a deliberate
   // retry signal. Wallet-state changes are intentionally NOT in this dep
   // array: WS balance notes fire every few seconds and would otherwise
   // dismiss the error before the user can read it.
@@ -412,7 +412,7 @@ export function OrderForm ({
     return tradePairWalletMsg(t, walletMap[selected.baseID], walletMap[selected.quoteID], baseSymbol, quoteSymbol)
   }, [selected, walletMap, baseSymbol, quoteSymbol, t])
 
-  // Submit order: step 1 — click-time validation. The button label/disabled
+  // Submit order: step 1 - click-time validation. The button label/disabled
   // state only gates on cheap synchronous checks (wallet ready, rate above
   // min, non-zero rate/qty); the expensive max-est fetch happens here so
   // the button never flashes a "calculating..." text on its own. While the
@@ -538,7 +538,7 @@ export function OrderForm ({
           <div className={`slider-mark slider-mark-75${sliderValue > 0.75 ? ' mark-enabled' : ''}`}></div>
           <div className={`slider-mark slider-mark-100${sliderValue >= 1.0 ? ' mark-enabled' : ''}`}></div>
         </div>
-        {/* Preview total — the conversion display ("qty ⇄ previewTotal").
+        {/* Preview total - the conversion display ("qty ⇄ previewTotal").
             All three cells gate on `previewTotal`: when no rate has been
             entered, the conversion is meaningless so we render an empty
             row (not the naked qty input echoed back). */}
@@ -570,7 +570,7 @@ export function OrderForm ({
         {(() => {
           const defaultLabel = `${isSell ? t('Sell') : t('Buy')} ${shortSymbol(baseSymbol)}`
           // Priority: wallet readiness > sync rate-min check > last click error.
-          // The button never shows "calculating..." — it keeps the default
+          // The button never shows "calculating..." - it keeps the default
           // label and applies the `submit-pressed` visual for the entire
           // time the user is "mid-order": while the async max-est is in
           // flight, and continuing through the verify-modal lifetime until
@@ -583,7 +583,7 @@ export function OrderForm ({
           // Always wrap in Tooltip so the button doesn't remount when msg
           // toggles empty↔non-empty. Tooltip is a no-op on empty content.
           return (
-            // Wrap the button so the Tooltip's hover handlers attach to a non-disabled element — disabled buttons don't reliably fire React's synthetic onMouseEnter/Leave across browsers, even with `pointer-events: auto`.
+            // Wrap the button so the Tooltip's hover handlers attach to a non-disabled element - disabled buttons don't reliably fire React's synthetic onMouseEnter/Leave across browsers, even with `pointer-events: auto`.
             <Tooltip content={msg}>
               <div className="d-flex m-1 mt-auto" style={{ minWidth: 0 }}>
                 <button

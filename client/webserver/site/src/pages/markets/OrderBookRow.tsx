@@ -3,7 +3,7 @@ import type { OrderBookDisplayRow } from './helpers'
 import type { UnitInfo } from '../../stores/types'
 
 // ---------------------------------------------------------------------------
-// OrderBookRow — one grouped row in the order book
+// OrderBookRow - one grouped row in the order book
 // Implements MP-01 (rate delta), MP-02 (own-order marker),
 // MP-03 (epoch check icons), MP-04 (numorders badge),
 // MP-05 (weight gradient background).

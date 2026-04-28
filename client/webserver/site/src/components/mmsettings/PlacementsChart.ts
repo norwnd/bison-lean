@@ -1,11 +1,11 @@
-// PlacementsChart — canvas visualisation of MM buy/sell placements
+// PlacementsChart - canvas visualisation of MM buy/sell placements
 // ported from vanilla `mmutil.ts` (L240-403).
 //
 // Vanilla extended a shared `Chart` base class (`js/charts.ts`) that
 // carried a lot of candle-chart-only state (zoom, wheel, visibility
 // pause/unpause, mouse tracking, grid regions). PlacementsChart uses
 // almost none of that, so this port inlines the small subset it
-// actually needs — canvas+ctx setup, theme, ResizeObserver, plus the
+// actually needs - canvas+ctx setup, theme, ResizeObserver, plus the
 // `line()` / `applyLabelStyle()` / `clear()` helpers. Reuses `Extents`,
 // `Region`, `Translator`, `clamp`, `Theme` from the shared
 // `components/charts/chartUtils.ts` module.

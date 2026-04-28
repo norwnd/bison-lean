@@ -2,12 +2,12 @@
 // Ported from vanilla `mmsettings/utils/AllocationUtil.ts`.
 //
 // Three public entry points:
-// - `toAllocate(state)` — compute DEX/CEX amounts for a new (not yet
+// - `toAllocate(state)` - compute DEX/CEX amounts for a new (not yet
 //   running) bot, with surplus shuffling when auto-rebalance is on.
-// - `toAllocateRunning(state, runStats)` — same idea but accounting
+// - `toAllocateRunning(state, runStats)` - same idea but accounting
 //   for assets the running bot already holds, allowing negative
 //   amounts (funds to withdraw back to the wallet).
-// - `allocationResultAmounts(result)` — flatten an `AllocationResult`
+// - `allocationResultAmounts(result)` - flatten an `AllocationResult`
 //   down to the raw per-asset `amount` numbers, which is what
 //   `postbotconfig` / `updaterunningbot` actually expect on the wire.
 //

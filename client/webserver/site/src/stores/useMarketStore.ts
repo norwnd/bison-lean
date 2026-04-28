@@ -9,7 +9,7 @@ import { useAuthStore } from './useAuthStore'
 // that come in via WebSocket notifications. It reads/writes through
 // useAuthStore for the actual data, providing update actions.
 //
-// All handlers here use immutable updates — never mutate the inner
+// All handlers here use immutable updates - never mutate the inner
 // objects held by the auth store. The previous in-place mutation
 // pattern (e.g. `walletMap[id].balance = note.balance` followed by a
 // shallow `{ ...walletMap }` spread) "worked" only because consumers
@@ -38,7 +38,7 @@ export const useMarketStore = create<MarketState>(() => ({
     const { assets, walletMap } = useAuthStore.getState()
     const asset = assets[note.assetID]
     // After fetchUser, `buildWalletMap` aliases `walletMap[id]` to
-    // `assets[id].wallet` — they're the same reference. Preserve that
+    // `assets[id].wallet` - they're the same reference. Preserve that
     // invariant by building ONE new wallet object and pointing both
     // collections at it. Otherwise consumers reading through
     // `assets[id].wallet.balance` would see the stale value while
@@ -70,7 +70,7 @@ export const useMarketStore = create<MarketState>(() => ({
     const { assets, walletMap } = useAuthStore.getState()
     const w = walletMap[note.assetID]
     if (!w) return
-    // Preserve the `walletMap[id] === assets[id].wallet` invariant —
+    // Preserve the `walletMap[id] === assets[id].wallet` invariant -
     // see handleBalanceNote for the rationale.
     const nextWallet = {
       ...w,

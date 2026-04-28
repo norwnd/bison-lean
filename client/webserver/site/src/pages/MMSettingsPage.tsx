@@ -1,4 +1,4 @@
-// MMSettingsPage — React route shell for `/mmsettings`. Thin wrapper
+// MMSettingsPage - React route shell for `/mmsettings`. Thin wrapper
 // around `<MMSettings>` that owns the async page-level setup: loading
 // the bridge topology, enumerating DEX markets, computing the initial
 // `BotConfigState` (from a saved bot OR from URL-provided specs), and
@@ -86,7 +86,7 @@ export default function MMSettingsPage () {
 
   // One-shot initial load: fetch bridgePaths, pick up specs from URL
   // (first) or localStorage (fallback), and seed the initial bot
-  // config state. We avoid re-running this on every URL change — once
+  // config state. We avoid re-running this on every URL change - once
   // the user enters the settings flow the MMSettings component owns
   // subsequent market/bot-type changes internally and persists them.
   useEffect(() => {

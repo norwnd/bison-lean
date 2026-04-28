@@ -43,7 +43,7 @@ export function atomToConventional (v: number, unitInfo: UnitInfo): number {
   return v / unitInfo.conventional.conversionFactor
 }
 
-// Exported pure functions — no hooks, just formatting utilities.
+// Exported pure functions - no hooks, just formatting utilities.
 
 export function formatCoinAtom (vAtom: number, unitInfo: UnitInfo): string {
   const v = atomToConventional(vAtom, unitInfo)
@@ -140,9 +140,9 @@ export function logoPath (symbol: string): string {
 
 // ageSince renders the elapsed wall-clock duration since `ms` (a UNIX
 // epoch ms timestamp) as a compact "Ny Mmo", "Nd Nh", "Nh Nmin",
-// "Nmin Ns" string — the largest two non-zero units. Returns "0s"
+// "Nmin Ns" string - the largest two non-zero units. Returns "0s"
 // for any positive sub-second duration so the caller always renders
-// something (rather than a flicker of empty string between 0–999ms).
+// something (rather than a flicker of empty string between 0-999ms).
 export function ageSince (ms: number): string {
   let dur = Date.now() - ms
   if (dur < 1000) return '0s'

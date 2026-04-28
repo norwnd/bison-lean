@@ -1,4 +1,4 @@
-// BotPlacementsTab — tab content that picks between the quick and
+// BotPlacementsTab - tab content that picks between the quick and
 // advanced placement views for an mmsettings bot, keyed on whether
 // the reducer is currently in quick-placements mode. Ported from
 // vanilla `mmsettings/components/BotPlacementsTab.tsx`.

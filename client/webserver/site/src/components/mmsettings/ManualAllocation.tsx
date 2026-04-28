@@ -1,4 +1,4 @@
-// ManualAllocation — per-asset balance-entry sliders for an mmsettings
+// ManualAllocation - per-asset balance-entry sliders for an mmsettings
 // bot when the user opts out of the auto-estimated quick allocation.
 // Ported from vanilla `mmsettings/components/ManualAllocation.tsx`.
 //

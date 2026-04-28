@@ -1,4 +1,4 @@
-// notifier — severity constants, rich-note token helpers, browser/OS desktop
+// notifier - severity constants, rich-note token helpers, browser/OS desktop
 // notification dispatch, and the localStorage-backed per-host settings used
 // by both the SettingsPage UI and the dispatch path. Mirrors dev2
 // `client/webserver/site/src/js/notifications.ts`.
@@ -24,7 +24,7 @@ export function severityClass (severity: number): string {
 
 // ---- Rich-note token parsing -------------------------------------------------
 
-// The two regexes are kept disjoint — order tokens require the literal
+// The two regexes are kept disjoint - order tokens require the literal
 // string "order" before the pipe, coin tokens require the asset ID to be
 // digits-only. No span can match both, so the parser doesn't need an
 // overlap-resolution pass.
@@ -106,7 +106,7 @@ export function loadDesktopNtfnSettings (): Record<string, boolean> {
   try {
     const raw = window.localStorage.getItem(desktopNtfnSettingsKey())
     if (raw) return { ...DEFAULT_NTFN_SETTINGS, ...(JSON.parse(raw) as Record<string, boolean>) }
-  } catch { /* ignore parse errors — fall through to defaults */ }
+  } catch { /* ignore parse errors - fall through to defaults */ }
   return { ...DEFAULT_NTFN_SETTINGS }
 }
 

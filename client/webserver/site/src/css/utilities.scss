@@ -47,7 +47,7 @@
 // Screen-reader-only content: removes the element from visual layout
 // while keeping it in the accessibility tree. Pattern matches
 // Bootstrap's modern `helpers/_visually-hidden.scss` (which this
-// project's customized Bootstrap subset doesn't pull in — see
+// project's customized Bootstrap subset doesn't pull in - see
 // `bootstrap.scss`). Uses `clip-path: inset(50%)` instead of the
 // deprecated `clip: rect(…)` property. Used for SR-only labels
 // beside spinners (MMSettingsPage, FormComponents) and the order-

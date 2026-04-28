@@ -1,4 +1,4 @@
-// BridgeForm — bridge initiation form (B-L16).
+// BridgeForm - bridge initiation form (B-L16).
 //
 // Direct port of vanilla
 // `client/webserver/site/src/js/bridging/components/BridgeForm.tsx`.

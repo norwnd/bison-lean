@@ -4,7 +4,7 @@
 // connecting-state predicate used by WalletsPage.
 //
 // The name follows the `useFormatters.ts` convention of hosting pure helpers
-// under `hooks/` even when they're not literal React hooks — it keeps the
+// under `hooks/` even when they're not literal React hooks - it keeps the
 // import path consistent (`hooks/<domain>`) and groups shared display logic.
 
 import { WalletState } from '../stores/types'
@@ -25,7 +25,7 @@ type TFn = (key: string, opts?: Record<string, string>) => string
  *
  * "Disabled" means the user has explicitly turned the wallet off and must
  * take action. "Connecting" (`!running && !disabled`) is the transient boot
- * window — Core's `Running` bool flips true the moment the per-wallet
+ * window - Core's `Running` bool flips true the moment the per-wallet
  * `Connect` returns. Surfacing a user-facing "enable…" cascade during that
  * window (which is what the old code did via `disabled || !running`) was
  * misleading; the wallet is already enabled and just hasn't finished
@@ -80,7 +80,7 @@ export function tradePairWalletMsg (
  * gate a "connecting…" indicator on.
  *
  * Returns false for `undefined` wallets (a not-yet-created wallet isn't
- * connecting — it's missing; callers should branch on that separately).
+ * connecting - it's missing; callers should branch on that separately).
  */
 export function walletConnecting (wallet: WalletState | undefined): boolean {
   if (!wallet) return false

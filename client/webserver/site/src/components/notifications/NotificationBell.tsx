@@ -8,7 +8,7 @@ import { RichNote } from './RichNote'
 
 // formatAge renders an ms duration with at most two significant chunks
 // (year/month/day/hour/minute/second). Mirrors dev2 `Doc.formatDuration`
-// (see `js/doc.ts` L737): months and minutes both render as "m" — the
+// (see `js/doc.ts` L737): months and minutes both render as "m" - the
 // adjacent chunk disambiguates ("5m 14d" → 5 months 14 days; "1h 5m" →
 // 1 hour 5 minutes). Single-digit values get a leading space so adjacent
 // rows in the bell line up in monospace contexts (the `.note-time`
@@ -45,7 +45,7 @@ function formatAge (durationMs: number): string {
 // visible (the dropdown's close icon then sits roughly where the bell
 // was, so the bell visually transforms into the close button instead
 // of jumping to the viewport edge). Returns an empty object on mobile
-// — the SCSS media query takes over there.
+// - the SCSS media query takes over there.
 function computeRightOffset (bell: HTMLElement | null): React.CSSProperties {
   if (!bell || window.innerWidth < 576) return {}
   const rect = bell.getBoundingClientRect()
@@ -64,7 +64,7 @@ export function NotificationBell () {
   const bellRef = useRef<HTMLDivElement | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
 
-  // Badge derives from unacked notes only (POKEs aren't counted — they
+  // Badge derives from unacked notes only (POKEs aren't counted - they
   // have no server-side ack and live in the "Recent Activity" tab where
   // dev2 doesn't surface a badge for them either).
   const { unread, maxSeverity } = useMemo(() => {
@@ -79,14 +79,14 @@ export function NotificationBell () {
     return { unread, maxSeverity: max }
   }, [notes])
 
-  // Hide the badge while the dropdown is open — dev2 hides #noteIndicator
+  // Hide the badge while the dropdown is open - dev2 hides #noteIndicator
   // on bell click and re-hides after ack on close, so the user never sees
   // a count rise back up while reading the panel.
   const showBadge = !open && unread > 0
 
   const handleClose = useCallback(() => {
     setOpen(false)
-    // Dev2 outside-click handler also calls ackNotes — covers any notes
+    // Dev2 outside-click handler also calls ackNotes - covers any notes
     // that arrived while the dropdown was open.
     ackNotes()
   }, [ackNotes])
@@ -197,7 +197,7 @@ function NotesList ({ notes, t }: { notes: CoreNote[]; t: (k: string) => string 
         // (see `#noteBox div.note .note-time` in main.scss); kept as a
         // sibling of the content rows rather than inside the flex row
         // so wrapped subject/details can't collide with it. `p-*` Bootstrap
-        // utilities are intentionally NOT used here — they're `!important`
+        // utilities are intentionally NOT used here - they're `!important`
         // and would override the right-gutter padding the absolute time
         // depends on; padding is set in the `#noteBox div.note` SCSS rule.
         <div key={`${n.id || i}-${n.stamp}`} className={`note${n.acked ? '' : ' firstview'}`}>
@@ -224,7 +224,7 @@ function PokesList ({ pokes, t }: { pokes: CoreNote[]; t: (k: string) => string 
   return (
     <div id="pokeList" className="flex-grow-1 stylish-overflow">
       {pokes.map((p, i) => (
-        // No `.p-*` Bootstrap classes — see comment in NotesList. Padding
+        // No `.p-*` Bootstrap classes - see comment in NotesList. Padding
         // is owned by the `#noteBox div.note` SCSS rule so the right
         // gutter (where `.note-time` sits absolute) isn't overridden.
         <div key={`${p.id || i}-${p.stamp}`} className="note fs15">

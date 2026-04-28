@@ -10,7 +10,7 @@
 // `client/webserver/api.go` (apiUpdateBotConfig / apiMarketReport /
 // apiAvailableBalances / etc.). Each wrapper returns a structured
 // result so callers can branch on `res.ok` and access typed payload
-// fields even on failure (empty defaults) — same idiom as
+// fields even on failure (empty defaults) - same idiom as
 // `bridgeApi.ts`.
 //
 // Not in scope for mmsettings: `apiCEXBalance` (used only by MMPage).

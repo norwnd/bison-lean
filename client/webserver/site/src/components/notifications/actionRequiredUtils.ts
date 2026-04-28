@@ -68,7 +68,7 @@ export function shortHash (hash: string): string {
 }
 
 // networkSuffix returns the parent-chain qualifier to append to a token
-// asset's name in dialog copy — e.g. " on Ethereum" for USDC on Ethereum.
+// asset's name in dialog copy - e.g. " on Ethereum" for USDC on Ethereum.
 // Returns the empty string for base-chain assets (BTC, ETH, etc.) so the
 // same i18n template ("Your {{asset}}{{network}} {{type}} ...") works
 // for both: tokens read "Your USDC on Ethereum Redeem ..." and base

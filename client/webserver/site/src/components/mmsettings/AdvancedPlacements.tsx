@@ -1,4 +1,4 @@
-// AdvancedPlacements — manual placement builder: per-strategy gap
+// AdvancedPlacements - manual placement builder: per-strategy gap
 // selector (Basic MM), profit threshold (Arb MM), and separate buy/sell
 // placement tables with inline add/reorder/remove rows plus the shared
 // live chart. Ported from vanilla `mmsettings/components/AdvancedPlacements.tsx`.

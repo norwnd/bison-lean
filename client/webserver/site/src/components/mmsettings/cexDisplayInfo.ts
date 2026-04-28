@@ -1,4 +1,4 @@
-// Shared CEX display metadata — logo + human-readable name keyed by
+// Shared CEX display metadata - logo + human-readable name keyed by
 // the wire-level CEX identifier used across the MM subsystem
 // (`CEXConfig.name`, `MMCEXStatus` keys, bot `cexName`).
 //

@@ -13,7 +13,7 @@ import {
 // ---------------------------------------------------------------------------
 
 // Minimum per-side row count in the order book. MarketsPage raises
-// this dynamically to fill the viewport — the measured #orderBook
+// this dynamically to fill the viewport - the measured #orderBook
 // container height divided by the row height sets the real cap. Kept
 // at 13 (the pre-responsive constant) so small viewports still match
 // the old fixed layout exactly.
@@ -30,8 +30,8 @@ export const ORDER_BOOK_SIDE_MIN = 13
 //   * ROW_HEIGHT_PX: approx per-row height in `.ordertable-wrap`:
 //     `fs17` + `lh1` + `.compact` padding (0.25rem × 2) ≈ 25px.
 //     Slight over-estimate leaves a thin gap at the bottom instead of
-//     clipping the last row. CSS doesn't read this — only MarketsPage
-//     does — but it lives here so both layout knobs travel together.
+//     clipping the last row. CSS doesn't read this - only MarketsPage
+//     does - but it lives here so both layout knobs travel together.
 export const ORDER_BOOK_MID_SECTION_PX = 30
 export const ORDER_BOOK_ROW_HEIGHT_PX = 25
 export const MAX_ACTIVE_ORDERS = 8
@@ -123,7 +123,7 @@ export function statusString (order: Order): string {
 
 export function typeString (ord: Order, t: (key: string) => string): string {
   // Vanilla (`orderutil.ts` L54): returns the i18n strings `limit`, `limit (i)`,
-  // `market` — all lowercase. React had hardcoded capitalized English here;
+  // `market` - all lowercase. React had hardcoded capitalized English here;
   // switching to the same `MARKET_ORDER` / `LIMIT_ORDER` / `LIMIT_ORDER_IMMEDIATE_TIF`
   // keys as vanilla restores strict parity (landed with MP-42 where the
   // same `MARKET_ORDER` key is used by the header rate fallback).
@@ -162,7 +162,7 @@ export function averageRate (ord: Order): number {
 // Vanilla's header and details functions are identical in behavior; we
 // collapse them into one helper. The caller is responsible for the header
 // "@ " prefix (applied uniformly for both market and limit orders at the
-// UserOrderRow render site — vanilla L2014 / L2173).
+// UserOrderRow render site - vanilla L2014 / L2173).
 export function marketOrderRateString (
   ord: Order,
   bui: UnitInfo,
@@ -259,7 +259,7 @@ export function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMa
 // UI-AUTH: DEX warmup-state helper. Derives the "auth-failed" /
 // "in-warmup" / warmup-label triple that the markets page uses to gate
 // overlays and status panels during the login-warmup window. Keeps
-// MarketsPage and RightPanel in lockstep — both need the same
+// MarketsPage and RightPanel in lockstep - both need the same
 // authingDex / warmupMsg to decide whether to show the spinner and
 // which sub-state label ("Connecting..." vs "Authenticating...") to
 // render.
@@ -276,7 +276,7 @@ export function collectMarkets (exchanges: Record<string, Exchange>): ExchangeMa
 
 export interface WarmupState {
   // Non-null when Core surfaced a DexAuthError* note for this host.
-  // Terminal state — callers should prefer this over the warmup
+  // Terminal state - callers should prefer this over the warmup
   // spinner when both are set.
   authFailedMsg: string | null
   // True while the DEX is in the warmup window (see above). False
@@ -317,13 +317,13 @@ export function deriveWarmupState (
 // useSecondTicker bumps a 1-Hz counter that forces the calling component to
 // re-render every second while `enabled` is true. Used by `UserOrderRow`
 // (active variant only) and the `RecentMatchesTable` component so their
-// age columns tick live — mirroring the single `window.setInterval` vanilla
+// age columns tick live - mirroring the single `window.setInterval` vanilla
 // sets up in `markets.ts` L561-566. Each calling component owns its own
 // interval; the cost is trivial and it keeps the re-render scope local
 // (no full-MarketsPage re-renders).
 //
 // The `enabled` flag lets callers opt out (e.g. completed user orders,
-// whose age text is frozen at draw time in vanilla — L2178 — and shouldn't
+// whose age text is frozen at draw time in vanilla - L2178 - and shouldn't
 // live-update in React either, for strict parity).
 export function useSecondTicker (enabled: boolean = true): void {
   const [, setTick] = useState(0)
@@ -336,7 +336,7 @@ export function useSecondTicker (enabled: boolean = true): void {
 
 // useLatestRef exposes the most recent value of `value` through a ref
 // whose identity never changes. Designed for callbacks / effect closures
-// that need the freshest value without subscribing to it — putting the
+// that need the freshest value without subscribing to it - putting the
 // value in a dep array would force the effect to tear down + rebuild
 // on every change, so consumers read `.current` instead.
 //

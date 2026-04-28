@@ -1,4 +1,4 @@
-// BridgeHistory — pending + history table (B-L16).
+// BridgeHistory - pending + history table (B-L16).
 //
 // Direct port of vanilla
 // `client/webserver/site/src/js/bridging/components/BridgeHistory.tsx`.

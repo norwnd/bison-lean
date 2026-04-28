@@ -42,7 +42,7 @@ export function NewWalletForm ({ assetID, onSuccess, onBack }: Props) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   // walletPass is the wallet password (e.g. for an external dcrwallet/bitcoind
-  // RPC endpoint). NOT the app password — `apiNewWallet` resolves the app
+  // RPC endpoint). NOT the app password - `apiNewWallet` resolves the app
   // password server-side from the cached cookie via `resolvePass`. The JSON
   // key on the wire is `pass`, matching the Go `newWalletForm.Pass` field.
   const [walletPass, setWalletPass] = useState('')

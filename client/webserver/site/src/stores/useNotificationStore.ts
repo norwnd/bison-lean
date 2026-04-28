@@ -45,7 +45,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       if (handler) handler(note)
     }
 
-    // 2. Discard data/ignore-only notes — they don't surface in the UI.
+    // 2. Discard data/ignore-only notes - they don't surface in the UI.
     //    Mirrors dev2 `app.ts notify()` "if (note.severity < ntfn.POKE) return".
     if (note.severity < POKE) return
 
@@ -62,7 +62,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     //    queue stays empty while the user has popups disabled. If we
     //    enqueued unconditionally and gated rendering at the component
     //    level, toggling `showPopups` on would suddenly surface every
-    //    queued item at once — items that may already be 5+ seconds old
+    //    queued item at once - items that may already be 5+ seconds old
     //    but would still play their full 6s fade-out, looking stuck.
     if (useUIStore.getState().showPopups) {
       const id = ++popupCounter
@@ -94,7 +94,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   // ackNotes mirrors dev2 `app.ts ackNotes()` (L893): marks every unacked
   // entry as acked locally, collects the ids of unacked SUCCESS+ notes
-  // (POKEs aren't sent — they have no server-side ack), and fires a single
+  // (POKEs aren't sent - they have no server-side ack), and fires a single
   // batched `acknotes` WS request.
   ackNotes: () => {
     const acks: string[] = []

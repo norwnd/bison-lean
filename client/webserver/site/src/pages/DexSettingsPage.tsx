@@ -83,7 +83,7 @@ export default function DexSettingsPage () {
   // AppLayout's WS dispatcher (typed merges for `reputation` /
   // `bondpost`, fetchUser on every WS open and on `feepayment`), so
   // this component re-renders automatically as the exchange data
-  // changes — no local note subscription needed.
+  // changes - no local note subscription needed.
   const currentExchange = exchanges[host]
   const currentAuth = currentExchange?.auth
   const connectionStatus = currentExchange?.connectionStatus
@@ -515,7 +515,7 @@ export default function DexSettingsPage () {
           <button className="btn btn-outline-secondary" onClick={() => setShowUpdateHost(true)}>
             {t('UPDATE_DEX_HOST')}
           </button>
-          {/* Destructive action — visually separated by ms-auto and the
+          {/* Destructive action - visually separated by ms-auto and the
               `danger` outline so it's harder to misclick when scanning
               the row. Becomes a neutral `secondary` outline when the
               account is already disabled (the action is then a recovery

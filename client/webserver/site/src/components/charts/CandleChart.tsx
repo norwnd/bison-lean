@@ -141,7 +141,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     stateRef.current.theme = darkMode ? darkTheme : lightTheme
   }, [darkMode])
 
-  // Reset pan when market or duration changes — the candle index space
+  // Reset pan when market or duration changes - the candle index space
   // starts fresh so the old offset is meaningless.
   useEffect(() => {
     stateRef.current.panOffset = 0
@@ -154,7 +154,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
   // append while the user is scrolled back, shift panOffset by the number
   // of appends so they keep seeing the same absolute slice of history.
   // Prepends (older-history pagination) don't shift panOffset because
-  // panOffset is measured from the newest candle — a prepend grows the
+  // panOffset is measured from the newest candle - a prepend grows the
   // index space at the far end, leaving the current view anchored.
   useEffect(() => {
     if (!data || !data.candles?.length) return
@@ -163,7 +163,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     const newestStamp = data.candles[total - 1].endStamp
 
     if (!hasInitRef.current) {
-      // First data for this market/duration — initialise zoom from the
+      // First data for this market/duration - initialise zoom from the
       // saved preference or a default. If the chart would boot maxed out
       // (desired >= total), back off to ~70% so the wheel has room to
       // zoom out. Without this, small markets silently no-op on zoom-out
@@ -176,7 +176,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       s.numToShow = clamp(Math.round(desired), MIN_ZOOM_CANDLES, Math.max(total, MIN_ZOOM_CANDLES))
       hasInitRef.current = true
     } else {
-      // Subsequent ticks within the same stream — preserve the user's
+      // Subsequent ticks within the same stream - preserve the user's
       // chosen zoom, just re-clamp to the new `total`. Running the init
       // here would undo an explicit zoom-to-max the moment the next
       // candle ticks in.
@@ -322,7 +322,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     ctx.fillStyle = theme.axisLabel
     s.yLabelsRegion.extents.y.max = s.candleRegion.extents.y.max
 
-    // Compute Y labels first — uses candleRegion.height() which doesn't
+    // Compute Y labels first - uses candleRegion.height() which doesn't
     // depend on gutter width, so it's safe to run before resizing regions.
     const yLabels = makeYLabels(ctx, s.candleRegion.height(), chartExtents.y.min, chartExtents.y.max, 50, rateStep,
       v => formatRateAtomToRateStep(v, baseUnitInfo, quoteUnitInfo, rateStep)
@@ -331,10 +331,10 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
     // grid line and its label stay coupled (plotYGrid and the label pass
     // share this list). Two cases are filtered:
     //  1. Ticks within a few pixels of the top (chart border or duration-
-    //     buttons grid) or bottom (volume divider) edge — otherwise the
+    //     buttons grid) or bottom (volume divider) edge - otherwise the
     //     grid line kisses the edge / the label collides with the
     //     buttons.
-    //  2. The single tick closest to the live price — its label would stack
+    //  2. The single tick closest to the live price - its label would stack
     //     under the coloured last-price pill. Done here (not in the label
     //     render loop) so the grid line is removed too; otherwise users see
     //     a naked grid line without a corresponding label after panning.
@@ -463,7 +463,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
         cCtx.moveTo(cx, high)
         cCtx.lineTo(cx, low)
         cCtx.stroke()
-        // Doji (open == close) — draw a 1px stub instead of an invisible rect.
+        // Doji (open == close) - draw a 1px stub instead of an invisible rect.
         if (Math.abs(h) < 1) {
           cCtx.fillRect(x, y - 0.5, w, 1)
         } else {
@@ -473,7 +473,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       }
     })
 
-    // Last-price line + right-gutter pill — always pinned to the latest
+    // Last-price line + right-gutter pill - always pinned to the latest
     // global candle, so the marker survives panning back in history.
     if (globalLast) {
       const lastUp = globalLast.endRate >= globalLast.startRate
@@ -487,7 +487,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
           dashedLine(lctx, tools.x(chartExtents.x.min), rawY, tools.x(chartExtents.x.max), rawY, [4, 4])
         })
       }
-      // Pill — if the price is off-range, clamp to the nearest edge so
+      // Pill - if the price is off-range, clamp to the nearest edge so
       // the user can still see it. The lower bound also clears the
       // duration-buttons grid (DUR_BTN_PILL_MIN_Y) so the pill doesn't
       // overlap the buttons when the live price sits near the top of
@@ -673,7 +673,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       if (total === 0) return
       const bigger = e.deltaY < 0
       const factor = bigger ? 1 / ZOOM_WHEEL_FACTOR : ZOOM_WHEEL_FACTOR
-      // Guarantee at least a one-candle step per wheel tick — at small
+      // Guarantee at least a one-candle step per wheel tick - at small
       // numToShow values the ~1.5% multiplier rounds to zero, which would
       // otherwise make the wheel feel dead.
       let stepped = Math.round(s.numToShow * factor)
@@ -725,7 +725,7 @@ export function CandleChart ({ data, market, baseUnitInfo, quoteUnitInfo, mktId,
       canvas.removeEventListener('wheel', onWheel)
       observer.disconnect()
     }
-    // `data` is intentionally omitted — `render`'s useCallback deps include
+    // `data` is intentionally omitted - `render`'s useCallback deps include
     // it, so `render`'s identity changes when candles update and this effect
     // re-runs, rebinding handlers with the fresh closure.
     // `maybeRequestOlderHistory` is included because the handlers reference

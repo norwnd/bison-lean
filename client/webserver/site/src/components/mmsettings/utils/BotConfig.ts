@@ -1,4 +1,4 @@
-// BotConfig — reducer + React context for the mmsettings bot editor.
+// BotConfig - reducer + React context for the mmsettings bot editor.
 // Ported from vanilla `mmsettings/utils/BotConfig.ts` (1557 lines).
 //
 // Vanilla reached for the global `app()` singleton and the `MM` wrapper
@@ -7,15 +7,15 @@
 // wrappers (`services/mmApi.ts`, `components/bridging/bridgeApi.ts`).
 // Zustand stores are module-level singletons, so calling
 // `useAuthStore.getState()` in non-React code is the idiomatic
-// replacement for `app()` — identical semantics, no hook needed.
+// replacement for `app()` - identical semantics, no hook needed.
 //
 // Everything else (the reducer, async initializers, bridge/fee
 // helpers, multi-hop math) is transcribed line-for-line so future
 // behavioural drift between vanilla and the React port is easy to
 // diff.
 //
-// The two missing vanilla helpers — `calculateQuoteLot` and
-// `currentWalletDefinition` — are re-implemented as private helpers
+// The two missing vanilla helpers - `calculateQuoteLot` and
+// `currentWalletDefinition` - are re-implemented as private helpers
 // at the top of this file; they are only used here.
 //
 // A handful of vanilla guarantees translate imperfectly:

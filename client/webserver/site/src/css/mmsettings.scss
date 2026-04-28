@@ -1,8 +1,8 @@
-// mmsettings — styles restored from the vanilla `mm.scss`. The React
+// mmsettings - styles restored from the vanilla `mm.scss`. The React
 // port referenced these class names but the SCSS itself never made it
 // across, leaving layout that relied on explicit sizes (flex sidebar,
 // chart wrapper height, min-width: 0 on the content column) behaving
-// unpredictably — most visibly, the PlacementsChart canvas feedback
+// unpredictably - most visibly, the PlacementsChart canvas feedback
 // loop stretching the Buy Placements column to the right over time.
 // Vanilla scoped everything under `div[data-handler=mmsettings]`;
 // classes here are mm-specific enough that dropping the scope is safe.
@@ -127,7 +127,7 @@
   align-self: flex-start;
 }
 
-// Content area — min-width:0 lets the flex item shrink below its
+// Content area - min-width:0 lets the flex item shrink below its
 // descendants' intrinsic min-content, which is what prevents canvas
 // and wide-table descendants from pushing the whole page wider.
 .mm-content {
@@ -162,7 +162,7 @@
   }
 }
 
-// Tab navigation — underline style
+// Tab navigation - underline style
 .mm-tab-nav {
   display: flex;
   border-bottom: 1px solid var(--border-color);

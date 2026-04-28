@@ -25,7 +25,7 @@ import { fetchLocal, storeLocal, newUserBannerDismissedLK } from '../services/st
 // seedBackedUp) because the banner needs to re-check its conditions whenever
 // the auth state changes. In React, a single component subscribed to
 // `useAuthStore` re-evaluates on every `seedGenTime` transition automatically,
-// so login/init pages don't need to call anything — they just cause `user`
+// so login/init pages don't need to call anything - they just cause `user`
 // to update, and this component reacts.
 //
 // Closes LP-01 (high) + IP-01 (low) with one shared implementation.
@@ -40,7 +40,7 @@ export function NewUserBanner () {
     return typeof v === 'number' ? v : 0
   })
 
-  // Not initialized yet — no seed, nothing to offer.
+  // Not initialized yet - no seed, nothing to offer.
   if (!seedGenTime) return null
   // Already dismissed for this seed generation.
   if (dismissedFor === seedGenTime) return null

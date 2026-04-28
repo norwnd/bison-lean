@@ -90,15 +90,15 @@ export default function MarketsPage () {
   // and subscribing to the full map forced the entire page to re-render
   // on each one even though the user is only viewing one market. We now
   // subscribe to two narrower signals instead:
-  //   1. `marketKeysSignal` — a shallow-compared sorted list of
+  //   1. `marketKeysSignal` - a shallow-compared sorted list of
   //      `host|marketName` identifiers. Fires only when markets are
   //      added/removed; spot updates don't touch the list. Used to
   //      trigger the "default to first market" validation effect below.
-  //   2. `currentXc` — a per-host selector declared after `selected` is
+  //   2. `currentXc` - a per-host selector declared after `selected` is
   //      in scope. Fires only when the SELECTED host's entry changes
   //      identity; notes about other hosts are invisible here.
-  // The remaining consumer of the full `exchanges` map — the market-list
-  // dock in `OrderBookPanel` — now subscribes to it directly inside that
+  // The remaining consumer of the full `exchanges` map - the market-list
+  // dock in `OrderBookPanel` - now subscribes to it directly inside that
   // component, which keeps its re-renders contained to the leaf.
   const marketKeysSignal = useAuthStore(useShallow(s => {
     const keys: string[] = []
@@ -163,7 +163,7 @@ export default function MarketsPage () {
   const bumpBook = useCallback(() => setBookVersion(v => v + 1), [])
   // Tracks whether the auto-fill "seed rate" has already run for the current
   // market. The auto-fill (`fillRateFromBook` call inside `handleBook`) is
-  // strictly an initial seed — mirrors vanilla `reInitOrderForms`. Without
+  // strictly an initial seed - mirrors vanilla `reInitOrderForms`. Without
   // this guard, every subsequent `book` WS snapshot (reconnects,
   // server-initiated re-sync) would re-seed the rate and clobber whatever
   // the user has typed into the OrderForm's price input.
@@ -198,7 +198,7 @@ export default function MarketsPage () {
   // market-load prefetch and by the on-demand loadCandles fallback; cleared
   // in handleCandles when the response lands. Used to de-dupe the two
   // request paths so a duration-click during prefetch doesn't fire a
-  // duplicate request — the click just flips the spinner on and waits for
+  // duplicate request - the click just flips the spinner on and waits for
   // the in-flight response.
   const candlesInFlightRef = useRef<Set<string>>(new Set())
   // Per-duration history pagination state. `inFlight` prevents concurrent
@@ -254,8 +254,8 @@ export default function MarketsPage () {
   // the selected host (handleSpotPriceNote in useMarketStore.ts rebuilds
   // `exchanges[host]` identity on every tick even though only `.markets`
   // is touched). The handlers actually only need `currentXc` for a null
-  // check and `.assets[id]` lookups — both ref-stable across spot notes
-  // — so reading through a ref lets them see the freshest value without
+  // check and `.assets[id]` lookups - both ref-stable across spot notes
+  // - so reading through a ref lets them see the freshest value without
   // forcing the effect to re-run. Measured impact: a 9-spot-note cluster
   // dropped from ~23 MP renders + 18ms async tail to 9 renders with no
   // tail.
@@ -282,7 +282,7 @@ export default function MarketsPage () {
   // `currentXc`. `unitInfo` objects are ref-stable across spot notes and
   // balance notes (neither handler touches `.assets[id].unitInfo`), so
   // returning the same ref from the selector lets Zustand's default
-  // `Object.is` equality short-circuit — no MarketsPage re-render for
+  // `Object.is` equality short-circuit - no MarketsPage re-render for
   // these specifically. The old `useMemo(..., [currentXc])` deps churned
   // every spot note because `currentXc` identity changed.
   const bui = useAuthStore(s =>
@@ -324,7 +324,7 @@ export default function MarketsPage () {
   // -------------------------------------------------------------------------
   // Default to first available market if none selected, plus MP-67 validation
   // -------------------------------------------------------------------------
-  // CL-MP-NARROW-SELECTOR (Fix A): the old dep was `allMarkets` — a derived
+  // CL-MP-NARROW-SELECTOR (Fix A): the old dep was `allMarkets` - a derived
   // array that churned identity on every spot note, causing this effect to
   // re-run (harmlessly) on every tick. `marketKeysSignal` narrows the
   // trigger to actual membership changes (markets added / removed). The
@@ -378,7 +378,7 @@ export default function MarketsPage () {
 
     // Reset book/match state for the new market. NOTE:
     // `initialRateFilledRef` is reset in its own `[selected]`-only effect
-    // above — we don't want WS reconnect (which re-fires this effect) to
+    // above - we don't want WS reconnect (which re-fires this effect) to
     // clobber the flag and re-seed the user's rate input.
     bookRef.current = null
     setRecentMatches([])
@@ -388,7 +388,7 @@ export default function MarketsPage () {
       const mktBook: MarketOrderBook = data.payload
       // CL-MP-RERENDER-CASCADE (Fix B): read `currentXc` through the ref
       // so the enclosing effect doesn't have to re-run on every spot
-      // note. `.assets[baseID]` identity is stable across spot notes —
+      // note. `.assets[baseID]` identity is stable across spot notes -
       // spot notes only rebuild `.markets`, never `.assets` (see
       // `handleSpotPriceNote` in useMarketStore.ts).
       const xc = currentXcRef.current
@@ -407,7 +407,7 @@ export default function MarketsPage () {
       bumpBook()
 
       // Auto-fill initial rate into order forms (mirrors vanilla
-      // reInitOrderForms). This is a one-shot seed — subsequent `book`
+      // reInitOrderForms). This is a one-shot seed - subsequent `book`
       // snapshots (reconnects, server-initiated re-syncs) must NOT re-fire
       // the auto-fill or they'd clobber whatever the user has typed into
       // the price input. The flag is reset only on market switch via its
@@ -523,7 +523,7 @@ export default function MarketsPage () {
   // Each response is routed to `handleCandles` and populates
   // `candleCacheRef`; only the currently-selected dur (gated by
   // `reqCandleDurRef`) flips the spinner off and renders. A duration-click
-  // after the prefetch is pure "display intent" — it's either an instant
+  // after the prefetch is pure "display intent" - it's either an instant
   // cache hit, or the spinner waits for the in-flight prefetch response.
   //
   // Sibling of the book effect above; same `currentXc`-not-in-deps
@@ -670,7 +670,7 @@ export default function MarketsPage () {
       return
     }
     setCandleLoading(true)
-    // The market-load prefetch usually has this request already in flight —
+    // The market-load prefetch usually has this request already in flight -
     // a duration-click should be a pure "display intent", not a "fetch
     // intent". Only fire on cache-and-prefetch miss (e.g. a dur that
     // wasn't in `xc.candleDurs`, or fired before the xc was populated).
@@ -838,7 +838,7 @@ export default function MarketsPage () {
     conn: (note: ConnEventNote) => {
       if (!selected) return
       if (note.host !== selected.host) return
-      // MP-64: mirror vanilla `handleConnNote` — re-snapshot active
+      // MP-64: mirror vanilla `handleConnNote` - re-snapshot active
       // orders on (re)connect / admin toggle. The fetchUser side of
       // vanilla's handler now lives in AppLayout's `conn` dispatcher
       // (DEXConnected / DEXEnabled), so we no longer call it here.
@@ -865,11 +865,11 @@ export default function MarketsPage () {
   }, [setSearchParams])
 
   // Set the rate in both OrderForm instances. Called from two places:
-  //   1. `handleBook` inside the market-subscribe effect — auto-seeds the
+  //   1. `handleBook` inside the market-subscribe effect - auto-seeds the
   //      rate from the book midpoint ONCE per market. Guarded by
   //      `initialRateFilledRef` so reconnects and re-syncs don't clobber
   //      the user's typed rate.
-  //   2. User clicks in `OrderBookPanel` — always fires (user intent to
+  //   2. User clicks in `OrderBookPanel` - always fires (user intent to
   //      override the current rate). Intentionally NOT gated by any flag.
   const fillRateFromBook = useCallback((msgRate: number) => {
     setBookRateAtom(msgRate)
@@ -937,7 +937,7 @@ export default function MarketsPage () {
   // Viewport-aware per-side row cap. OrderBookPanel reports its
   // `#orderBook` container element through a callback ref; we observe
   // its size and raise the cap so taller viewports show more rows.
-  // Small viewports stay at ORDER_BOOK_SIDE_MIN (13) — same as before.
+  // Small viewports stay at ORDER_BOOK_SIDE_MIN (13) - same as before.
   const [orderBookEl, setOrderBookEl] = useState<HTMLDivElement | null>(null)
   const [orderBookSideMax, setOrderBookSideMax] = useState<number>(ORDER_BOOK_SIDE_MIN)
   useEffect(() => {
@@ -1220,7 +1220,7 @@ export default function MarketsPage () {
 
                 {/* LEFTMOST SECTION: Market list + Order book */}
                 {/* CL-MP-NARROW-SELECTOR (Fix A): `allMarkets` and
-                    `exchanges` are no longer passed down — OrderBookPanel
+                    `exchanges` are no longer passed down - OrderBookPanel
                     subscribes to the store itself. This keeps the broad
                     `exchanges` re-subscription contained to the leaf
                     component that actually needs the full map for its

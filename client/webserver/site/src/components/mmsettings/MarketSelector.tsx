@@ -1,4 +1,4 @@
-// MarketSelector — modal popup for picking an (exchange, base, quote)
+// MarketSelector - modal popup for picking an (exchange, base, quote)
 // triple for a new mmsettings bot. Ported from vanilla
 // `mmsettings/components/MarketSelector.tsx`.
 //

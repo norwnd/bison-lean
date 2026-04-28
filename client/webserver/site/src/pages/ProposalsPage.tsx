@@ -26,7 +26,7 @@ interface PaginationInfo {
 }
 
 // `key` is the server-side filter value (sent as ?status=<key> on /api/proposals).
-// `label` is the i18n key used for the button text — matches the Title-Case
+// `label` is the i18n key used for the button text - matches the Title-Case
 // entries in en-US.json ("Authorized", "Started", ...). "ALL" is UPPER_SNAKE
 // because there's no matching single-word Title-Case key.
 const VOTE_STATUS_OPTIONS = [

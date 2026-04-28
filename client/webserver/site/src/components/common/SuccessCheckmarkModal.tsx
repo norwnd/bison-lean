@@ -16,7 +16,7 @@ import { FormOverlay } from './FormOverlay'
 //
 // Vanilla's animation drives `checkmark.style.fontSize` from 0 → 80px and
 // `checkmark.style.color` from the body text color to green (#10a310) over
-// 1200ms with easeOutElastic, then waits 1500ms before closing — 2700ms
+// 1200ms with easeOutElastic, then waits 1500ms before closing - 2700ms
 // total. The CSS approximation below uses a keyframe sequence with
 // overshoot+pullback steps to evoke the elastic bounce without a JS
 // animation loop, and the auto-close timer fires onClose after 2700ms to
@@ -35,7 +35,7 @@ interface Props {
   onClose: () => void
 }
 
-// Total duration: 1200ms animation + 1500ms hold — matches vanilla
+// Total duration: 1200ms animation + 1500ms hold - matches vanilla
 // `animateCheckmark` (1200ms) + the subsequent pause in the `showSuccess`
 // call sites at `proposal.ts` L84-89 and `dexsettings.ts` L119.
 const CHECKMARK_ANIMATION_MS = 1200

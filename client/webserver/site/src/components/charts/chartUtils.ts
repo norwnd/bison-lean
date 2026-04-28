@@ -202,7 +202,7 @@ export const darkTheme: Theme = {
   axisLabel: '#848E9C',
   gridLines: '#1E2329',
   gapLine: '#6b6b6b',
-  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) — match the
+  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) - match the
   // app-wide --sell-color / --buy-color CSS variables.
   sellLine: '#ad0e0e',
   buyLine: '#00703b',
@@ -224,7 +224,7 @@ export const lightTheme: Theme = {
   axisLabel: '#707A8A',
   gridLines: '#EAECEF',
   gapLine: '#595959',
-  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) — match the
+  // sellLine/buyLine/sellFill/buyFill: PlacementsChart (MM) - match the
   // app-wide --sell-color / --buy-color CSS variables.
   sellLine: '#ad0e0e',
   buyLine: '#00703b',

@@ -1,4 +1,4 @@
-// MMSettings — the market-maker settings shell. Ported from vanilla
+// MMSettings - the market-maker settings shell. Ported from vanilla
 // `mmsettings/components/MMSettings.tsx` as the final piece of the
 // MMS-01 module port.
 //
@@ -90,7 +90,7 @@ export interface MMSettingsError {
 
 // AvailableMarket is the row shape consumed by MarketSelector and the
 // top-level MMSettingsPage dropdown. Lean adds `vol24` (used for the
-// usd-equivalent volume sort) — vanilla had a `hasArb` field here that
+// usd-equivalent volume sort) - vanilla had a `hasArb` field here that
 // is never read by MarketSelector (supported-cex presence is computed
 // fresh via `checkCexMarketSupport`), so it's intentionally omitted.
 export interface AvailableMarket {
@@ -202,7 +202,7 @@ export const cexSupportsArbOnMarket = (
     if (supportsQuoteAsset(cexQuoteID)) quoteMarkets.add(cexBaseID)
   }
 
-  // No direct match — compute intermediate assets that can bridge the
+  // No direct match - compute intermediate assets that can bridge the
   // trade in two hops (base→intermediate on one market, intermediate→quote
   // on another).
   const intermediateAssets: Record<number, boolean> = {}
@@ -412,7 +412,7 @@ const MMSettings = forwardRef<MMSettingsHandle, MMSettingsProps>(({
     },
   }), [botConfigState])
 
-  // Derived fetch keys — both effects below key off these so they only
+  // Derived fetch keys - both effects below key off these so they only
   // refire when the actual fee-inputs change, not on every reducer
   // transition. Inside each effect we read the fresh state via
   // `latestBotConfigState.current`.
@@ -472,7 +472,7 @@ const MMSettings = forwardRef<MMSettingsHandle, MMSettingsProps>(({
     performFetch(state, key).then(() => undefined)
   }, [fundingKey, fundingFeesReadyKey])
 
-  // External fees (CEX-side) fetch effect. No retry — this is a
+  // External fees (CEX-side) fetch effect. No retry - this is a
   // read-through lookup that either works or returns 0s.
   useEffect(() => {
     if (!externalKey) return

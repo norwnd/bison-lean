@@ -3,7 +3,7 @@ import ws, { type NoteReceiver } from '../services/websocket'
 
 interface WebSocketState {
   connected: boolean
-  // `onOpen` fires on every successful WS open — initial connect AND
+  // `onOpen` fires on every successful WS open - initial connect AND
   // every reconnect. Use it to (re)hydrate server-derived state.
   connect: (uri: string, onOpen: () => void) => void
   subscribe: (route: string, handler: NoteReceiver) => void

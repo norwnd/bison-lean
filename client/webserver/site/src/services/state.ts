@@ -60,7 +60,7 @@ export function fetchLocal (k: string): any {
   try {
     return JSON.parse(v)
   } catch (err) {
-    // Corrupted entry (external edit, extension, older schema, etc.) —
+    // Corrupted entry (external edit, extension, older schema, etc.) -
     // treat it as absent so render-time callers don't crash the app.
     console.warn(`fetchLocal: dropping unparseable value for ${k}`, err)
     return null

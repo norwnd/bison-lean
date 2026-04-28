@@ -408,9 +408,9 @@ export interface BondNote extends CoreNote {
   auth: ExchangeAuth | null
 }
 
-// DEXAuthNote — emitted by Core when per-DEX auth edge flips or fails.
+// DEXAuthNote - emitted by Core when per-DEX auth edge flips or fails.
 // Topics: 'DexAuthError' / 'DexAuthErrorBond' (auth failure), plus
-// 'UnknownOrders' / 'OrdersReconciled' which also use this type — callers
+// 'UnknownOrders' / 'OrdersReconciled' which also use this type - callers
 // should filter by topic before treating as an auth error.
 export interface DEXAuthNote extends CoreNote {
   host: string
@@ -481,7 +481,7 @@ export interface TransactionActionNote {
   nonce: number
   newFees: number
   // blocked summarizes pending wallet txs at higher nonces that are queued
-  // behind tx — they cannot mine until tx is resolved (mined, abandoned, or
+  // behind tx - they cannot mine until tx is resolved (mined, abandoned, or
   // dropped from tracking). Surfaced so the user knows what depends on
   // their decision on this prompt.
   blocked?: BlockedTxInfo[]
@@ -519,7 +519,7 @@ export interface AutoBumpCappedNote {
 // investigate.
 export interface LostNonceNote {
   nonce: number
-  // ourTxID is the hex hash of the latest candidate at this nonce — the
+  // ourTxID is the hex hash of the latest candidate at this nonce - the
   // tx whose mining was preempted.
   ourTxID: string
   // externalTxID is the hex hash of the external transaction, when the

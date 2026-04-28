@@ -1,4 +1,4 @@
-// BotAllocationsTab — tab content that picks between the auto (quick)
+// BotAllocationsTab - tab content that picks between the auto (quick)
 // and manual balance-allocation views for an mmsettings bot, keyed on
 // `uiConfig.usingQuickBalance`. Ported from vanilla
 // `mmsettings/components/BotAllocationsTab.tsx`.

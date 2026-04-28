@@ -10,7 +10,7 @@ import { baseToQuote } from '../../components/AccountUtils'
 import type { Market, UnitInfo } from '../../stores/types'
 
 // ---------------------------------------------------------------------------
-// VerifyOrderForm — confirmation modal shown after the user submits the
+// VerifyOrderForm - confirmation modal shown after the user submits the
 // main order form. Owns the submit request + its transient state
 // (submitting, orderError); the parent only receives the success signal
 // and performs any form-reset work in response.
@@ -18,7 +18,7 @@ import type { Market, UnitInfo } from '../../stores/types'
 
 export interface VerifyOrderFormProps {
   isSell: boolean
-  // Full `/api/tradeasync` payload — this component POSTs it on submit.
+  // Full `/api/tradeasync` payload - this component POSTs it on submit.
   order: {
     host: string
     isLimit: boolean
@@ -54,7 +54,7 @@ export function VerifyOrderForm ({
   disclaimerAcked, onAckDisclaimer, onUnackDisclaimer,
   onClose, onSuccess, t
 }: VerifyOrderFormProps) {
-  // Submit state lives here — the modal is fully remounted every time it
+  // Submit state lives here - the modal is fully remounted every time it
   // opens (FormOverlay unmounts when show=false), so these always start
   // fresh and don't need external reset.
   const [submitting, setSubmitting] = useState(false)

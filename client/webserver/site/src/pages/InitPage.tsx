@@ -35,7 +35,7 @@ interface WalletRow {
  *  - Boolean opts always emit '0' or '1' (a missing key is a distinct
  *    "unset" state to some wallets, so we never drop a bool default).
  *  - For other opts, only emit when the default is actually set (use
- *    null/undefined as the sentinel — falsy values like 0 and '' are
+ *    null/undefined as the sentinel - falsy values like 0 and '' are
  *    valid defaults and would be lost under a `!opt.default` check).
  *  - Repeatable opts join multi-value defaults with the opt's separator.
  */
@@ -59,7 +59,7 @@ function buildConfigFromDefaults (walletDef: WalletDefinition): Record<string, s
 
 /**
  * InitStepShell is the centred, narrow column the three init steps share
- * — a single source of truth for the layout means future tweaks
+ * - a single source of truth for the layout means future tweaks
  * (responsive breakpoints, padding, etc.) only happen in one place.
  *
  * The body uses `position: fixed` (see main.scss), so the page itself
@@ -73,7 +73,7 @@ function buildConfigFromDefaults (walletDef: WalletDefinition): Record<string, s
  * re-firing the `slide-in-from-right` keyframe so each step animates
  * in instead of swapping abruptly.
  *
- * `wide` opts the column out of the narrow `col-lg-4` default — used by
+ * `wide` opts the column out of the narrow `col-lg-4` default - used by
  * QuickConfig where the wallet list needs more horizontal room than the
  * password / seed-backup steps.
  */
@@ -99,14 +99,14 @@ export default function InitPage () {
   const [step, setStep] = useState<Step>('password')
 
   // Make sure the InitGuard's "stay on /init mid-flow" override doesn't
-  // outlive this page — if the user navigates away (browser back, etc.)
+  // outlive this page - if the user navigates away (browser back, etc.)
   // we want a future visit to /init to be subject to the normal redirect.
   useEffect(() => {
     return () => { setInitInProgress(false) }
   }, [setInitInProgress])
 
   // Password stage state. `password` doubles as the captured value used
-  // by `submitQuickConfig` to authenticate /api/newwallet — the input
+  // by `submitQuickConfig` to authenticate /api/newwallet - the input
   // it backs is only rendered during step='password', so keeping it in
   // a single state cell is safe (no stale-render leak) and the value is
   // wiped explicitly in `finalize` before navigating away.
@@ -132,7 +132,7 @@ export default function InitPage () {
   // Refs to inline WalletConfigForm instances, keyed by asset id. Populated
   // by the form's ref callback at mount; entries removed at unmount (when
   // the user unchecks a row). `submitQuickConfig` reads from this map for
-  // required-config wallets only — defaulted wallets fall through to
+  // required-config wallets only - defaulted wallets fall through to
   // `buildConfigFromDefaults`.
   const walletConfigRefs = useRef<Map<number, WalletConfigFormHandle>>(new Map())
 
@@ -168,7 +168,7 @@ export default function InitPage () {
     setMnemonic(responseMnemonic)
 
     // Pull the asset list directly so we can populate the wallet
-    // checkboxes without going through the auth store — the store
+    // checkboxes without going through the auth store - the store
     // update would notify InitGuard via `inited`, and even with the
     // initInProgress override we'd rather not trigger gratuitous
     // re-renders mid-flow.
@@ -388,7 +388,7 @@ export default function InitPage () {
                   a single tall column. col-md-6/col-lg-4 gives 2 then 3
                   per row at the form's typical breakpoints. Items with
                   an inline config form (needsConfig + checked) just
-                  grow vertically within their cell — Bootstrap stretches
+                  grow vertically within their cell - Bootstrap stretches
                   the flex row to match, leaving empty space under the
                   shorter neighbours rather than breaking the grid. */}
               <div className="row g-2 mt-2">

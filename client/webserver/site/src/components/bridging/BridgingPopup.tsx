@@ -1,4 +1,4 @@
-// BridgingPopup — orchestrator for the bridge modal (B-L16).
+// BridgingPopup - orchestrator for the bridge modal (B-L16).
 //
 // Port of vanilla
 // `client/webserver/site/src/js/bridging/components/BridgingPopup.tsx`,
@@ -178,7 +178,7 @@ function BridgingPopup ({ networkAssetIDs, bridgePaths, onClose }: BridgingPopup
   }, [state.loading, state.bridgeHistoryLoaded, state.bridgeHistoryPageSize, networkAssetIDs, assets, t])
 
   // -----------------------------------------------------------------------
-  // WS note handlers — replaces vanilla's `useImperativeHandle`-based
+  // WS note handlers - replaces vanilla's `useImperativeHandle`-based
   // method exposure. Each handler updates the reducer state in-place
   // so the form/history/details views re-render reactively.
   // -----------------------------------------------------------------------

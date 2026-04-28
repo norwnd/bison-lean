@@ -9,7 +9,7 @@ import { txTypeLabel } from './actionRequiredUtils'
 // walletnote channel) and pushes it through the notification store.
 // The data note arrives at severity=DATA which the store filters out
 // of the popup queue; promoting it to WARNING is what the user
-// actually wants — the wallet has stopped auto-bumping a stuck
+// actually wants - the wallet has stopped auto-bumping a stuck
 // Redeem/Refund and now needs manual review.
 //
 // The wallet emits this at most once per slot (slot.autoBumpCapNoticed

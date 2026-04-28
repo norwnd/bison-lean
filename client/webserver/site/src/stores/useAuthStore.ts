@@ -9,14 +9,14 @@ import type { User, SupportedAsset, Exchange, UnitInfo, WalletState, MarketMakin
 //
 //   - Hydrated up-front by `applyUserResponse` (login response + WS-
 //     open `fetchUser`).
-//   - Kept in sync thereafter by typed merge functions — one per WS
+//   - Kept in sync thereafter by typed merge functions - one per WS
 //     note that changes persistent state (`applyReputationNote`,
 //     `applyBondPostNote`, etc.). New note types should add a typed
 //     merge here, wired into the AppLayout dispatcher; do NOT route
 //     them through pages.
 //   - Pages subscribe to store slices via `useAuthStore(s => ...)`
 //     and re-render automatically. They should never call fetchUser
-//     or trigger forceReRender to "see fresh data" — the invariant
+//     or trigger forceReRender to "see fresh data" - the invariant
 //     above guarantees the slice is current.
 //
 // LoginResult mirrors vanilla `LoginForm.submit()` (forms.ts L1822) which
@@ -31,7 +31,7 @@ export type LoginResult =
 
 // LogoutResult mirrors the login/logout error-surfacing pattern.
 // Vanilla `app.ts` `signOut()` branches on `res.code ===
-// Errors.activeOrdersErr` to show a distinct message — the discriminated
+// Errors.activeOrdersErr` to show a distinct message - the discriminated
 // union preserves that `code` so callers can special-case it.
 export type LogoutResult =
   | { ok: true }
@@ -74,13 +74,13 @@ export interface AuthState {
   // note into `exchanges[host].auth.rep` and recomputes
   // `effectiveTier` (BondedTier − Penalties, mirroring server
   // `Reputation.EffectiveTier()` in `server/account/account.go`).
-  // No-op if the host is not yet in the store — the next /api/user
+  // No-op if the host is not yet in the store - the next /api/user
   // refresh will catch it.
   applyReputationNote: (note: ReputationNote) => void
   // applyBondPostNote merges a `bondpost` note. When `note.auth` is
   // present, the server has handed us the full updated ExchangeAuth
   // for the host (post-confirmation, post-registration, expiry,
-  // BondAuthUpdate) — replace auth wholesale. When `note.auth` is
+  // BondAuthUpdate) - replace auth wholesale. When `note.auth` is
   // null, the note is informational (in-flight confirmation count
   // or error) and we skip the merge.
   applyBondPostNote: (note: BondNote) => void
@@ -100,7 +100,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
   // sessionResetState is the slice of AuthState that represents
   // "no logged-in user, no per-session cache". Shared by `logout()` and
   // the user=null branch of applyUserResponse so the two paths stay in
-  // sync — every per-session field that one clears, the other clears too.
+  // sync - every per-session field that one clears, the other clears too.
   const sessionResetState = {
     user: null,
     authed: false,
@@ -147,7 +147,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       clearSessionCaches()
       return null
     }
-    // Clear authFailed entries for any host that is now authed — a stale
+    // Clear authFailed entries for any host that is now authed - a stale
     // error from a prior login attempt shouldn't linger once Core signals
     // success via the refreshed user payload.
     const prevFailed = get().authFailed
@@ -235,7 +235,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       // is "index 0 is newest" (notify() prepends new arrivals), so we
       // store notes as-is and reverse pokes. Dev2 didn't reverse pokes
       // explicitly because its `setPokes()` walked the array calling
-      // `prependPokeElement` — that inversion is gone in React, so we
+      // `prependPokeElement` - that inversion is gone in React, so we
       // do the reverse here instead.
       const notes: CoreNote[] = resp.notes || []
       const pokes: CoreNote[] = (resp.pokes || []).slice().reverse()
@@ -251,14 +251,14 @@ export const useAuthStore = create<AuthState>((set, get) => {
       // 405. Also check the response before clearing state so an
       // `activeOrdersErr` from core doesn't result in a half-logged-out
       // client (auth state cleared, but server session still live).
-      // `force=true` asks the server to skip the active-orders check —
+      // `force=true` asks the server to skip the active-orders check -
       // callers use this after explicit user confirmation.
       const res = await postJSON('/api/logout', { force: !!force })
       if (!res.requestSuccessful || !res.ok) {
         return { ok: false, msg: res.msg, code: res.code }
       }
       // Reset the auth slice and the per-session caches in one go so a
-      // subsequent re-login starts from a clean slate — stale notes,
+      // subsequent re-login starts from a clean slate - stale notes,
       // pokes, or action-required prompts from the previous session
       // would otherwise stay visible until `login()` overwrites them.
       set(sessionResetState)
@@ -334,7 +334,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
 // The value returned is ref-stable across spot and balance notes (neither
 // handler rebuilds `assets[id]` or `exchanges[host].assets[id]`), so
 // Zustand's default `Object.is` equality short-circuits downstream
-// re-renders — this is the same property that `CL-MP-RERENDER-CASCADE`
+// re-renders - this is the same property that `CL-MP-RERENDER-CASCADE`
 // (Fix B) relied on to kill the spot-note cascade.
 export function selectUnitInfo (
   s: AuthState,

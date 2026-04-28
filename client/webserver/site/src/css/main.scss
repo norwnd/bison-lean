@@ -367,7 +367,7 @@ z-index: 1000;
   top: 0;
   left: 50vw;
   // CSS fallback right-anchor (used until the JS-computed inline `right`
-  // takes effect — e.g. on the very first render before bellRef.current
+  // takes effect - e.g. on the very first render before bellRef.current
   // is set). Inline right wins over this rule once computed.
   right: 0;
   height: 65vh;
@@ -380,7 +380,7 @@ z-index: 1000;
   // header would render under the page header.
   z-index: 101;
 
-  // Mobile/narrow viewports: full-screen layout — 50vw is too narrow
+  // Mobile/narrow viewports: full-screen layout - 50vw is too narrow
   // to be useful below the Bootstrap `sm` breakpoint (~576px). Use
   // `!important` to override the JS-set inline `right` on mobile.
   @include media-breakpoint-down(sm) {
@@ -390,7 +390,7 @@ z-index: 1000;
     max-height: 100vh;
   }
 
-  // Header row (tabs + close icon) — match the page #header's 55px
+  // Header row (tabs + close icon) - match the page #header's 55px
   // height so the dropdown reads as a continuation of the top bar.
   & > .header {
     height: 55px;
@@ -411,7 +411,7 @@ z-index: 1000;
     // realistic age string (e.g. " 9y 11m") at fs13 with a small gap.
     padding: 0.5rem 72px 0.5rem 0.5rem;
     // Long unbreakable tokens (URLs, 8-char order/coin hashes) are
-    // common in core note details — let them break mid-string instead
+    // common in core note details - let them break mid-string instead
     // of forcing horizontal overflow.
     overflow-wrap: anywhere;
 

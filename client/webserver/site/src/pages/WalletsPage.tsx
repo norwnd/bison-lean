@@ -106,7 +106,7 @@ const TICKET_PAGE_SIZE = 10
 const SCAN_START_MEMPOOL = -1
 
 // Returns null when no asset has a usable fiat rate (so the caller can
-// render a placeholder like "—" instead of misleading "$0"). Zero is
+// render a placeholder like "-" instead of misleading "$0"). Zero is
 // still a legitimate total when rates are known.
 function totalFiatBalance (
   assets: Record<number, SupportedAsset>,
@@ -134,7 +134,7 @@ interface TickerGroup {
   // assetIDs is sorted by asset.symbol ascending so the per-chain
   // breakdown order is stable across renders / refreshes (the upstream
   // `Object.values(assets)` order is by ascending numeric BIP id, which
-  // is also stable but arbitrary — sorting by symbol matches what users
+  // is also stable but arbitrary - sorting by symbol matches what users
   // see in the UI). The picked default variant is computed at click
   // time via pickVariantForGroup, not stored on the group.
   assetIDs: number[]
@@ -143,13 +143,13 @@ interface TickerGroup {
   // atoms to whole units (e.g. BTC, ETH). Shown in the sidebar so the
   // displayed value doesn't depend on fiat rate availability.
   totalNative: number
-  // totalFiat is kept for sort ordering — we want wallet rows with the
+  // totalFiat is kept for sort ordering - we want wallet rows with the
   // largest USD value near the top; falling back to totalNative would
   // mix unrelated units (e.g. ETH vs USDC).
   totalFiat: number
   // ID of the first variant whose wallet is mid-connect (enabled but
   // its `Running` flag is false), or undefined if none is. Drives the
-  // tiny spinner next to the ticker — post-login this surfaces the
+  // tiny spinner next to the ticker - post-login this surfaces the
   // transient boot window between `walletstate` notes.
   connectingAssetID: number | undefined
 }
@@ -219,7 +219,7 @@ function buildTickerGroups (
 // visibleVariantsOf filters a group's assetIDs down to the variants
 // the sidebar should actually display in its expansion: parent assets
 // (non-tokens) always show, and a token variant only shows when its
-// parent has a wallet — without the parent, the token can't be
+// parent has a wallet - without the parent, the token can't be
 // created or held, so listing it is just noise. To start using the
 // hidden variant, the user creates the parent first (clicking the
 // parent's own coin-group row), and the variant becomes visible on
@@ -239,15 +239,15 @@ function visibleVariantsOf (
 // pickVariantForGroup chooses which variant to land on when the user
 // clicks a sidebar group. Tries, in order:
 //   1. The user's last-viewed variant for this ticker (localStorage),
-//      provided it's "useful" — wallet exists, or the parent has a
+//      provided it's "useful" - wallet exists, or the parent has a
 //      wallet (auto-create can fire on selection). Without the
 //      usefulness check, a stale auto-pick (e.g. the alphabetic-first
 //      `usdc.base` saved by an earlier mount when no wallet existed
 //      anywhere yet) strands the user on a dead variant even when
 //      other variants in the group are actionable.
-//   2. The first variant with an existing wallet — the user can act
+//   2. The first variant with an existing wallet - the user can act
 //      on it immediately.
-//   3. The first variant whose parent already has a wallet — selecting
+//   3. The first variant whose parent already has a wallet - selecting
 //      it triggers the auto-create-on-click effect and the "Creating…"
 //      view. Without this fallback we'd default-land on a variant
 //      whose parent doesn't exist yet, showing "Create parent first"
@@ -268,7 +268,7 @@ function pickVariantForGroup (
     const a = assets[last]
     if (a?.wallet) return last
     if (a?.token && assets[a.token.parentID]?.wallet) return last
-    // Persisted but useless — fall through.
+    // Persisted but useless - fall through.
   }
   for (const id of g.assetIDs) {
     if (assets[id]?.wallet) return id
@@ -281,7 +281,7 @@ function pickVariantForGroup (
 }
 
 // loadLastVariantByTicker reads the persisted last-variant map from
-// localStorage. Best-effort coerces the values to numbers — drops any
+// localStorage. Best-effort coerces the values to numbers - drops any
 // non-numeric entries rather than crashing the page on malformed
 // state (external edits, older schemas, etc.).
 function loadLastVariantByTicker (): Record<string, number> {
@@ -393,7 +393,7 @@ export default function WalletsPage () {
   // to the same group land on the user's most recent pick (e.g. USDC.POL
   // when the user last clicked Polygon). Falls back to the first variant
   // in the group's sorted assetIDs (alphabetically lowest by symbol)
-  // when no entry is recorded yet — see pickVariantForGroup.
+  // when no entry is recorded yet - see pickVariantForGroup.
   const [lastVariantByTicker, setLastVariantByTicker] = useState<Record<string, number>>(loadLastVariantByTicker)
 
   // In-flight token-wallet creates triggered by clicking a token group
@@ -432,7 +432,7 @@ export default function WalletsPage () {
   // `useAuthStore(s => s.assets)` / `s.fiatRatesMap` selectors below
   // fire on those setState calls, so every `useMemo([...])` in this
   // component re-runs with the fresh refs and the view stays in sync.
-  // Bridge txs move balance between same-ticker network siblings —
+  // Bridge txs move balance between same-ticker network siblings -
   // the resulting `balance` notes flow through the store and trigger
   // re-renders here automatically.
   //
@@ -458,7 +458,7 @@ export default function WalletsPage () {
     [assets, fiatRatesMap]
   )
 
-  // Hide non-wallet groups by default — the sidebar only shows assets
+  // Hide non-wallet groups by default - the sidebar only shows assets
   // the user actually holds. Clicking the "Show all" footer flips this
   // on (one-way; resets on remount, no localStorage persistence).
   const [showAllAssets, setShowAllAssets] = useState(false)
@@ -468,7 +468,7 @@ export default function WalletsPage () {
   )
   const hiddenGroupCount = tickerGroups.length - visibleGroups.length
 
-  // Null signals "fiat rates haven't loaded yet" — render "—" instead
+  // Null signals "fiat rates haven't loaded yet" - render "-" instead
   // of a misleading "$0" in the Holdings total. See totalFiatBalance.
   const holdingsFiat = useMemo(
     () => totalFiatBalance(assets, fiatRatesMap),
@@ -478,7 +478,7 @@ export default function WalletsPage () {
   // Portal target: the holdings "Total: $X" block renders into the
   // global app header's left slot via createPortal (mirrors the
   // pattern MarketsPage uses for market stats). Auto-unmounts when
-  // /wallets navigates away — no per-page gating needed.
+  // /wallets navigates away - no per-page gating needed.
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
   useEffect(() => {
     setHeaderSlot(document.getElementById('headerSlot'))
@@ -489,7 +489,7 @@ export default function WalletsPage () {
   // user's last-viewed variant within that group when persisted. Also
   // self-corrects if a previously-persisted selectedAssetID points to
   // an asset that no longer exists (asset list changed between
-  // releases) — drop it and fall through to the auto-select.
+  // releases) - drop it and fall through to the auto-select.
   useEffect(() => {
     if (selectedAssetID !== null && assets[selectedAssetID]) return
     if (selectedAssetID !== null && !assets[selectedAssetID]) {
@@ -504,7 +504,7 @@ export default function WalletsPage () {
   // showAllAssets is false (e.g. the asset's last wallet was removed
   // and the group is now hidden). Without this, the right-column
   // detail keeps rendering the orphaned asset while the sidebar can't
-  // highlight it — a confusing "ghost selection". The auto-select
+  // highlight it - a confusing "ghost selection". The auto-select
   // effect above then picks a wallet-bearing replacement.
   useEffect(() => {
     if (selectedAssetID === null) return
@@ -522,7 +522,7 @@ export default function WalletsPage () {
 
   // Persist the last-viewed variant per ticker. Catches both code paths
   // (sidebar click via pickVariantForGroup and per-chain row click)
-  // without separate handlers. Idempotent — no write if the value
+  // without separate handlers. Idempotent - no write if the value
   // hasn't changed.
   useEffect(() => {
     if (selectedAssetID === null) return
@@ -650,17 +650,17 @@ export default function WalletsPage () {
 
   return (
     <div className="d-flex fill-abs">
-      {/* Holdings "Total: $X" block — portalled into the global
+      {/* Holdings "Total: $X" block - portalled into the global
           header's headerSlot. Single string (left-aligned), no
           right-side alignment of the $ value with the column below.
-          Static — purely informational. */}
+          Static - purely informational. */}
       {headerSlot && createPortal(
         <div
           className="d-flex align-items-center px-2 h-100"
           style={{ width: SIDEBAR_WIDTH, flex: `0 0 ${SIDEBAR_WIDTH}px` }}
         >
           <span className="fs18 fw-bold lh1">
-            {t('TOTAL')}: {holdingsFiat === null ? '—' : `$${formatBestWeCan(holdingsFiat)}`}
+            {t('TOTAL')}: {holdingsFiat === null ? '-' : `$${formatBestWeCan(holdingsFiat)}`}
           </span>
         </div>,
         headerSlot
@@ -675,12 +675,12 @@ export default function WalletsPage () {
         <div className="flex-stretch-column">
           {visibleGroups.map((g) => {
             const selected = g.assetIDs.includes(selectedAssetID ?? -1)
-            // Expansion is gated to the selected group only — non-
+            // Expansion is gated to the selected group only - non-
             // selected groups stay collapsed regardless of balance,
             // keeping the sidebar quiet until the user drills in.
             // Only the visible variants (those whose parent has a
             // wallet) count; suppressed entirely when fewer than 2
-            // are visible — at 1 visible variant the aggregate row
+            // are visible - at 1 visible variant the aggregate row
             // already conveys the same info and the tree would be a
             // single dangling branch with nothing to navigate between.
             const visibleCount = visibleVariantsOf(g, assets).length
@@ -733,11 +733,11 @@ export default function WalletsPage () {
                   <div className="d-flex flex-column align-items-end">
                     {g.hasWallet
                       ? <span className="fs18 fw-bold lh1">{formatBestWeCan(g.totalNative, 8)}</span>
-                      : <span className="grey me-1">—</span>}
+                      : <span className="grey me-1">-</span>}
                   </div>
                 </div>
                 {/* Per-chain expansion under the selected multi-variant
-                    group — pushes the rows below it down. Tree-style
+                    group - pushes the rows below it down. Tree-style
                     indentation links each variant visually back to the
                     parent group. Click any variant to switch to it. */}
                 {showNetworks && (
@@ -753,7 +753,7 @@ export default function WalletsPage () {
               </div>
             )
           })}
-          {/* "Show all" footer — reveals the non-wallet groups that
+          {/* "Show all" footer - reveals the non-wallet groups that
               were filtered out by default. One-way: clicking expands
               the list and the button disappears (state resets only on
               page remount). Hidden when there's nothing to reveal.
@@ -782,7 +782,7 @@ export default function WalletsPage () {
             >
               {/* line-height: 20 forces the span's line box to the
                   same height as the logo-driven content height in
-                  coin-group rows above — keeps row heights
+                  coin-group rows above - keeps row heights
                   consistent across the list. */}
               <span className="grey fs14" style={{ lineHeight: '20px' }}>
                 {t('SHOW_ALL_ASSETS', { count: hiddenGroupCount })}
@@ -1117,7 +1117,7 @@ function NoWalletView ({ asset, parentAsset, onCreate }: {
 }
 
 // ---------------------------------------------------------------------------
-// CreatingTokenView — shown in place of NoWalletView while a token
+// CreatingTokenView - shown in place of NoWalletView while a token
 // wallet is being auto-created (effect in WalletsPage). The auto-create
 // is best-effort and resolves either by populating the wallet (which
 // flips us into WalletDetail) or by surfacing an error here via
@@ -1139,7 +1139,7 @@ function CreatingTokenView ({ asset }: { asset: SupportedAsset }) {
 }
 
 // ---------------------------------------------------------------------------
-// TokenCreateErrorView — shown when an auto-create attempt failed for
+// TokenCreateErrorView - shown when an auto-create attempt failed for
 // the currently-selected token. Cleared per-asset on navigation, so the
 // user retries by leaving the group and coming back (no Retry button).
 // ---------------------------------------------------------------------------
@@ -1157,7 +1157,7 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 }
 
 // ---------------------------------------------------------------------------
-// SidebarNetworksExpansion — per-chain row list rendered inside the
+// SidebarNetworksExpansion - per-chain row list rendered inside the
 // sidebar directly below the selected multi-variant token group's row.
 // Pushes other groups below it down (in-flow expansion). Each variant
 // row is indented with a tree-style ASCII connector linking it back to
@@ -1165,10 +1165,10 @@ function TokenCreateErrorView ({ asset, msg }: { asset: SupportedAsset; msg: str
 // drill-down list.
 //
 // Variant order matches group.assetIDs (sorted by symbol ascending in
-// buildTickerGroups). Each row is clickable — switches selectedAssetID
+// buildTickerGroups). Each row is clickable - switches selectedAssetID
 // and the auto-create effect fires for any newly-eligible candidate.
 //
-// The selected variant carries no background fill — the bold L-corner
+// The selected variant carries no background fill - the bold L-corner
 // in the tree-glyph (top-half + horizontal stub) is the sole "you are
 // here" cue, which keeps the expansion visually quiet.
 // ---------------------------------------------------------------------------
@@ -1184,7 +1184,7 @@ function SidebarNetworksExpansion ({
   onSelect: (id: number) => void
 }) {
   const { t } = useTranslation()
-  // Tree-glyph geometry. Centerline + stub-end pulled inward — the
+  // Tree-glyph geometry. Centerline + stub-end pulled inward - the
   // tree still visually originates from the parent group row's
   // coin-symbol area but takes less horizontal space. ~30% closer
   // to the row's left edge and ~35% shorter L-stub vs the previous
@@ -1203,7 +1203,7 @@ function SidebarNetworksExpansion ({
   //   • i > selectedIndex   → all thin (path doesn't reach this row).
   // selectedIndex < 0 means no variant in this group is selected (the
   // group is open because hasAnyBalance, but the user is currently
-  // looking at a different group) — render every line thin.
+  // looking at a different group) - render every line thin.
   // Filter to the variants that are actually visible (parent wallet
   // exists) before computing the tree geometry, so the bold-path
   // index calculations operate on the same row set the user sees.
@@ -1213,8 +1213,8 @@ function SidebarNetworksExpansion ({
   // each row can show its share as a % of the group total instead of
   // the raw amount. Conventional units are already normalised (e.g.
   // USDC = 1 USDC regardless of chain), so summing across variants is
-  // valid. Total is 0 when no variant has a wallet — every row falls
-  // back to "—".
+  // valid. Total is 0 when no variant has a wallet - every row falls
+  // back to "-".
   const groupTotalConventional = visibleIDs.reduce((sum, id) => {
     const a = assets[id]
     if (!a?.wallet) return sum
@@ -1242,7 +1242,7 @@ function SidebarNetworksExpansion ({
             ? t('CREATING')
             : tokenCreateErrors.has(id)
               ? t('CREATE_FAILED')
-              : '—'
+              : '-'
         const isLast = i === visibleIDs.length - 1
         const networkLabel = parentAsset?.name ?? a.name
         // Per-segment boldness: top-half is part of the bold branch
@@ -1256,7 +1256,7 @@ function SidebarNetworksExpansion ({
         const stubBold = i === selectedIndex
         const boldColor = 'var(--text-color)'
         const thinColor = 'var(--border-color)'
-        // Bold lines are 2px (down from 3) — still clearly heavier
+        // Bold lines are 2px (down from 3) - still clearly heavier
         // than the 1px thin lines but less eye-catching against the
         // sidebar bg.
         const topHalfThickness = topHalfBold ? 2 : 1
@@ -1266,7 +1266,7 @@ function SidebarNetworksExpansion ({
         // the L-corner fills cleanly when both are bold. When the
         // stub is thin and the top-half is bold, the thin stub's
         // overlap with the top-half is hidden by the top-half's
-        // higher z-index (see below) — only the part of the stub
+        // higher z-index (see below) - only the part of the stub
         // outside the top-half column is visible, which is what we
         // want for "this row exists but isn't selected".
         const stubLeft = treeStartX - topHalfThickness / 2
@@ -1284,7 +1284,7 @@ function SidebarNetworksExpansion ({
             {/* All line positions snap to integer pixels via
                 Math.floor so a 1px line never lands on a half-pixel
                 (where the browser would smear it across two pixels
-                via anti-aliasing — the visible result was thin lines
+                via anti-aliasing - the visible result was thin lines
                 appearing ~2px wide and fuzzier than their selected
                 2px siblings). Slight off-center vs the geometric
                 centerline is cheaper than the blur it replaces. */}
@@ -1328,7 +1328,7 @@ function SidebarNetworksExpansion ({
                 right half of the Noto Emoji "chains" mark (Apache
                 2.0, sourced from icon-sets.iconify.design/noto/chains/),
                 rotated 35° clockwise and shifted up-left within the
-                box — a single chain (two interlocking links) at a
+                box - a single chain (two interlocking links) at a
                 diagonal angle, more compact and dynamic than the
                 full side-by-side chains. CSS clip-path actually
                 crops to the right half (viewBox-only cropping
@@ -1412,7 +1412,7 @@ function WalletDetail ({
               <div className="fs24 demi lh1">{asset.name}</div>
               {/* For token wallets, surface the parent network so the
                   user knows whether they're looking at e.g. USDC.ETH
-                  vs USDC.POL — the sidebar tree-glyphs only show the
+                  vs USDC.POL - the sidebar tree-glyphs only show the
                   network icon, so this is the canonical "what am I
                   looking at" indicator on the right-side view. */}
               {parentAsset && (
@@ -1577,13 +1577,13 @@ function WalletDetail ({
       {wallet.feeState && (() => {
         // For tokens, the chain identity (icon + feeRateDenom) and
         // the fee currency (atoms-per-conventional + $/conventional)
-        // come from the parent asset — the token's own UnitInfo may
+        // come from the parent asset - the token's own UnitInfo may
         // not set feeRateDenom (e.g. USDT.POL leaves it empty), and
         // network fees are always paid in the parent chain's coin
         // (POL/ETH gas), not the token. Using the token's UnitInfo
         // and fiat rate here would convert wei via the token's
         // conversion factor and price it against the token's $-rate
-        // — yielding wildly inflated $ figures (a $76k WBTC rate
+        // - yielding wildly inflated $ figures (a $76k WBTC rate
         // applied to a 144-gwei gas fee = thousands of $).
         const networkAsset = parentAsset ?? asset
         const feeUI = parentAsset?.unitInfo ?? ui
@@ -1593,14 +1593,14 @@ function WalletDetail ({
         const isEVM = feeUI.feeRateDenom === 'gas'
         // EVM chains: client/asset/eth `FeeRate()` returns the rate
         // in gwei already (see eth.go: "returns fee rate (gas price)
-        // in Gwei"), so render the value verbatim — no extra
+        // in Gwei"), so render the value verbatim - no extra
         // division. UTXO chains: rate is atoms-per-byte; show with
         // the chain's byte denomination ("B" / "vB").
         const rateText = isEVM
           ? `${wallet.feeState.rate} gwei`
           : `${wallet.feeState.rate} atoms/${feeUI.feeRateDenom}`
         const feeUSD = (feeAtoms: number) => {
-          if (feeFiatRate <= 0) return '—'
+          if (feeFiatRate <= 0) return '-'
           const v = atomToConventional(feeAtoms, feeUI) * feeFiatRate
           // formatFiat truncates to 2 decimals, masking real
           // sub-cent fees (e.g. POL at $0.09 + 143 gwei = ~$0.0003)
@@ -1706,7 +1706,7 @@ function RightColumn ({
           <div className="mx-2 border-bottom"></div>
           <div className="flex-grow-1 flex-center py-2">
             {/* Single span keeps the $ and digits on the same baseline
-                / font size — splitting them caused a visible
+                / font size - splitting them caused a visible
                 misalignment in flex centering. */}
             <span className="fs22 demi lh1">${formatFiat(fiatRate)}</span>
           </div>
@@ -1730,7 +1730,7 @@ function RightColumn ({
 }
 
 // ---------------------------------------------------------------------------
-// TransactionsSection — embedded /wallets section (left column).
+// TransactionsSection - embedded /wallets section (left column).
 //
 // Replaces the old "Transaction History" link + standalone Pending
 // Transactions section. Shows up to TX_HISTORY_PAGE_SIZE entries:
@@ -1754,7 +1754,7 @@ function TransactionsSection ({
 
   // Snapshot pending txs from the live wallet state. Updated on every
   // re-render when the parent passes a fresh `wallet` ref (driven by
-  // useMarketStore notes — see CL-ASSETS-STALE-MEMO).
+  // useMarketStore notes - see CL-ASSETS-STALE-MEMO).
   const pendingTxs = useMemo(
     () => wallet.pendingTxs ? Object.values(wallet.pendingTxs) : [],
     [wallet.pendingTxs]
@@ -2515,7 +2515,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   const hasExtraOpts = (wallet.traits & traitsExtraOpts) !== 0
 
   // Fetch the wallet's saved settings. The actual handoff to
-  // WalletConfigForm happens in the post-mount effect below — calling
+  // WalletConfigForm happens in the post-mount effect below - calling
   // setLoadedConfig inline here would no-op because the form (and its
   // ref) only mount after `loading` flips false.
   useEffect(() => {
@@ -2540,8 +2540,8 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
   // handle. Effects run after commit, so by the time this fires the
   // form (rendered on the same commit that flipped `loading` to false)
   // is mounted and the ref is populated. The schema-driven form
-  // ignores any keys not declared in configOpts — including stray
-  // special_* flags — so internal plumbing can't surface here.
+  // ignores any keys not declared in configOpts - including stray
+  // special_* flags - so internal plumbing can't surface here.
   useEffect(() => {
     if (!pendingConfig || !subformRef.current) return
     subformRef.current.setLoadedConfig(pendingConfig)
@@ -2712,7 +2712,7 @@ function WalletConfigView ({ asset, wallet, onClose, setActiveForm, setPendingFo
                     {t('WALLET_LOGS')}
                   </button>
                 )}
-                {/* WP-16: Disallow Token button — gated on
+                {/* WP-16: Disallow Token button - gated on
                     `traitTokenApprover && !wallet.disabled`. Opens
                     the token-versions-table modal listing every
                     approved swap-contract version with a Remove icon
@@ -3071,7 +3071,7 @@ function ManagePeers ({ assetID, onClose }: {
           <tbody>
             {peers.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center grey py-2">—</td>
+                <td colSpan={4} className="text-center grey py-2">-</td>
               </tr>
             )}
             {peers.map(p => (
@@ -3187,7 +3187,7 @@ function ConfirmForce ({ pending, onClose }: {
 }
 
 // ---------------------------------------------------------------------------
-// WP-16: UnapproveTokenTable — list of approved swap-contract versions
+// WP-16: UnapproveTokenTable - list of approved swap-contract versions
 // ---------------------------------------------------------------------------
 
 // Mirrors vanilla `wallets.ts` `showUnapproveTokenAllowanceTableForm()`
@@ -3255,7 +3255,7 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
             {approvedVersions.map(v => (
               <tr key={v}>
                 <td className="ps-3">{v}</td>
-                <td>{(versionToDEXes[v] ?? []).join(', ') || '—'}</td>
+                <td>{(versionToDEXes[v] ?? []).join(', ') || '-'}</td>
                 <td className="pe-3 text-end">
                   <span
                     className="ico-cross text-danger pointer"
@@ -3283,7 +3283,7 @@ function UnapproveTokenTable ({ asset, wallet, exchanges, onClose, onPickVersion
 }
 
 // ---------------------------------------------------------------------------
-// WP-16: UnapproveTokenConfirm — single-version unapprove confirmation
+// WP-16: UnapproveTokenConfirm - single-version unapprove confirmation
 // ---------------------------------------------------------------------------
 
 // Mirrors vanilla `wallets.ts` `showUnapproveTokenAllowanceForm()`
@@ -3383,7 +3383,7 @@ function UnapproveTokenConfirm ({ asset, assets, fiatRatesMap, version, net, onC
         <img src={logoPath(asset.symbol)} alt={asset.symbol} width={20} height={20} />
         <span>{t('DISALLOW_TOKEN')}</span>
         <span className="fs14 text-muted"><AssetSymbol asset={asset} /></span>
-        <span className="fs14 text-muted">— {t('VERSION')} {version}</span>
+        <span className="fs14 text-muted">- {t('VERSION')} {version}</span>
       </div>
 
       {/* Success state: show tx ID with explorer link. */}
@@ -3683,7 +3683,7 @@ function StakingView ({ assetID, assets }: {
             </div>
           </div>
 
-          {/* Set Votes sidebar — WP-12: now opens the voting modal.
+          {/* Set Votes sidebar - WP-12: now opens the voting modal.
               Mirrors vanilla `wallets.ts` L407 click handler that
               dispatched to `showSetVotesDialog()`. The previous React
               version had `pointer hoverbg` styling but no handler. */}

@@ -62,7 +62,7 @@ export class MessageSocket {
     if (this.connection) this.connection.close()
   }
 
-  // `onOpen` fires on every successful WebSocket open — both the
+  // `onOpen` fires on every successful WebSocket open - both the
   // first one after `connect()` and every reconnect. It is the
   // place to refresh server-derived state (`/api/user`, etc.) so
   // the store catches up on whatever happened while the WS was

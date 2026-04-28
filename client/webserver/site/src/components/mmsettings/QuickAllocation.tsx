@@ -1,10 +1,10 @@
-// QuickAllocation — auto-estimated balance-allocation preview for an
+// QuickAllocation - auto-estimated balance-allocation preview for an
 // mmsettings bot. Ported from vanilla
 // `mmsettings/components/QuickAllocation.tsx`.
 //
 // Also exports the two helpers `ManualAllocation` imports
-// (`AllocationPanelHeader` — title + quick/manual toggle;
-// `AllocationModeNote` — contextual copy). Vanilla's batches 6 & 7
+// (`AllocationPanelHeader` - title + quick/manual toggle;
+// `AllocationModeNote` - contextual copy). Vanilla's batches 6 & 7
 // landed in a single commit here so both imports resolve in the same
 // changeset without a stub step.
 //

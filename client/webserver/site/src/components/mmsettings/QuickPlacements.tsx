@@ -1,4 +1,4 @@
-// QuickPlacements — preset placement builder (levels, lots, profit,
+// QuickPlacements - preset placement builder (levels, lots, profit,
 // price increment, match buffer) with a live chart preview. Ported
 // from vanilla `mmsettings/components/QuickPlacements.tsx`.
 //
@@ -78,7 +78,7 @@ const LotsOrUsdSelector: React.FC = () => {
   }
 
   // Convert whatever the NumberInput currently displays (lots in lots
-  // mode, USD in USD mode) back to lots — the underlying state is always
+  // mode, USD in USD mode) back to lots - the underlying state is always
   // stored as lots, regardless of display mode.
   const lotsFromInput = (v: number): number => isLotsMode ? v : usdToLots(v)
 

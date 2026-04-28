@@ -75,7 +75,7 @@ function trimWithEllipsis (str: string, maxLen: number): string {
 
 // Inline helper for rendering an ID (TX/event/order) with an adjacent
 // CopyButton. Used pervasively in the event detail modals (MML-01).
-// `href` is optional — when present, the trimmed text becomes a link
+// `href` is optional - when present, the trimmed text becomes a link
 // to the block explorer (MML-02). The full untrimmed value is used
 // for both the title attribute and the clipboard payload.
 function IDCell ({ id, href, maxLen = 20 }: { id: string; href?: string | null; maxLen?: number }) {
@@ -594,7 +594,7 @@ function BridgeFees ({ assetID, bridgeTx, assets, t }: BridgeFeesProps) {
     addFee(counterpart.assetID, counterpart.fees)
   }
   if (counterpart.amountReceived > 0) {
-    // The "bridge protocol" fee — the gap between what we sent on the
+    // The "bridge protocol" fee - the gap between what we sent on the
     // origin chain and what we received on the destination chain. This
     // is denominated in the destination asset itself, NOT its parent
     // (so we use `addFee` against `counterpart.assetID` and let the

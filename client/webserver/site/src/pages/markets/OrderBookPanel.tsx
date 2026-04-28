@@ -113,7 +113,7 @@ export function OrderBookPanel ({
                 // UI-AUTH: show a small spinner on market-list rows whose
                 // DEX is WS-connected but still authing. Avoids showing
                 // rows as "ready to trade" until auth actually completes.
-                // Suppress when auth has failed — that host won't auth
+                // Suppress when auth has failed - that host won't auth
                 // further; an error state is more informative than a
                 // forever-spinning indicator.
                 const isAuthing = !isDisconnected && xcForRow

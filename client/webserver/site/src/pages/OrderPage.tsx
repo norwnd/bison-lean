@@ -85,7 +85,7 @@ function confirmationString (coin: Coin | undefined, t: (k: string) => string): 
 // is true. Components call it to refresh time-derived displays
 // (elapsed "X ago" strings, lockTime fill %, etc.) without wiring a
 // page-wide clock. Bumping the interval or flipping `enabled`
-// reconciles the timer cleanly via useEffect deps — no stale closure
+// reconciles the timer cleanly via useEffect deps - no stale closure
 // and no stray setInterval after the component unmounts.
 function useTick (intervalMs: number, enabled = true) {
   const [, setTick] = useState(0)
@@ -106,7 +106,7 @@ function TimeAgo ({ ms }: { ms: number }) {
 
 // cssVars packs standard camelCase style keys together with
 // hyphenated CSS custom properties (`'--foo'`) into a
-// React.CSSProperties — `--*` vars aren't typed in React's style type
+// React.CSSProperties - `--*` vars aren't typed in React's style type
 // so inline objects that mix both need a cast. Undefined values are
 // dropped so callers can pass optional props through without
 // emitting `--foo: undefined;` to the rendered style attribute.
@@ -128,11 +128,11 @@ function cssVars (vars: Record<string, string | number | undefined>): React.CSSP
 // /markets page and any other status-displaying UI can reuse the
 // same mappings.
 
-// StageCoin is the display-layer bundle for a stage's coin pill —
+// StageCoin is the display-layer bundle for a stage's coin pill -
 // the amount string, its asset icon, the UI sentiment that decorates
 // the amount (sign + color: 'bad' = "-" debit, 'good' = "+" credit,
 // 'neutral' = plain), and an optional explorer URL. When `href` is
-// undefined the pill renders non-clickable (no border/background) —
+// undefined the pill renders non-clickable (no border/background) -
 // used for the in-progress stage to preview the pending amount
 // before the coin is broadcast. Absent entirely when the stage has
 // no on-chain coin (Match / Completed).
@@ -148,7 +148,7 @@ type StageCoin = {
 // dot; `connectorPaint` + `connectorFill` drive the connector's
 // gradient (the left `fill`% is drawn in `paint`, the remainder stays
 // neutral). Passing `connectorPaint` undefined suppresses the
-// connector entirely — used for the last stage of every lane, and
+// connector entirely - used for the last stage of every lane, and
 // for bare divert-track dots. `gridColumn` / `gridRow` let callers
 // place the stage at an explicit grid cell (used by the refund
 // track, which anchors Swap Unlock / Refund to specific main-track
@@ -194,14 +194,14 @@ function Stage ({
 
 // StageCoinButton renders a single stage's coin as a compact pill
 // (amount + asset icon). Used inside `.lane-card-row` so the pills
-// share the same grid row as the mini-match-card — both sit on a
+// share the same grid row as the mini-match-card - both sit on a
 // single horizontal line under the stages strip. The amount is
 // decorated with a sign + color driven by the coin's sentiment so a
 // glance shows whether this leg is user-debit ("-" bad), user-credit
 // ("+" good), or neutral observation (no prefix). When a `href` is
 // provided the pill is clickable (explorer link, new tab); otherwise
 // it renders as a non-interactive readonly preview (no border /
-// background) — used to project the current stage's pending amount
+// background) - used to project the current stage's pending amount
 // before the coin is broadcast.
 function StageCoinButton ({ coin }: { coin: StageCoin }) {
   const prefix = coin.sentiment === 'bad' ? '-' : coin.sentiment === 'good' ? '+' : ''
@@ -305,7 +305,7 @@ function LaneStages ({ stages }: { stages: StageInfo[] }) {
 // column (1-indexed, so `yourSwapIdx + STUB_COL_OFFSET` is the
 // stub's grid-column). The stub drops straight below Your Swap,
 // Swap Unlock sits one column to the right, and Refund aligns with
-// Your Redeem another column further — independent of maker/taker
+// Your Redeem another column further - independent of maker/taker
 // perspective because both lanes put Your Swap immediately before
 // the pair (Their Redeem | Your Redeem) for the taker or simply
 // before Your Redeem for the maker.
@@ -326,7 +326,7 @@ const REFUND_COL_OFFSET = 3
 //   stub       → Your Swap column (L-shape reaches right to Swap Unlock)
 //   Swap Unlock → column preceding "Your Redeem"
 //   Refund     → Your Redeem column
-// Math reduces to yourSwapIdx+1 / yourSwapIdx+2 / yourSwapIdx+3 —
+// Math reduces to yourSwapIdx+1 / yourSwapIdx+2 / yourSwapIdx+3 -
 // the stub sits below Your Swap, Swap Unlock one column to the
 // right, Refund another column further.
 //
@@ -346,7 +346,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
   refundCoin?: StageCoin,
   t: (k: string) => string,
 }) {
-  // Gate ticks on `m.active` — terminal matches are frozen so they
+  // Gate ticks on `m.active` - terminal matches are frozen so they
   // don't need to wake the component every 10s.
   useTick(10000, m.active)
   const now = Date.now()
@@ -359,7 +359,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
       {/* L-shape connector dropping from the Your Swap column and
           reaching across to the Swap Unlock dot. The vertical and
           horizontal arms are drawn as ::before / ::after pseudo-
-          elements on the stub wrapper — both inherit `--conn-color`
+          elements on the stub wrapper - both inherit `--conn-color`
           / `--conn-fill` set here so they paint uniformly. Fill
           animates with elapsed lockTime while the match is active;
           on a terminal match the L flips to good (refund path) or
@@ -374,7 +374,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
           '--conn-fill': `${swapUnlockFill(m, now)}%`,
         })}
       />
-      {/* Swap Unlock — the horizontal ::after reaches across to
+      {/* Swap Unlock - the horizontal ::after reaches across to
           Refund and fills with refund-coin confirmations (0 until a
           refund is broadcast). */}
       <Stage
@@ -385,7 +385,7 @@ function RefundTrack ({ m, yourSwapIdx, refundCoin, t }: {
         gridColumn={swapUnlockCol}
         gridRow={1}
       />
-      {/* Refund — terminal stage of the divert, no outgoing
+      {/* Refund - terminal stage of the divert, no outgoing
           connector. */}
       <Stage
         label={t('REFUND')}
@@ -442,7 +442,7 @@ export default function OrderPage () {
   //
   // `flash` triggers a brief pulse on the match-lane when a segment
   // is clicked. The `tick` counter ensures repeat clicks on the same
-  // match re-run the animation — React reads the tick as the overlay
+  // match re-run the animation - React reads the tick as the overlay
   // element's key, so a new tick unmounts+remounts the overlay and
   // restarts the keyframe from the first frame.
   //
@@ -623,7 +623,7 @@ export default function OrderPage () {
   // round trip) or already accepted by the server (`order.cancelling`
   // flips true before the order's status progresses off Booked). In
   // both cases the button renders in the `.submit-pressed` state:
-  // disabled, desaturated, scaled down — same pattern the Buy/Sell
+  // disabled, desaturated, scaled down - same pattern the Buy/Sell
   // submit button uses while waiting for its own round trip. The
   // button hides only when the order ages out of `isCancellable`
   // (status >= StatusExecuted or non-standing TiF).
@@ -643,7 +643,7 @@ export default function OrderPage () {
   // itself; market orders derive one from `averageRate` once any
   // regular match has landed. Until a market order gets a
   // computable rate (no matches yet, or all matches still zero qty),
-  // show '?' as a placeholder — the unit label ("DCR/POL") stays so
+  // show '?' as a placeholder - the unit label ("DCR/POL") stays so
   // the visual slot reads as "{unknown} DCR/POL" rather than a bare
   // question mark.
   let rateStr: string
@@ -666,7 +666,7 @@ export default function OrderPage () {
   }
 
   // Cancel matches are bookkeeping entries tied to cancel orders, not
-  // real swaps — they have no counterparty exchange and no progression
+  // real swaps - they have no counterparty exchange and no progression
   // through the swap lifecycle. We filter them out of the lane
   // diagram entirely; the order's Canceled status (shown on the order
   // lane's terminal stage) already communicates the outcome.
@@ -701,7 +701,7 @@ export default function OrderPage () {
 
   // Portion of the overall order a match accounts for, formatted to
   // one decimal for the match-card "Portion" metric. Same math drives
-  // the order-progress-lane progress-bar segment widths — both go through
+  // the order-progress-lane progress-bar segment widths - both go through
   // `matchPortion` so the unit-conversion + zero-guard logic lives in
   // exactly one place (see AccountUtils).
   const matchPortionPct = (m: Match): string => matchPortion(order, m).toFixed(1)
@@ -1004,7 +1004,7 @@ export default function OrderPage () {
           "{order-type}: [from → to] @ {rate} {dot} {Status} (created
           {Ago}) [Accelerate] [Cancel]". Quantity is implicit in the
           mini-card's from/to amounts; id/host/lane-label are dropped
-          — the /order URL already identifies the order. The trailing
+          - the /order URL already identifies the order. The trailing
           "{Status} (created {Ago})" block absorbs what used to be
           the order-progress-lane's two flanking stage dots (Created /
           terminal). Action buttons live inline here instead of in
@@ -1072,7 +1072,7 @@ export default function OrderPage () {
           />
         </div>
 
-        {/* Match lanes — one per regular match, in stamp order.
+        {/* Match lanes - one per regular match, in stamp order.
             The mini-card under stage 0 (Match) is the user's entry
             point into the full match card (click to expand inline).
             Every match also renders a Refund divert below the
@@ -1084,13 +1084,13 @@ export default function OrderPage () {
           const mini = matchFromTo(m)
           const curIdx = matchCurStageIdx(m)
           const yourSwapIdx = yourSwapStageIdx(m)
-          // Per-match stage count — maker lanes drop "Their Redeem"
+          // Per-match stage count - maker lanes drop "Their Redeem"
           // and terminate at Your Redeem (4 stages); taker lanes
           // keep the full 5. Used both to gate the terminal stage's
           // connector and to size the lane's CSS grid.
           const stageCount = matchStageCount(m)
           // Single-pass stage build. The terminal stage has no
-          // outgoing connector — we leave its connectorPaint /
+          // outgoing connector - we leave its connectorPaint /
           // connectorFill undefined and Stage skips the ::after
           // entirely.
           const matchStages: StageInfo[] = matchStageLabels(m, t).map((label, i) => {
@@ -1106,7 +1106,7 @@ export default function OrderPage () {
           // A stage gets a pill when it has a mapped view (Match
           // stage is undefined in `views`) AND either the coin's
           // explorer URL is known (clickable) or it's the current
-          // stage (readonly preview — no href, non-clickable
+          // stage (readonly preview - no href, non-clickable
           // styling).
           const stageCoins: (StageCoin | undefined)[] = views.map((view, i) => {
             if (!view) return undefined
@@ -1123,7 +1123,7 @@ export default function OrderPage () {
           const laneColor = matchLaneColor(m)
           // Refund pill: the user is always refunded their own
           // outgoing asset ('from' side) and getting money back is a
-          // credit — sentiment 'good' with a "+" prefix. Present
+          // credit - sentiment 'good' with a "+" prefix. Present
           // only once the refund coin has been broadcast.
           const refundHref = coinExplorerURL(m.refund, net)
           const refundCoin: StageCoin | undefined = refundHref
@@ -1164,7 +1164,7 @@ export default function OrderPage () {
               <LaneStages stages={matchStages} />
               {/* Mini-card first in DOM so CSS grid auto-flow places
                   it on row 1 col 1 before the coin cells fill columns
-                  2..N — otherwise sparse auto-flow would wrap the
+                  2..N - otherwise sparse auto-flow would wrap the
                   mini-card onto a new row because col 1 precedes the
                   flow cursor. */}
               <div className="lane-card-row">

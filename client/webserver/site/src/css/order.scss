@@ -5,7 +5,7 @@
 // and fonts come from the project's CSS variables so the page works in
 // both light and dark mode.
 
-// Shared pill-button geometry for the status-diagram clickables —
+// Shared pill-button geometry for the status-diagram clickables -
 // the match mini-card (from→to) and the per-stage coin buttons. Both
 // use the same border/background/hover treatment so they read as a
 // consistent family of interactive chips.
@@ -75,8 +75,8 @@
 
     // Inline action buttons (Cancel, Accelerate) live at the right
     // end of the summary line. `:first-of-type` gives the first
-    // button the `margin-left: auto` gap so it — or both, if Cancel
-    // and Accelerate are both visible — pins to the right. The
+    // button the `margin-left: auto` gap so it - or both, if Cancel
+    // and Accelerate are both visible - pins to the right. The
     // remaining button (if any) follows with the normal flex
     // `column-gap`. Sized for the 19px summary line: ~15px font,
     // ~15% larger than the previous Cancel-button-only styling.
@@ -114,7 +114,7 @@
     // word. A smaller sibling of `.diagram-dot` (10px vs 16px) so it
     // reads as part of the sentence rather than as a standalone
     // indicator chip. `align-self: center` centers it vertically
-    // against the baseline-aligned text line — plain
+    // against the baseline-aligned text line - plain
     // `vertical-align` doesn't work inside a flex row.
     .order-status-dot {
       display: inline-block;
@@ -130,7 +130,7 @@
 
     // Status word picks up the same paint as the adjacent dot so the
     // indicator colors the whole status token as a unit. `paint-neutral`
-    // inherits the default text color — no dedicated rule needed.
+    // inherits the default text color - no dedicated rule needed.
     .order-status {
       &.paint-good { color: var(--indicator-good); }
       &.paint-warning { color: var(--indicator-warning); }
@@ -186,7 +186,7 @@
   .lane {
     padding: 0.75rem 0 0.9rem;
 
-    // --lane-color drives only the mini-card expanded border — a
+    // --lane-color drives only the mini-card expanded border - a
     // single accent color per lane that tracks its overall state
     // (warning while in flight, good when terminal, neutral when
     // nothing happened). Individual dots / connectors paint
@@ -205,7 +205,7 @@
   }
 
   // The order-progress-lane (first and only `.lane` without a preceding sibling)
-  // drops its top padding — the summary-line's `margin-bottom` already
+  // drops its top padding - the summary-line's `margin-bottom` already
   // provides the breath above the progress bar. Keeps the base `.lane`
   // rule symmetric (0.75/0.9rem) for match lanes, which only use the
   // top padding via the `& + .lane` override (1rem) anyway.
@@ -233,10 +233,10 @@
 
   // .diagram-stage is used for the main-track stages inside
   // .lane-stages and for the Swap Unlock / Refund dots inside
-  // .lane-divert-row — both are direct grid children so their 1fr
+  // .lane-divert-row - both are direct grid children so their 1fr
   // width gives the outgoing `::after` connector the right distance
   // to the next dot. The connector is gated on `data-connector`
-  // being present on the element — the terminal stage of every lane
+  // being present on the element - the terminal stage of every lane
   // omits the attribute so it stays a bare dot.
   .diagram-stage {
     display: flex;
@@ -266,14 +266,14 @@
     }
 
     // Per-stage dot paint. `paint-neutral` is the default so we don't
-    // need a rule for it — it matches the `.diagram-dot` base color.
+    // need a rule for it - it matches the `.diagram-dot` base color.
     &.paint-good .diagram-dot { background-color: var(--indicator-good); }
     &.paint-warning .diagram-dot { background-color: var(--indicator-warning); }
   }
 
   // Per-stage coin pill (amount + icon), a smaller sibling of
   // .mini-match-card. Lives inside `.lane-card-row` so it shares the
-  // same grid row as the mini-card — horizontally aligned on a
+  // same grid row as the mini-card - horizontally aligned on a
   // single baseline under the stages strip. When rendered as an
   // `<a>` it's a clickable explorer link (new tab); the `.readonly`
   // variant (used to preview the current stage's pending amount
@@ -303,7 +303,7 @@
 
   // Amount text inside a stage-coin-button: colored by sentiment
   // (user-debit "-" / user-credit "+" / observe) so money flow
-  // reads at a glance. The icon stays its natural color — only the
+  // reads at a glance. The icon stays its natural color - only the
   // amount signals direction.
   .stage-coin-amt {
     &.stage-coin-bad { color: var(--indicator-bad); }
@@ -313,7 +313,7 @@
 
   // Stage-to-stage connector. Starts just past the right edge of this
   // stage's dot, ends just before the left edge of the next stage's
-  // dot — so the line visually joins the two without overlapping
+  // dot - so the line visually joins the two without overlapping
   // either dot. `top: 7px` centers the 2px line on the 16px dot (dot
   // center at y=8 → strip y=7..9). The `+10` / `-20` offsets leave a
   // 2px gap each side (dot radius 8 + 2), matching the original
@@ -375,7 +375,7 @@
       background-color: var(--tertiary-bg);
     }
 
-    // Order-level mini-card is informational only — no click target
+    // Order-level mini-card is informational only - no click target
     // (the /order page already IS the expanded view). Drop the card
     // chrome entirely so it reads as plain text and doesn't invite a
     // click like its match-lane siblings do. The transparent border
@@ -406,7 +406,7 @@
   // stacks the refund pill below the Refund stage. Swap Unlock →
   // Refund reuses the main-track `::after` connector mechanism
   // (Swap Unlock is a direct grid child, so its `100%` resolves to
-  // one grid-column width — the distance to the next dot). Once
+  // one grid-column width - the distance to the next dot). Once
   // terminal exactly one of the main-track post-divergence path
   // and this divert paints `good`; the other stays `neutral`.
   // While active the L-stub fills with elapsed lockTime and the
@@ -421,7 +421,7 @@
     row-gap: 0.4rem;
 
     // Shift divert-row stages down 8px so their dot centers land at
-    // y=16 — the bottom-edge alignment target of the lengthened L-
+    // y=16 - the bottom-edge alignment target of the lengthened L-
     // stub's 17px-tall vertical. Labels follow the dots naturally
     // (flex column).
     .diagram-stage {
@@ -438,7 +438,7 @@
   }
 
   // Pill slot centers its single child (a coin pill) inside the
-  // grid cell — mirrors `.lane-card-cell` for row-2 pill placement
+  // grid cell - mirrors `.lane-card-cell` for row-2 pill placement
   // under the Refund stage.
   .lane-divert-pill-slot {
     display: flex;
@@ -450,7 +450,7 @@
   // to the Swap Unlock dot in the next column. Vertical strip drops
   // from the main-track line (y=0..17) and joins a horizontal arm
   // at y=[15, 17] that reaches 10px shy of the next column's center
-  // — matching the main-track `::after` 10px dot-gap so the L lands
+  // - matching the main-track `::after` 10px dot-gap so the L lands
   // on the Swap Unlock dot the same way an ordinary connector does.
   // Both pseudos read `--conn-color` / `--conn-fill` from the
   // wrapper so the L fills uniformly as elapsed lockTime advances.
@@ -482,7 +482,7 @@
   // Order-lane progress bar: a standalone "vessel" (rounded-pill
   // outline with a faint bg tint) that fills left-to-right as
   // matches land. Segments pack at flex-start and their widths sum
-  // to the filled percentage of the order — the remaining portion
+  // to the filled percentage of the order - the remaining portion
   // of the vessel is left empty for active orders (bar bg shows
   // through, reading as "still has room"). Once the order is
   // finalized, a trailing neutral segment fills the remainder so
@@ -497,7 +497,7 @@
   // pseudo keep it scoped to this container (not punching through to
   // the page body). The segments themselves have no z-index so they
   // paint above the pseudo naturally. Rounded corners come from the
-  // first/last segment — combined with the same radius on the
+  // first/last segment - combined with the same radius on the
   // vessel, filled segments visually merge into the vessel outline.
   // No `overflow: hidden` on the container so hovered segments can
   // scale up on the Y axis without being clipped.
@@ -515,7 +515,7 @@
     display: flex;
     height: var(--segment-height);
     // 80% of the lane's width, centered. The 20% gutter on each
-    // side stays empty by design — gives the bar more visual
+    // side stays empty by design - gives the bar more visual
     // weight (especially with the bumped 36px girth) without
     // becoming a giant slab spanning the whole page. `margin: auto`
     // works because `.lane.order-progress-lane` is block-level.
@@ -539,7 +539,7 @@
   // thin horizontal line + 5 ticks at 0/25/50/75/100% with text
   // labels below each tick. Lives outside the bar so it doesn't
   // compete with the segments / fill texture / inline % labels for
-  // visual real estate — the bar is data, the scale is reference.
+  // visual real estate - the bar is data, the scale is reference.
   // Width matches the bar's `80%` exactly so the 0% / 100% ticks
   // land flush with the vessel's left / right edges.
   // Layout: container is `position: relative` with a fixed height
@@ -596,7 +596,7 @@
   // browser's native tooltip). Textured bg: a subtle translucent-
   // black repeating diagonal-stripe (`///`) layered over each
   // variant's paint color, so "filled" reads both from the color
-  // AND the texture — improves glanceability and accessibility for
+  // AND the texture - improves glanceability and accessibility for
   // users who can't distinguish the indicator hues. White +
   // text-shadow provides label legibility across colored paint
   // variants (good/warning/bad/neutral); the empty placeholder
@@ -612,7 +612,7 @@
     padding: 0;
     // Floor on segment width so tiny-portion matches (< 0.5% of
     // order qty) stay visible and clickable rather than collapsing
-    // to a hairline. Accepts mild proportional distortion — a 0.1%
+    // to a hairline. Accepts mild proportional distortion - a 0.1%
     // segment rendered at 12px overstates its visual weight against
     // its neighbors, but the trade-off is worth it: without the
     // floor, those segments become unhoverable + unfocusable and
@@ -633,12 +633,12 @@
     text-shadow: 0 0 2px rgb(0 0 0 / 50%);
     cursor: pointer;
     // `width` transition smooths segment growth as match portions
-    // update — e.g. the remainder `empty`/`neutral` segment shrinks
+    // update - e.g. the remainder `empty`/`neutral` segment shrinks
     // when a new match appears and its width animates down
     // (300ms matches the mount keyframe duration below so new +
     // shrinking segments animate in concert). The mount keyframe
     // reveals via `max-width` rather than `transform`, leaving
-    // `transform` free for `.hovered`'s `scaleY(1.25)` bump — so
+    // `transform` free for `.hovered`'s `scaleY(1.25)` bump - so
     // hovering a still-animating fresh segment produces immediate
     // feedback instead of waiting for the 300ms mount to finish.
     transition: transform 120ms ease-out, filter 120ms ease-out, width 300ms ease-out;
@@ -656,7 +656,7 @@
 
     &.paint-good { background-color: var(--indicator-good); }
 
-    // Paint-warning (in-flight match) is dimmed at rest — the yellow
+    // Paint-warning (in-flight match) is dimmed at rest - the yellow
     // indicator reads loud on a full-width slab. Dimming happens via
     // a pre-blended bg (65% indicator warning, 35% body bg) rather
     // than `opacity` so the inline label stays at full opacity for
@@ -668,11 +668,11 @@
 
     &.paint-bad { background-color: var(--indicator-bad); }
 
-    // Neutral remainder (finalized orders) is decorative — solid
+    // Neutral remainder (finalized orders) is decorative - solid
     // `--indicator-neutral` bg (inherited from the rule above) reads
     // as "this portion never matched". Empty placeholder (active
     // orders) uses a transparent bg so the vessel's faint ::before
-    // tint shows through — the "0.0%" label identifies the slice
+    // tint shows through - the "0.0%" label identifies the slice
     // without implying it's committed to staying unmatched. Both
     // are non-interactive, so the pointer affordance is dropped.
     &.paint-neutral,
@@ -682,7 +682,7 @@
 
     &.paint-empty {
       background-color: transparent;
-      // Horizontal dashed line centered vertically — reinforces
+      // Horizontal dashed line centered vertically - reinforces
       // "no match has landed here yet" with a texture distinct
       // from the diagonal stripes on filled segments. The band is
       // 1px tall, constrained via `background-size` + `no-repeat`,
@@ -708,7 +708,7 @@
       text-shadow: none;
     }
 
-    // Label wrapper span. Colored segments leave it bare — the
+    // Label wrapper span. Colored segments leave it bare - the
     // label sits directly on the segment's striped fill with its
     // own `text-shadow` for legibility (see the base rule above).
     // `.paint-empty` paints a matching-vessel bg + horizontal
@@ -725,7 +725,7 @@
     }
 
     // Hovered / focused segment gets a subtle Y-axis scale-up and a
-    // brightness bump — unmistakable click affordance without
+    // brightness bump - unmistakable click affordance without
     // shifting adjacent segments (scaleY leaves width alone). The
     // scale pokes a few px above and below the bar, intentional:
     // it reads as "lifted off the track".
@@ -745,7 +745,7 @@
   // pop-in. Scoped to `button.order-progress-segment` (match-backed)
   // rather than the base class so the trailing placeholder
   // (`div.order-progress-segment.paint-empty` / `paint-neutral`)
-  // doesn't re-animate as the order state evolves — the remainder
+  // doesn't re-animate as the order state evolves - the remainder
   // is rendered with a stable React key (see OrderProgressBar.tsx),
   // so its DOM node is reused across renders, but the animation
   // would fire on each `remainder-${i}`-style key change if it were
@@ -758,7 +758,7 @@
   // having to wait for the 300ms animation to end. The base rule's
   // `min-width: 12px` floor takes precedence over `max-width: 0`
   // during the opening frames, so the grow starts from a 12px
-  // slice rather than 0px — still a clear "reveal", just with a
+  // slice rather than 0px - still a clear "reveal", just with a
   // visible anchor. Disabled under `prefers-reduced-motion`.
   button.order-progress-segment {
     animation: order-progress-segment-mount 300ms ease-out;
@@ -805,7 +805,7 @@
   }
 
   // Flash overlay is a real DOM node (not a pseudo-element) so React
-  // can remount it on repeat clicks via a changing `key` — which
+  // can remount it on repeat clicks via a changing `key` - which
   // restarts the keyframe animation from the first frame. Lives at
   // `z-index: -1` so it stays behind lane content just like the
   // hover tint above.
@@ -949,8 +949,8 @@
   // the animated transitions / keyframes that decorate the page:
   //   * Progress-bar segments skip the scaleY "lifted off track"
   //     hover transform and the 120ms transition to the brightness
-  //     bump. Brightness still applies — it's an instant color
-  //     change, not motion — so the hover signal stays readable.
+  //     bump. Brightness still applies - it's an instant color
+  //     change, not motion - so the hover signal stays readable.
   //     The width-change transition and fresh-mount fade/grow
   //     animation are both killed here too: segments snap to their
   //     final width on appear, and the empty→filled vessel updates

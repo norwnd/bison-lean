@@ -1,4 +1,4 @@
-// BotSettingsTab — live-bot knobs (drift, order persistence), per-wallet
+// BotSettingsTab - live-bot knobs (drift, order persistence), per-wallet
 // multi-funding options, multi-hop arb settings, and the snapshots
 // checkbox. Ported from vanilla `mmsettings/components/BotSettingsTab.tsx`.
 //

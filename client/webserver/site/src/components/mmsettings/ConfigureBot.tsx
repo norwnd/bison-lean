@@ -1,4 +1,4 @@
-// ConfigureBot — main editor for a saved/in-progress market-maker bot
+// ConfigureBot - main editor for a saved/in-progress market-maker bot
 // configuration. Ported from vanilla
 // `mmsettings/components/ConfigureBot.tsx`.
 //
@@ -16,7 +16,7 @@
 //   * `MM.xxx` → direct `updateBotConfig` / `startBot` / etc. from
 //     `services/mmApi`
 //   * `renderSymbol(assetID, symbol)` → `<AssetSymbol asset={asset} />`
-//     from `components/common/AssetSymbol` — the lean-wide token-aware
+//     from `components/common/AssetSymbol` - the lean-wide token-aware
 //     symbol renderer that the other mmsettings components already use
 //   * `prep(ID_MM_X)` → `t('MM_X')` via `useTranslation()`
 

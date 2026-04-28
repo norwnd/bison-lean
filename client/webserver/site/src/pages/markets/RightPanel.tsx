@@ -257,7 +257,7 @@ export function RightPanel ({
     const quiConvFactor = qui.conventional.conversionFactor
 
     // quoteAtomsPerBaseAtom expresses the market rate as "how many quote
-    // atoms per one base atom" — the unit that lets us compute a parcel's
+    // atoms per one base atom" - the unit that lets us compute a parcel's
     // quote-atom total as `parcelsize * lotsize * quoteAtomsPerBaseAtom`.
     // Atomic branch: encRate encodes this ratio scaled by RateEncodingFactor.
     // External branch: externalPriceConv is conv_quote / conv_base, so we

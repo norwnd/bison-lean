@@ -21,7 +21,7 @@ import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, Custom
 // Data-freshness contract for the React app:
 //
 //   1. After every successful WS open (initial connect AND every
-//      reconnect), `fetchUser()` runs. This is the foundation —
+//      reconnect), `fetchUser()` runs. This is the foundation -
 //      anything that happened between login and the WS subscriber
 //      being live (post-login DEX auth completion, server-side state
 //      change before our handlers were registered, etc.) is caught up
@@ -30,7 +30,7 @@ import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, Custom
 //   2. Every WS note that changes persistent state has a typed merge
 //      handler in this dispatcher. Notes carrying the new payload
 //      (`reputation`, `bondpost`) feed `applyReputationNote` /
-//      `applyBondPostNote` which mutate the auth slice in place — no
+//      `applyBondPostNote` which mutate the auth slice in place - no
 //      /api/user round trip. Notes that only carry signals or partial
 //      payloads (`feepayment`) fall back to fetchUser.
 //
@@ -39,7 +39,7 @@ import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, Custom
 //      store slices and re-render automatically. Page-level
 //      `useNotifications` hooks are reserved for *ephemeral* effects
 //      (toasts, animations, in-flight wizard state, route-bound
-//      reload triggers) — never for "make my page see fresh data".
+//      reload triggers) - never for "make my page see fresh data".
 //
 // If a page exhibits stale data, the fix is in this dispatcher (or
 // in the relevant store's typed merge), not in the page.
@@ -73,13 +73,13 @@ export function AppLayout () {
     document.body.classList.toggle('dark', darkMode)
   }, [darkMode])
 
-  // Initial data fetch — runs once on mount.
+  // Initial data fetch - runs once on mount.
   useEffect(() => {
     fetchUser()
     fetchBuildInfo()
   }, [])
 
-  // WebSocket connection — reactive to user becoming available.
+  // WebSocket connection - reactive to user becoming available.
   // When the user logs in (user goes from null → object), this effect fires
   // and connects the WS. On page refresh with an active session, fetchUser()
   // populates user immediately, so this also runs on the first render cycle.
@@ -92,7 +92,7 @@ export function AppLayout () {
     const wsUri = `${proto}://${window.location.host}/ws`
 
     connect(wsUri, () => {
-      // Fires on every WS open — first connect AND every reconnect.
+      // Fires on every WS open - first connect AND every reconnect.
       // Refetching here is the foundation of the store's "live after
       // open" invariant: any auth completion / notification activity
       // that happened between login and this subscriber being live
@@ -116,12 +116,12 @@ export function AppLayout () {
         case 'conn': {
           handleConnEventNote(note)
           // DEX (re)connection or admin enable can change more than
-          // just connectionStatus — markets list, bondAssets, fee
+          // just connectionStatus - markets list, bondAssets, fee
           // configs, even auth state may have changed during the
           // outage / while disabled. Refresh the full /api/user so
           // pages reading from the store see the updated shape; on
           // disconnect/disable, skip the fetch (the note itself is
-          // the new truth — nothing to retrieve).
+          // the new truth - nothing to retrieve).
           if (note.topic === 'DEXConnected' || note.topic === 'DEXEnabled') {
             fetchUser()
           }
@@ -137,12 +137,12 @@ export function AppLayout () {
         // errors) carry `auth=null` and the merge no-ops on those.
         // `feepayment` notes are emitted only on errors
         // (TopicAccountUnlockError / TopicWalletUnlockError) and don't
-        // carry auth — fetchUser is a defensive re-sync.
+        // carry auth - fetchUser is a defensive re-sync.
         case 'feepayment': fetchUser(); break
         case 'reputation': applyReputationNote(note); break
         case 'bondpost': applyBondPostNote(note); break
         // `dex_auth` covers both auth-success and auth-failure edges,
-        // plus unrelated housekeeping (UnknownOrders, OrdersReconciled) —
+        // plus unrelated housekeeping (UnknownOrders, OrdersReconciled) -
         // filter by topic. DexAuthError* with authenticated=false means
         // the background authDEX goroutine failed (bad password, bond
         // wallet, etc.); surface via authFailed so UI overlays can show
@@ -204,7 +204,7 @@ export function AppLayout () {
           (bodybuilder.tmpl L25). Renders null until the user has a
           `seedGenTime`, and hides itself forever once dismissed for that
           seed (dismissed state persisted via newUserBannerDismissedLK).
-          Closes LP-01 (high) + IP-01 (low) — no per-page calls needed,
+          Closes LP-01 (high) + IP-01 (low) - no per-page calls needed,
           the banner reacts to `useAuthStore.seedGenTime` transitions. */}
       <NewUserBanner />
       <Header />

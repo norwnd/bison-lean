@@ -28,7 +28,7 @@ export default function ProposalPage () {
   const { token } = useParams<{ token: string }>()
   const [searchParams] = useSearchParams()
   // Default to DCR (BIP-44 coin type 42) when no assetID is provided in
-  // the URL — matches vanilla `proposal.ts` `loadProposal()` which also
+  // the URL - matches vanilla `proposal.ts` `loadProposal()` which also
   // hardcodes DCR for proposal voting.
   const assetID = Number(searchParams.get('assetID')) || DCRAssetID
 

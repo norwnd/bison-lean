@@ -10,7 +10,7 @@ import type {
 } from '../stores/types'
 
 // ---------------------------------------------------------------------------
-// Constants — tx types & i18n keys
+// Constants - tx types & i18n keys
 // ---------------------------------------------------------------------------
 
 export const TX_HISTORY_PAGE_SIZE = 10
@@ -110,7 +110,7 @@ export function txStatus (t: (k: string) => string, tx: WalletTransaction): stri
 // the fee is non-zero, and "$X.XX" otherwise.
 //
 // For tokens the network/gas fee is paid in the parent asset (POL/ETH),
-// not the token itself — so callers pass `parentAsset` (or null for
+// not the token itself - so callers pass `parentAsset` (or null for
 // non-tokens) and we pick the fee asset's UnitInfo + fiat rate
 // accordingly. Same convention as the Transaction Costs panel.
 export function feeUSD (
@@ -137,7 +137,7 @@ export function feeUSD (
 // `wallet.pendingTxs`) with historical txs (from /api/txhistory) into a
 // single list with pending first. A tx that's still pending locally
 // might also appear in a fetched history page once it's been observed
-// by the wallet — when that happens we keep the pending state (which
+// by the wallet - when that happens we keep the pending state (which
 // has the freshest confirms data) and drop the history copy.
 export function mergePendingAndHistory (
   pending: WalletTransaction[],
@@ -150,7 +150,7 @@ export function mergePendingAndHistory (
 }
 
 // ---------------------------------------------------------------------------
-// TxTable — shared row rendering for both the embedded /wallets section
+// TxTable - shared row rendering for both the embedded /wallets section
 // and the dedicated /wallets/:assetID/transactions page.
 // ---------------------------------------------------------------------------
 
@@ -222,7 +222,7 @@ export function TxTable ({
 }
 
 // ---------------------------------------------------------------------------
-// TxDetailModal — per-tx detail view, opened by row click in either
+// TxDetailModal - per-tx detail view, opened by row click in either
 // the embedded /wallets section or the full /wallets/:assetID/transactions
 // page.
 // ---------------------------------------------------------------------------

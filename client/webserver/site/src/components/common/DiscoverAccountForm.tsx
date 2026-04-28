@@ -57,7 +57,7 @@ export function DiscoverAccountForm ({ addr, onSuccess, onPaid }: Props) {
   // (L130-132) which calls `this.discoverAcctForm.page.submit.click()`
   // when the discover form is the initial form. A failure (network or
   // server error) leaves the manual Submit button visible so the user
-  // can retry. Intentionally only fires once per mount — `submit` is a
+  // can retry. Intentionally only fires once per mount - `submit` is a
   // closure over `addr` which is part of the parent's prop contract;
   // if the parent supplies a different `addr`, remounting the
   // component is the expected pattern.

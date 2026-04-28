@@ -5,7 +5,7 @@ import { parseRichNote } from '../../services/notifier'
 import { orderPath } from '../../router/routes'
 
 // RichNote renders a Core note `details` string with `{{{order|HASH}}}`
-// and `{{{ASSETID|COINHASH}}}` tokens replaced by clickable links —
+// and `{{{ASSETID|COINHASH}}}` tokens replaced by clickable links -
 // internal route for orders, external coin-explorer URL for coins.
 // Mirrors dev2 `notifications.ts insertRichNote()`.
 export function RichNote ({ details }: { details: string }) {

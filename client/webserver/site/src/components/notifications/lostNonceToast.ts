@@ -8,10 +8,10 @@ import type { LostNonceNote, CoreNote } from '../../stores/types'
 // pushes it through the notification store.
 //
 // Lost-nonce events are unusual under the assumption that this wallet's
-// key is not in use elsewhere — they may indicate key compromise. The
+// key is not in use elsewhere - they may indicate key compromise. The
 // note is promoted to ERROR severity when the probe found the operation
 // already achieved on-chain (the external tx successfully completed our
-// intent — strongest signal that someone else is using our key) and
+// intent - strongest signal that someone else is using our key) and
 // WARNING otherwise. The wallet emits this at most once per slot
 // (lostNonceNotified latches), so duplicate suppression isn't needed.
 export function handleLostNonce (

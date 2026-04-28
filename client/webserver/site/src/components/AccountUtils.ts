@@ -159,7 +159,7 @@ export function canAccelerateOrder (
 }
 
 // matchQtyInOrderUnits converts a match's qty into the same units as
-// `order.qty` — base units for limit / market-sell, quote units for
+// `order.qty` - base units for limit / market-sell, quote units for
 // market-buy (where order.qty is denominated in the quote). Shared
 // across match-vs-order aggregations (filled, settled, order-progress-lane
 // progress-bar segment widths, "Portion" metric on the match card)
@@ -170,7 +170,7 @@ export function matchQtyInOrderUnits (ord: Order, m: Match): number {
 
 // matchPortion returns the fraction (0..100) of the overall order a
 // single match accounts for, in order.qty units. Zero-qty orders
-// short-circuit to 0 defensively — protocol should never produce
+// short-circuit to 0 defensively - protocol should never produce
 // those but cheap to guard.
 export function matchPortion (ord: Order, m: Match): number {
   if (ord.qty <= 0) return 0

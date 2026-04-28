@@ -181,14 +181,14 @@ export default function MMPage () {
   const reconfigure = useCallback((cfg: BotConfig) => {
     const bt = botType(cfg)
     // MM-02: if the bot is wired to a CEX, refuse to navigate when
-    // that CEX isn't currently connected — the mmsettings page can't
+    // that CEX isn't currently connected - the mmsettings page can't
     // load market data for an offline CEX. Mirrors vanilla `mm.ts`
     // `reconfigure()` (L450-462) which set
     // `page.offError.textContent = intl.prep(intl.ID_CEX_NOT_CONNECTED, ...)`
     // and showed it for 3 seconds via `Doc.showTemporarily(3000, ...)`.
     if (cfg.cexName) {
       const cex = mmStatus?.cexes?.[cfg.cexName]
-      // Vanilla checks `!cex || !cex.connected` — `MMCEXStatus.connected`
+      // Vanilla checks `!cex || !cex.connected` - `MMCEXStatus.connected`
       // is the canonical liveness flag.
       if (!cex || !cex.connected) {
         const id = hostedMarketID(cfg.host, cfg.baseID, cfg.quoteID)

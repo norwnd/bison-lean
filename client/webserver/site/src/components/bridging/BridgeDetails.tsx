@@ -1,4 +1,4 @@
-// BridgeDetails — per-tx details popup (B-L16).
+// BridgeDetails - per-tx details popup (B-L16).
 //
 // Direct port of vanilla
 // `client/webserver/site/src/js/bridging/components/BridgeDetails.tsx`.

@@ -28,7 +28,7 @@ export function TooCheapDialog ({ note }: Props) {
   const network = networkSuffix(assets, note.assetID, t)
 
   // submit posts the action and lets the wallet's actionResolved note
-  // close the dialog. Errors don't dismiss — surface them inline so the
+  // close the dialog. Errors don't dismiss - surface them inline so the
   // user can retry without losing the prompt.
   const submit = async (label: string, action: any) => {
     setSubmitting(label)
@@ -64,7 +64,7 @@ export function TooCheapDialog ({ note }: Props) {
           <ul className="mb-0" style={{ paddingLeft: '1.25rem' }}>
             {payload.blocked.map(b => (
               <li key={b.id}>
-                {txTypeLabel(t, b.type)} — <code>{shortHash(b.id)}</code>
+                {txTypeLabel(t, b.type)} - <code>{shortHash(b.id)}</code>
               </li>
             ))}
           </ul>

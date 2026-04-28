@@ -23,7 +23,7 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children, cursor = 'help' })
   const handleShow = () => {
     // When content is empty we still clone the child (to keep the tree
     // structure stable for callers that toggle content between empty and
-    // non-empty — avoids remounting the child). Just skip the portal.
+    // non-empty - avoids remounting the child). Just skip the portal.
     if (!content) return
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()

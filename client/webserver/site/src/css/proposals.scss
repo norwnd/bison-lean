@@ -71,7 +71,7 @@
   color: var(--btn-feature-hover-bg);
 }
 
-// T17: `max-width: 500px` removed — ProposalsPage's filter form
+// T17: `max-width: 500px` removed - ProposalsPage's filter form
 // applies `mw-500` directly at the JSX level (for consistency with
 // the rest of the modal-form sizing conventions).
 .filter-form {

@@ -13,13 +13,13 @@ import { type OrderSegment } from './OrderProgress'
 // vessel. Match-backed segments respond to hover (persistent tint
 // on the corresponding match lane + a visual bump via `.hovered`)
 // and click (scrollIntoView + flash highlight on that match lane);
-// the neutral remainder is decorative only — no handlers, but its
+// the neutral remainder is decorative only - no handlers, but its
 // label still reports the unfilled percentage.
 //
 // Accessibility:
 //   * The container carries `role="progressbar"` with
 //     `aria-valuenow` / `aria-valuemin` / `aria-valuemax` so assistive
-//     tech reads a single-sentence summary of the fill state — users
+//     tech reads a single-sentence summary of the fill state - users
 //     don't have to tab through every segment button to grok the
 //     overall picture.
 //   * A sibling `visually-hidden` span (linked via `aria-describedby`)
@@ -46,7 +46,7 @@ export function OrderProgressBar ({
   onHover: (matchID: string | null) => void,
   onClick: (matchID: string) => void,
 }) {
-  // `t` is needed only for the per-segment aria-label — pull it
+  // `t` is needed only for the per-segment aria-label - pull it
   // here via the hook instead of passing it through props. Keeps
   // the caller's argument list tight.
   const { t } = useTranslation()
@@ -86,10 +86,10 @@ export function OrderProgressBar ({
   // Empty-state shortcut: active order with zero matches renders as
   // a single full-width `empty` segment. Append a parenthesized
   // hint to the "0.0%" label so it reads "0.0% (waiting for
-  // matches...)" — gives the user context for why nothing has
+  // matches...)" - gives the user context for why nothing has
   // filled in. Gated on matchCount===0 so a 100%-empty bar from
   // some future edge case (no matches but orderIsFinalized somehow
-  // produced an empty instead of neutral) still reads sensibly —
+  // produced an empty instead of neutral) still reads sensibly -
   // and so that normal multi-segment bars with a trailing empty
   // keep their plain trailing "0.0%" label (which already carries
   // information: remaining capacity not yet matched, no hint
@@ -100,10 +100,10 @@ export function OrderProgressBar ({
   // segment is a button for native keyboard + pointer semantics;
   // the neutral remainder is a plain div (non-interactive,
   // aria-hidden from screen readers). Both render their percent
-  // label as centered text inside the rect — narrow segments clip
+  // label as centered text inside the rect - narrow segments clip
   // the label (CSS `overflow: hidden`) and surface the full string
   // via the `title` attribute's native tooltip on hover. Segments
-  // pack at flex-start — if they sum to < 100% the vessel's
+  // pack at flex-start - if they sum to < 100% the vessel's
   // ::before bg shows through on the right.
   return (
     <>
@@ -133,7 +133,7 @@ export function OrderProgressBar ({
             // arrive) or as its paint swaps (active `empty` →
             // finalized `neutral`). Reusing the node lets the base
             // rule's `width 300ms ease-out` transition animate the
-            // shrink smoothly — with a per-index key (`remainder-0`
+            // shrink smoothly - with a per-index key (`remainder-0`
             // → `remainder-1` as a match lands) the old node would
             // unmount and a fresh one would mount at the new width,
             // skipping the transition. There's only ever one
@@ -179,7 +179,7 @@ export function OrderProgressBar ({
         cluttering the bar itself with overlay marks. `aria-hidden`
         because the visually-hidden summary span at the top of the
         component already conveys filled/awaiting % to assistive
-        tech in a richer single sentence — reading "0% 25% 50% 75%
+        tech in a richer single sentence - reading "0% 25% 50% 75%
         100%" verbatim adds nothing. Each label is absolutely
         positioned at its X% via `left`; the centering offset and
         the tick mark above it live in CSS.

@@ -1,4 +1,4 @@
-// BotTypeSelector — modal for picking a bot strategy (basicMM /
+// BotTypeSelector - modal for picking a bot strategy (basicMM /
 // arbMM / basicArb) and, for arb strategies, the backing CEX. Ported
 // from vanilla `mmsettings/components/BotTypeSelector.tsx`.
 //

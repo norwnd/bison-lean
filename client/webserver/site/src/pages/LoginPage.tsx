@@ -53,7 +53,7 @@ export default function LoginPage () {
               >
                 {/* LP-03: vanilla's `forms.tmpl` uses `[[[Forgot Password]]]`
                     keyed as `Forgot Password` (no `?`) in `locales/en-us.go`
-                    L477 — the question mark lives in the translation, not
+                    L477 - the question mark lives in the translation, not
                     the key. */}
                 {t('FORGOT_PASSWORD')}
               </button>

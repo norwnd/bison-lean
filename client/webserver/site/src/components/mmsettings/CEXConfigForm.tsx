@@ -1,4 +1,4 @@
-// CEXConfigForm — modal form for entering CEX API credentials in the
+// CEXConfigForm - modal form for entering CEX API credentials in the
 // mmsettings configure-bot flow. Ported from vanilla
 // `mmsettings/components/CEXConfigForm.tsx`.
 //

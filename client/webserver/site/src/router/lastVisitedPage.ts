@@ -6,7 +6,7 @@ import { ROUTES } from './routes'
 export const lastVisitedPageLK = 'lastVisitedPage'
 
 // Pre-auth routes are the only ROUTES entries we don't want to restore
-// after login — every other route in ROUTES is a valid post-login target.
+// after login - every other route in ROUTES is a valid post-login target.
 // Derived this way (block-list) so adding a new authed route to ROUTES
 // requires no change here; adding a new *pre-auth* route needs one line.
 const PRE_AUTH_ROUTES: ReadonlySet<string> = new Set([
@@ -25,7 +25,7 @@ function routeToRegex (path: string): RegExp {
   return new RegExp(`^${body}$`)
 }
 
-// Whitelist built from ROUTES at module load — anything not in this list
+// Whitelist built from ROUTES at module load - anything not in this list
 // (the `/` index, pre-auth routes, unknown routes from older app
 // versions) is ignored on both save and load.
 const AUTHED_ROUTE_PATTERNS: RegExp[] = Object.values(ROUTES)

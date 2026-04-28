@@ -76,7 +76,7 @@ div[data-handler=markets] {
   // OrderForms when `cantTradeReason` is non-null. Rendered as a sibling
   // of the forms inside the `.d-flex.position-relative` TradeForms
   // wrapper (see TradeForms.tsx), so this selector must sit at the
-  // markets-page scope — NOT nested under `#orderFormBuy, #orderFormSell`,
+  // markets-page scope - NOT nested under `#orderFormBuy, #orderFormSell`,
   // since the overlay is not a descendant of either form. The
   // semi-transparent backdrop lets the form be faintly visible underneath
   // (Option 3 from the design doc) so the user sees their work; the high
@@ -115,7 +115,7 @@ div[data-handler=markets] {
       transition-timing-function: ease-in-out;
 
       // MP-70: `:focus-within` is the modern equivalent of vanilla's
-      // JS-managed `.selected` class — it applies the focus border when
+      // JS-managed `.selected` class - it applies the focus border when
       // any descendant (the rate/qty input) has focus, no JS toggling
       // needed. `&:focus` and `&.selected` are kept as compatibility
       // safety nets in case any caller adds `tabindex` to the wrapper or
@@ -766,7 +766,7 @@ div[data-handler=markets] {
 }
 
 // `#verifyForm` is rendered via `FormOverlay`, which portals to
-// `document.body` — so it's outside the `div[data-handler=markets]`
+// `document.body` - so it's outside the `div[data-handler=markets]`
 // scope above. CSS custom properties used here (`--market-buygreen-bg`,
 // `--sell-color`, etc.) are defined on `body` in `colors.scss`, so
 // they resolve globally.
@@ -780,7 +780,7 @@ div[data-handler=markets] {
       background-color: var(--market-sellred-bg);
     }
 
-    // Click-time "depressed" visual — mirrors `button.submit` in the
+    // Click-time "depressed" visual - mirrors `button.submit` in the
     // main order form. Applied while the tradeasync POST is in flight.
     transition: transform 120ms ease-out, filter 120ms ease-out, opacity 120ms ease-out;
 

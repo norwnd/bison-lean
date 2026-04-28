@@ -8,7 +8,7 @@ import type { RecentMatch, UnitInfo, Market } from '../../stores/types'
 import { useSecondTicker, RECENT_MATCHES_AGE_WINDOW_MS } from './helpers'
 
 // ---------------------------------------------------------------------------
-// RecentMatchesTable — extracted so its `useSecondTicker()` re-render is
+// RecentMatchesTable - extracted so its `useSecondTicker()` re-render is
 // isolated to just this table. Without the extraction, putting the ticker
 // at the MarketsPage level would force the whole page to re-render once
 // per second.
@@ -19,7 +19,7 @@ import { useSecondTicker, RECENT_MATCHES_AGE_WINDOW_MS } from './helpers'
 //   MP-47: side-colored price and qty cells.
 //   MP-48: headers include quote/base asset symbols (shortSymbol).
 //   MP-49: live age ticker (shared with `useSecondTicker` above).
-//   MP-50: 100-match storage cap — already enforced in the feed handler
+//   MP-50: 100-match storage cap - already enforced in the feed handler
 //          (see `handleEpochMatchSummary`); no render cap here (vanilla
 //          shows all 24h-filtered matches, box scrolls via
 //          `max-height: 350px` + `stylish-overflow`).
@@ -46,7 +46,7 @@ export function RecentMatchesTable ({
   useSecondTicker()
 
   // MP-45: sort state. Vanilla defaults to `{ key: 'age', dir: -1 }` at
-  // markets.ts L204-205 — newest matches first.
+  // markets.ts L204-205 - newest matches first.
   const [sort, setSort] = useState<{ key: RecentMatchesSortKey; dir: RecentMatchesSortDir }>({
     key: 'age',
     dir: -1
@@ -63,7 +63,7 @@ export function RecentMatchesTable ({
     ))
   }
 
-  // MP-45 + MP-46: sort first, then filter — matches vanilla ordering in
+  // MP-45 + MP-46: sort first, then filter - matches vanilla ordering in
   // `refreshRecentMatchesTable` (markets.ts L2794-2802). We copy the array
   // before sorting because vanilla's in-place `.sort` would mutate React
   // state, and React must never mutate state.
@@ -71,7 +71,7 @@ export function RecentMatchesTable ({
   // No `useMemo` here deliberately: the 24h filter depends on `Date.now()`,
   // which has no React dep to key on. The parent `useSecondTicker` forces a
   // re-render every second, so inline recomputation is the simplest way to
-  // keep the filter fresh as matches age out. Cost is trivial — ≤100 items
+  // keep the filter fresh as matches age out. Cost is trivial - ≤100 items
   // sorted and filtered once per second.
   const sortedFiltered = (() => {
     const copy = [...recentMatches]
@@ -142,14 +142,14 @@ export function RecentMatchesTable ({
           {sortedFiltered.map(m => {
             // MP-47: both price and qty use vanilla's `buycolor`/`sellcolor`
             // utility classes (utilities.scss L106-111) rather than an inline
-            // style — matches markets.ts L2810 + L2812. The `!m.sell`
+            // style - matches markets.ts L2810 + L2812. The `!m.sell`
             // inversion on the price comes from vanilla L2808: "for match
             // (when rate-formatting) the meaning of sell is reversed".
             const sideCls = m.sell ? 'sellcolor' : 'buycolor'
             // Composite key avoids tying React's reconciliation identity to
             // sort order (the old `${stamp}-${i}` did). Collision would
             // require two matches with identical (stamp, rate, qty, side)
-            // in a single epoch — vanishingly unlikely in practice. When
+            // in a single epoch - vanishingly unlikely in practice. When
             // `RecentMatch` exposes a server-assigned match id, switch to
             // that for strict uniqueness.
             return (

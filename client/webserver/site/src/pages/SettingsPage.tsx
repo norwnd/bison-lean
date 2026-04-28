@@ -160,7 +160,7 @@ export default function SettingsPage () {
     await fetchUser()
     setShowAddDex(false)
     if (regHost) {
-      // Deep-link flow — return to the caller's view (or markets fallback).
+      // Deep-link flow - return to the caller's view (or markets fallback).
       const target = regBackTo
         ? (regBackTo.startsWith('/') ? regBackTo : '/' + regBackTo)
         : ROUTES.MARKETS
@@ -169,7 +169,7 @@ export default function SettingsPage () {
       navigate(target)
       return
     }
-    // Plain settings flow — reload preserves the legacy behaviour and
+    // Plain settings flow - reload preserves the legacy behaviour and
     // refreshes any non-store-derived state (DEX list, fiat-rate sources,
     // etc.) the new exchange might have invalidated.
     window.location.reload()
@@ -177,7 +177,7 @@ export default function SettingsPage () {
 
   const handleDiscoverSuccess = useCallback((xc: Exchange) => {
     setRegExchange(xc)
-    // No user-supplied cert in the deep-link flow — DiscoverAccountForm hits
+    // No user-supplied cert in the deep-link flow - DiscoverAccountForm hits
     // /api/discoveracct with an empty cert, so the server falls back to the
     // CertStore entry for this host. Keep regCertFile empty downstream.
     setRegCertFile('')
@@ -299,7 +299,7 @@ export default function SettingsPage () {
   const submitImportAccount = useCallback(async () => {
     setImportError('')
     if (!importFile) {
-      // SP-02: defensive guard — the Import button is `disabled` when
+      // SP-02: defensive guard - the Import button is `disabled` when
       // `importFile` is null so this branch shouldn't be reachable
       // through the UI. Match vanilla `settings.ts` `importAccount()`
       // (L356) which also bails silently with a `console.error`.
@@ -389,7 +389,7 @@ export default function SettingsPage () {
     const updated = { ...ntfnSettings, browserNtfnEnabled: next }
     setNtfnSettings(updated)
     saveNtfnSettings(updated)
-    // Mirrors dev2 `BrowserNotifier.requestNtfnPermission` — fire a
+    // Mirrors dev2 `BrowserNotifier.requestNtfnPermission` - fire a
     // confirmation immediately so the user sees the OS/browser surface
     // the moment they enable the toggle. Toggling off stays silent.
     if (next) {
@@ -482,7 +482,7 @@ export default function SettingsPage () {
   // -- Sign out --
   // Mirrors vanilla `app.ts` `signOut()` (L1565): on error, display
   // the server's message. On success, clearing `authed` causes the
-  // router's AuthGuard to redirect to `/login` on the next render —
+  // router's AuthGuard to redirect to `/login` on the next render -
   // the component unmounts, so there's no need to reset loading state.
   //
   // Special-cases `activeOrdersErr`: instead of blocking the user with
@@ -501,7 +501,7 @@ export default function SettingsPage () {
     setSignOutError(result.msg)
   }, [logout])
 
-  // Confirmed sign-out path — calls logout(true) to bypass the
+  // Confirmed sign-out path - calls logout(true) to bypass the
   // server-side active-orders check. AuthGuard unmounts on success,
   // so we only need to handle the error path here.
   const handleForceSignOut = useCallback(async () => {

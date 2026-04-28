@@ -1,4 +1,4 @@
-// RebalanceSettingsTab — CEX ↔ DEX rebalance method picker, per-asset
+// RebalanceSettingsTab - CEX ↔ DEX rebalance method picker, per-asset
 // min-transfer sliders, and (when cross-chain) bridge route + fees
 // selectors. Ported from vanilla
 // `mmsettings/components/RebalanceSettingsTab.tsx`.

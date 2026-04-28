@@ -51,7 +51,7 @@ export default function WalletTransactionsPage () {
   // event listeners that don't re-bind on each render (scroll handler)
   // can read the latest values synchronously. The closure-captured
   // versions of `history` / `moreAvailable` go stale across async
-  // awaits — refs avoid that without forcing the listener to re-bind
+  // awaits - refs avoid that without forcing the listener to re-bind
   // on every state change.
   const historyRef = useRef<WalletTransaction[]>([])
   const moreAvailableRef = useRef(false)

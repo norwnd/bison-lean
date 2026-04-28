@@ -6,7 +6,7 @@ import { TooCheapDialog } from './TooCheapDialog'
 import { MissingNoncesDialog } from './MissingNoncesDialog'
 import type { TransactionActionNote } from '../../stores/types'
 
-// Action-ID constants — keep in sync with `actionType*` in
+// Action-ID constants - keep in sync with `actionType*` in
 // client/asset/eth/eth.go. The Go side is the source of truth; if a new
 // action type is added there, mirror it here and add a dispatch arm
 // below.
@@ -20,7 +20,7 @@ export const ActionTypeMissingNonces = 'missingNonces'
 // or a successful TakeAction RPC), the next queued note pops up.
 //
 // One-at-a-time semantics keep the user from having to reason about
-// stacked dialogs — the wallet itself only emits at most one
+// stacked dialogs - the wallet itself only emits at most one
 // actionrequired per tx slot per `txActionPromptFrequency`, so the
 // queue typically holds zero or one entries; multi-asset wallets can
 // see a brief burst at startup if several wallets each had a stale
@@ -52,7 +52,7 @@ export function ActionRequiredDialog () {
   // dismiss is harmless there.
   const dismiss = () => {
     const fire = (action: any) => {
-      // Fire-and-forget — failures are logged and don't block the
+      // Fire-and-forget - failures are logged and don't block the
       // local UI dismiss. The wallet's actionResolved emission will
       // also arrive shortly via the websocket and clean up.
       postTakeAction(head.assetID, head.actionID, action).catch(err => {
@@ -78,7 +78,7 @@ export function ActionRequiredDialog () {
       body = <MissingNoncesDialog note={head} />
       break
     default:
-      // Unknown action type — render a minimal fallback so the user can
+      // Unknown action type - render a minimal fallback so the user can
       // dismiss it rather than getting stuck on a blank modal.
       body = (
         <div style={{ minWidth: 320 }}>
