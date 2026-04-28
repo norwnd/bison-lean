@@ -195,12 +195,12 @@ export interface TxTableProps {
 // the previous min-width-1500 floor so it fits more viewports
 // without horizontal scroll.
 const COL_PX = {
-  type: 160,    // longest TX_TYPE_* label "Revoke Token Approval"
-  id: 880,     // 64-char hash + CopyButton + cell padding
-  age: 90,    // "999y 12mo" / "365d 24h" worst case
-  amount: 160, // signed atom-formatted amounts with decimals
-  fee: 80,    // "$12345.67"
-  status: 110, // "999/999 confs" / "Confirmed"
+  type: 130,    // longest TX_TYPE_* label "Revoke Token Approval"
+  id: 760,     // 64-char hash + CopyButton + cell padding
+  age: 80,    // "999y 12mo" / "365d 24h" worst case
+  amount: 130, // signed atom-formatted amounts with decimals
+  fee: 70,    // "$12345.67"
+  status: 100, // "999/999 confs" / "Confirmed"
 }
 
 export function TxTable ({
