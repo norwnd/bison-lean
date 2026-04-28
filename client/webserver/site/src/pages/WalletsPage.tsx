@@ -1456,12 +1456,12 @@ function SidebarNetworksExpansion ({
               <path fill="#84B0C1" d="M91.96 41.25c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V46.49c0-2.89-2.35-5.24-5.24-5.24m0-14.42c2.89 0 5.24-2.35 5.24-5.24V4H86.73v17.59c0 2.89 2.35 5.24 5.23 5.24m0 74.34c-2.89 0-5.24 2.35-5.24 5.24V124H97.2v-17.59c0-2.89-2.35-5.24-5.24-5.24M36.44 71.63c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V76.87c0-2.89-2.35-5.24-5.24-5.24m0-59.92c-2.89 0-5.24 2.35-5.24 5.24v35.02c0 2.89 2.35 5.24 5.24 5.24s5.24-2.35 5.24-5.24V16.95c0-2.89-2.35-5.24-5.24-5.24" />
               <path fill="#A8E3F0" d="M33.52 17.81c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94m0 59.35c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.08-3.17 3.94M88.8 47.49c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94m0 59.35c-.54 3.4-.69 6.87-.07 10.25c.27 1.49 1.3 2.67 2.27.72c1.73-3.45 3.23-7.97 3.29-11.92c.02-1.45-.65-3.01-2.32-2.99c-2.02.04-2.87 2.07-3.17 3.94" />
             </svg>
-            <span className="fs18">{networkLabel}</span>
+            <span className={`fs18 ${isSelected ? 'fw-bold' : ''}`}>{networkLabel}</span>
             <span className="flex-grow-1" />
             {creatingTokenIDs.has(id) && (
               <span className="ico-spinner spinner fs12 me-1 grey" />
             )}
-            <span className="fs18">{balanceText}</span>
+            <span className={`fs18 ${isSelected ? 'fw-bold' : ''}`}>{balanceText}</span>
           </div>
         )
       })}
@@ -1542,9 +1542,9 @@ function WalletDetail ({
             )}
           </div>
           <div className="d-flex flex-column justify-content-end">
-            <div className="d-flex align-items-end lh1">
-              <span className="fs28 me-1">{formatCoinAtom(totalBal, ui)}</span>
-              <span className="fs20 grey">{ui.conventional.unit}</span>
+            <div className="d-flex align-items-baseline lh1">
+              <span className="fs22 me-1">{formatCoinAtom(totalBal, ui)}</span>
+              <span className="fs16 grey">{ui.conventional.unit}</span>
             </div>
             {fiatRate > 0 && (
               <div className="mt-1 lh1 grey fs15 d-flex justify-content-end align-items-center">
@@ -1557,7 +1557,7 @@ function WalletDetail ({
         {/* ---- Balance breakdown table ---- */}
         <div className="border-top px-2">
           <table className="compact row-border no-bottom-border">
-            <thead className="unbold fs15">
+            <thead className="fs15">
               <tr>
                 <th>{t('Available')}</th>
                 <th>{t('Locked')}</th>
@@ -1569,15 +1569,15 @@ function WalletDetail ({
             </thead>
             <tbody>
               <tr>
-                <td>{formatCoinAtom(bal.available, ui)}</td>
-                <td>{formatCoinAtom(bal.locked, ui)}</td>
-                <td>{formatCoinAtom(bal.immature, ui)}</td>
+                <td className="fs20">{formatCoinAtom(bal.available, ui)}</td>
+                <td className="fs20">{formatCoinAtom(bal.locked, ui)}</td>
+                <td className="fs20">{formatCoinAtom(bal.immature, ui)}</td>
                 <td className="text-center">
                   {wallet.open
                     ? <span className="ico-unlocked fs14" title={t('Ready')}></span>
                     : <span className="ico-locked fs14" title={t('Locked')}></span>}
                 </td>
-                <td className="text-nowrap fs14">
+                <td className="text-nowrap fs20">
                   {wallet.synced
                     ? '100%'
                     : `${(wallet.syncProgress * 100).toFixed(1)}%`}
@@ -1688,46 +1688,73 @@ function WalletDetail ({
         </section>
       )}
 
-      {/* ---- Transaction Fees ---- */}
-      {wallet.feeState && (
+      {/* ---- Transaction Costs ---- */}
+      {wallet.feeState && (() => {
+        // For tokens, the chain identity (icon + feeRateDenom) and
+        // the fee currency (atoms-per-conventional + $/conventional)
+        // come from the parent asset — the token's own UnitInfo may
+        // not set feeRateDenom (e.g. USDT.POL leaves it empty), and
+        // network fees are always paid in the parent chain's coin
+        // (POL/ETH gas), not the token. Using the token's UnitInfo
+        // and fiat rate here would convert wei via the token's
+        // conversion factor and price it against the token's $-rate
+        // — yielding wildly inflated $ figures (a $76k WBTC rate
+        // applied to a 144-gwei gas fee = thousands of $).
+        const networkAsset = parentAsset ?? asset
+        const feeUI = parentAsset?.unitInfo ?? ui
+        const feeFiatRate = parentAsset
+          ? fiatRatesMap[parentAsset.id] ?? 0
+          : fiatRate
+        const isEVM = feeUI.feeRateDenom === 'gas'
+        // EVM chains: client/asset/eth `FeeRate()` returns the rate
+        // in gwei already (see eth.go: "returns fee rate (gas price)
+        // in Gwei"), so render the value verbatim — no extra
+        // division. UTXO chains: rate is atoms-per-byte; show with
+        // the chain's byte denomination ("B" / "vB").
+        const rateText = isEVM
+          ? `${wallet.feeState.rate} gwei`
+          : `${wallet.feeState.rate} atoms/${feeUI.feeRateDenom}`
+        const feeUSD = (feeAtoms: number) => {
+          if (feeFiatRate <= 0) return '—'
+          const v = atomToConventional(feeAtoms, feeUI) * feeFiatRate
+          // formatFiat truncates to 2 decimals, masking real
+          // sub-cent fees (e.g. POL at $0.09 + 143 gwei = ~$0.0003)
+          // as a flat "$0.00". Round any positive sub-cent value up
+          // to $0.01 so the user can tell the fee isn't actually 0.
+          if (v > 0 && v < 0.005) return '$0.01'
+          return `$${formatFiat(v)}`
+        }
+        return (
         <section className="flex-stretch-column">
-          <div className="flex-center py-2 fs18 demi">{t('TRANSACTION_FEES')}</div>
+          <div className="flex-center py-2 fs18 demi">
+            Transaction costs (
+            <img
+              src={logoPath(networkAsset.symbol)}
+              alt={networkAsset.symbol}
+              className="micro-icon mx-1"
+            />
+            {rateText})
+          </div>
           <div className="mx-2 border-bottom"></div>
           <div className="d-flex">
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Send')}</span>
-              <span className="fs20 lh1">
-                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.send, ui) * fiatRate)}` : '—'}
-              </span>
-              <div className="fs14 grey">{formatCoinAtom(wallet.feeState.send, ui)}</div>
+              <span className="fs20 lh1">{feeUSD(wallet.feeState.send)}</span>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Sell')}</span>
-              <span className="fs20 lh1">
-                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.swap, ui) * fiatRate)}` : '—'}
-              </span>
-              <div className="fs14 grey">{formatCoinAtom(wallet.feeState.swap, ui)}</div>
+              <span className="fs20 lh1">{feeUSD(wallet.feeState.swap)}</span>
             </div>
             <div className="my-2 border-end"></div>
             <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
               <span className="fs16 demi">{t('Buy')}</span>
-              <span className="fs20 lh1">
-                {fiatRate > 0 ? `$${formatFiat(atomToConventional(wallet.feeState.redeem, ui) * fiatRate)}` : '—'}
-              </span>
-              <div className="fs14 grey">{formatCoinAtom(wallet.feeState.redeem, ui)}</div>
-            </div>
-            <div className="my-2 border-end"></div>
-            <div className="flex-grow-1 d-flex flex-column align-items-center p-2">
-              <span className="fs16 demi">{t('Rate')}</span>
-              <div className="flex-center">
-                <span className="fs22 me-1">{wallet.feeState.rate}</span>
-                <span className="fs13">atoms/B</span>
-              </div>
+              <span className="fs20 lh1">{feeUSD(wallet.feeState.redeem)}</span>
             </div>
           </div>
         </section>
-      )}
+        )
+      })()}
 
       {/* ---- Staking (DCR only, inline) ---- */}
       {isTicketBuyer && wallet.running && (
