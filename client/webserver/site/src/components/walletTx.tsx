@@ -185,6 +185,30 @@ export interface TxTableProps {
   bottomSpacerPx?: number
 }
 
+// Per-column min widths (in `ch` = the width of the font's "0"
+// glyph, so it tracks font-size correctly) sized to the worst-case
+// content we ever expect. Numbers are conservative on purpose -
+// if a future txType label or a longer hash ever exceeds these,
+// content overflows the cell rather than the page wrapping into a
+// second line, which is what the user explicitly asked for.
+const COL_MIN_CH = {
+  type: 25,    // longest TX_TYPE_* label is "Revoke Token Approval" (21)
+  id: 66,      // 0x + 64 hex chars (ETH); BTC is 64. 66 covers both.
+  age: 11,    // "365d 24h" / "999y 12mo" worst case
+  amount: 20, // "+1234567.89012345" with sign + decimals
+  fee: 10,   // "$12345.67"
+  status: 14, // "999/999 confs" worst case
+}
+const COL_MIN_TOTAL_CH = COL_MIN_CH.type + COL_MIN_CH.id + COL_MIN_CH.age +
+  COL_MIN_CH.amount + COL_MIN_CH.fee + COL_MIN_CH.status
+
+// Each column gets its content min plus an equal share of any
+// remaining table width. clamp via max() so columns never shrink
+// below their min on narrow viewports - the table's `minWidth`
+// makes the page horizontally scrollable instead.
+const colWidth = (minCh: number) =>
+  `calc(${minCh}ch + max(0px, (100% - ${COL_MIN_TOTAL_CH}ch) / 6))`
+
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
   showID = true, fixedLayout = false,
@@ -201,22 +225,32 @@ export function TxTable ({
   return (
     <table
       className="compact row-border row-hover"
-      style={fixedLayout ? { tableLayout: 'fixed', width: '100%' } : undefined}
+      style={fixedLayout
+        ? {
+            tableLayout: 'fixed',
+            width: '100%',
+            // Floor so narrow viewports get a horizontal scrollbar
+            // (via the parent's overflowX: auto) instead of cells
+            // collapsing under the per-column ch minimums.
+            minWidth: `${COL_MIN_TOTAL_CH}ch`,
+            // Cascades to all cells; keeps every entry on one row
+            // (which the COL_MIN_CH widths are sized to honor).
+            whiteSpace: 'nowrap'
+          }
+        : undefined}
     >
-      {/* <colgroup> only kicks in when fixedLayout=true. The
-          percentage widths are tuned for the 6-column layout
-          (showID=true): a wide ID column for the full hash, narrow
-          numeric columns, comfortable Type/Status columns. The
-          embedded section never sets fixedLayout, so it keeps its
-          auto layout and these widths don't apply. */}
+      {/* <colgroup> only kicks in when fixedLayout=true. Each
+          column gets its content-minimum plus an equal share of
+          remaining table width via calc(). The embedded section
+          never sets fixedLayout, so it keeps auto layout. */}
       {fixedLayout && (
         <colgroup>
-          <col style={{ width: '15%' }} />
-          {showID && <col style={{ width: '35%' }} />}
-          <col style={{ width: '8%' }} />
-          <col style={{ width: '15%' }} />
-          <col style={{ width: '10%' }} />
-          <col style={{ width: '17%' }} />
+          <col style={{ width: colWidth(COL_MIN_CH.type) }} />
+          {showID && <col style={{ width: colWidth(COL_MIN_CH.id) }} />}
+          <col style={{ width: colWidth(COL_MIN_CH.age) }} />
+          <col style={{ width: colWidth(COL_MIN_CH.amount) }} />
+          <col style={{ width: colWidth(COL_MIN_CH.fee) }} />
+          <col style={{ width: colWidth(COL_MIN_CH.status) }} />
         </colgroup>
       )}
       <thead className="fs15">
@@ -250,15 +284,6 @@ export function TxTable ({
                 <td
                   className="d-none d-sm-table-cell"
                   onClick={e => e.stopPropagation()}
-                  // word-break: break-all is more aggressive than the
-                  // text-break utility (which is overflow-wrap: break-word
-                  // in this project's utilities.scss). overflow-wrap only
-                  // breaks at allowed points; tx hashes are continuous
-                  // hex strings with no break points, so they'd overflow
-                  // out of a fixed-width column without an explicit
-                  // break-all rule. Inlined here so it stays scoped to
-                  // the ID cell.
-                  style={{ wordBreak: 'break-all' }}
                 >
                   {url
                     ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink me-1">{tx.id}</a>

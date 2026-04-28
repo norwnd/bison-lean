@@ -357,8 +357,11 @@ export default function WalletTransactionsPage () {
         </div>
       </div>
 
-      {/* ---- Scrollable list ---- */}
-      <div ref={scrollerRef} className="flex-grow-1" style={{ overflowY: 'auto' }}>
+      {/* ---- Scrollable list ----
+          overflowX: auto lets narrow viewports scroll the table
+          horizontally instead of squeezing cells past their per-
+          column ch minimums (set in TxTable's COL_MIN_CH). */}
+      <div ref={scrollerRef} className="flex-grow-1" style={{ overflowY: 'auto', overflowX: 'auto' }}>
         {error && (
           <div className="text-center py-3 text-danger fs14">{error}</div>
         )}
