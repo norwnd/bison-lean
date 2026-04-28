@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   formatCoinAtom, formatFiat, atomToConventional, ageSince
@@ -216,12 +217,6 @@ const COL_PX = {
 const COL_PX_TOTAL = COL_PX.type + COL_PX.id + COL_PX.age +
   COL_PX.amount + COL_PX.fee + COL_PX.status
 
-// colWidth distributes the table's leftover width past the minimums
-// equally across N columns. Pure-px calc() to avoid the ch quirks
-// that mis-sized this earlier.
-const colWidth = (minPx: number, n: number) =>
-  `calc(${minPx}px + max(0px, (100% - ${COL_PX_TOTAL}px) / ${n}))`
-
 export function TxTable ({
   txs, asset, parentAsset, fiatRatesMap, net, onRowClick,
   showID = true, fixedLayout = false,
@@ -235,17 +230,48 @@ export function TxTable ({
   // height under some renderers). showID flips one column in/out.
   const colCount = showID ? 6 : 5
 
+  // Track the table's parent width and compute per-column pixel
+  // widths in JS instead of via CSS calc(). Earlier attempts to
+  // distribute extra space via `<col style="width: calc(... + (100%
+  // - mins)/N)">` were unreliable (the % inside calc inside <col>
+  // didn't resolve as expected on the user's browser, leaving the
+  // ID column too narrow and the hash overflowing into Age).
+  // Computing widths in JS sidesteps the issue entirely - each
+  // <col> gets a plain `${px}px` value that the browser respects.
+  const tableRef = useRef<HTMLTableElement>(null)
+  const [parentWidth, setParentWidth] = useState(0)
+  useEffect(() => {
+    if (!fixedLayout) return
+    const el = tableRef.current
+    if (!el) return
+    const parent = el.parentElement
+    if (!parent) return
+    const update = () => setParentWidth(parent.clientWidth)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(update)
+    ro.observe(parent)
+    return () => ro.disconnect()
+  }, [fixedLayout])
+  const extraPerCol = Math.max(0, (parentWidth - COL_PX_TOTAL) / colCount)
+  const colPx = {
+    type: COL_PX.type + extraPerCol,
+    id: COL_PX.id + extraPerCol,
+    age: COL_PX.age + extraPerCol,
+    amount: COL_PX.amount + extraPerCol,
+    fee: COL_PX.fee + extraPerCol,
+    status: COL_PX.status + extraPerCol,
+  }
+
   return (
     <table
+      ref={tableRef}
       className="compact row-border row-hover"
       style={fixedLayout
         ? {
             tableLayout: 'fixed',
             // width: 100% lets the table fill the scroller so the
-            // calc() in <col> resolves `(100% - mins)/N` against
-            // the full viewport - that's what gives every column
-            // an equal share of the leftover space instead of the
-            // ID column hogging it as natural slack.
+            // JS-computed col widths align with what the user sees.
             width: '100%',
             // Floor so narrow viewports don't shrink columns below
             // their content - the parent's overflowX:auto kicks in
@@ -258,17 +284,19 @@ export function TxTable ({
     >
       {/* <colgroup> only kicks in when fixedLayout=true. Each
           column gets its content min plus an equal share of any
-          extra table width via calc(). The embedded section uses
+          extra table width - widths computed in JS above so the
+          browser sees plain px values (calc-with-% inside <col>
+          was being mis-applied here). The embedded section uses
           showID=false (skipping fixedLayout via WalletDetail's
           TransactionsSection) so it keeps auto layout. */}
       {fixedLayout && (
         <colgroup>
-          <col style={{ width: colWidth(COL_PX.type, colCount) }} />
-          {showID && <col style={{ width: colWidth(COL_PX.id, colCount) }} />}
-          <col style={{ width: colWidth(COL_PX.age, colCount) }} />
-          <col style={{ width: colWidth(COL_PX.amount, colCount) }} />
-          <col style={{ width: colWidth(COL_PX.fee, colCount) }} />
-          <col style={{ width: colWidth(COL_PX.status, colCount) }} />
+          <col style={{ width: `${colPx.type}px` }} />
+          {showID && <col style={{ width: `${colPx.id}px` }} />}
+          <col style={{ width: `${colPx.age}px` }} />
+          <col style={{ width: `${colPx.amount}px` }} />
+          <col style={{ width: `${colPx.fee}px` }} />
+          <col style={{ width: `${colPx.status}px` }} />
         </colgroup>
       )}
       <thead className="fs15">
