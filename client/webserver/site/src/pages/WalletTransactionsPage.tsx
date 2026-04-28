@@ -17,10 +17,11 @@ import type {
 // loaded list. The user-facing labels render the literal "20".
 const JUMP_STEP = 20
 
-// Hard cap on chained pages a single "← Earliest" click is allowed
-// to load (~JUMP_STEP * cap = 4000 txs). Prevents an unbounded walk
-// if the API stops setting `moreAvailable=false` for some reason.
-const EARLIEST_PAGE_CAP = 200
+// Sentinel `n` for "← Earliest" — the backend treats n<=0 as
+// no-limit (see client/asset/btc/txdb.go canIterate, client/asset/eth
+// /txdb.go iterFunc), so a single round trip walks from the current
+// tail to the oldest tx instead of chaining 10-tx pages.
+const NO_LIMIT_N = 0
 
 export default function WalletTransactionsPage () {
   const { t } = useTranslation()
@@ -63,14 +64,17 @@ export default function WalletTransactionsPage () {
     [wallet?.pendingTxs]
   )
 
-  const fetchPage = useCallback(async (refID?: string): Promise<TxHistoryResult | null> => {
+  const fetchPage = useCallback(async (
+    refID?: string,
+    n: number = TX_HISTORY_PAGE_SIZE
+  ): Promise<TxHistoryResult | null> => {
     if (!Number.isFinite(assetID)) return null
     if (inflightRef.current) return null
     inflightRef.current = true
     setLoading(true)
     const res = await postJSON('/api/txhistory', {
       assetID,
-      n: TX_HISTORY_PAGE_SIZE,
+      n,
       refID,
       past: true
     })
@@ -158,16 +162,31 @@ export default function WalletTransactionsPage () {
   }, [])
 
   const jumpEarliest = useCallback(async () => {
-    let safety = EARLIEST_PAGE_CAP
-    while (moreAvailableRef.current && safety-- > 0) {
-      const got = await loadMoreRef.current()
-      if (!got) break
+    const scrollToBottom = () => {
+      requestAnimationFrame(() => {
+        const el = scrollerRef.current
+        if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      })
     }
-    requestAnimationFrame(() => {
-      const el = scrollerRef.current
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    })
-  }, [])
+    if (!moreAvailableRef.current) {
+      scrollToBottom()
+      return
+    }
+    if (historyRef.current.length === 0) return
+    const refID = historyRef.current[historyRef.current.length - 1].id
+    // Single round trip with n=0 (no-limit). Backend walks from refID
+    // to the earliest tx and returns everything in one shot - replaces
+    // the previous chained 10-tx walk that needed up to 200 round
+    // trips for long histories.
+    const res = await fetchPage(refID, NO_LIMIT_N)
+    if (!res) return
+    const newTxs = res.txs ?? []
+    historyRef.current = [...historyRef.current, ...newTxs]
+    moreAvailableRef.current = !!res.moreAvailable
+    setHistory(historyRef.current)
+    setMoreAvailable(moreAvailableRef.current)
+    scrollToBottom()
+  }, [fetchPage])
 
   // ± JUMP_STEP rows. Row height is measured per-call to track the
   // table's current density (the row-border layout is stable, but
