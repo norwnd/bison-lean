@@ -250,13 +250,20 @@ export function TxTable ({
                 <td
                   className="d-none d-sm-table-cell"
                   onClick={e => e.stopPropagation()}
+                  // word-break: break-all is more aggressive than the
+                  // text-break utility (which is overflow-wrap: break-word
+                  // in this project's utilities.scss). overflow-wrap only
+                  // breaks at allowed points; tx hashes are continuous
+                  // hex strings with no break points, so they'd overflow
+                  // out of a fixed-width column without an explicit
+                  // break-all rule. Inlined here so it stays scoped to
+                  // the ID cell.
+                  style={{ wordBreak: 'break-all' }}
                 >
-                  <span className="d-inline-flex align-items-center gap-1">
-                    {url
-                      ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink text-break">{tx.id}</a>
-                      : <span className="text-break">{tx.id}</span>}
-                    <CopyButton text={tx.id} />
-                  </span>
+                  {url
+                    ? <a href={url} target="_blank" rel="noopener noreferrer" className="subtlelink me-1">{tx.id}</a>
+                    : <span className="me-1">{tx.id}</span>}
+                  <CopyButton text={tx.id} />
                 </td>
               )}
               <td>{tx.timestamp > 0 ? ageSince(tx.timestamp * 1000) : t('Pending')}</td>
