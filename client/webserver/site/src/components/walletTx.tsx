@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   formatCoinAtom, formatFiat, atomToConventional, ageSince
@@ -200,12 +199,14 @@ export interface TxTableProps {
   bottomSpacerPx?: number
 }
 
-// Per-column minimum pixel widths sized to fit the worst-case
-// content. Each column actually renders at `min + extra/N` where
-// extra is the table's leftover width past the sum of mins and N
-// is the visible column count, so any space the viewport gives us
-// past the content minimums is split evenly across all columns
-// (the ID column doesn't hog its share).
+// Per-column pixel widths sized to fit the worst-case content.
+// Used as <col> widths in the fixed-layout table; the browser
+// distributes any leftover width past the sum proportionally
+// across columns (so the ID column - which is naturally the
+// largest - gets a bigger absolute share of leftover space).
+// We tried equal-distribution variants in JS and CSS calc and
+// both ran into <col>-width quirks, so this just lets the
+// browser handle it.
 const COL_PX = {
   type: 130,    // longest TX_TYPE_* label "Revoke Token Approval"
   id: 760,     // 64-char hash + CopyButton + cell padding
@@ -230,48 +231,17 @@ export function TxTable ({
   // height under some renderers). showID flips one column in/out.
   const colCount = showID ? 6 : 5
 
-  // Track the table's parent width and compute per-column pixel
-  // widths in JS instead of via CSS calc(). Earlier attempts to
-  // distribute extra space via `<col style="width: calc(... + (100%
-  // - mins)/N)">` were unreliable (the % inside calc inside <col>
-  // didn't resolve as expected on the user's browser, leaving the
-  // ID column too narrow and the hash overflowing into Age).
-  // Computing widths in JS sidesteps the issue entirely - each
-  // <col> gets a plain `${px}px` value that the browser respects.
-  const tableRef = useRef<HTMLTableElement>(null)
-  const [parentWidth, setParentWidth] = useState(0)
-  useEffect(() => {
-    if (!fixedLayout) return
-    const el = tableRef.current
-    if (!el) return
-    const parent = el.parentElement
-    if (!parent) return
-    const update = () => setParentWidth(parent.clientWidth)
-    update()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(update)
-    ro.observe(parent)
-    return () => ro.disconnect()
-  }, [fixedLayout])
-  const extraPerCol = Math.max(0, (parentWidth - COL_PX_TOTAL) / colCount)
-  const colPx = {
-    type: COL_PX.type + extraPerCol,
-    id: COL_PX.id + extraPerCol,
-    age: COL_PX.age + extraPerCol,
-    amount: COL_PX.amount + extraPerCol,
-    fee: COL_PX.fee + extraPerCol,
-    status: COL_PX.status + extraPerCol,
-  }
-
   return (
     <table
-      ref={tableRef}
       className="compact row-border row-hover"
       style={fixedLayout
         ? {
             tableLayout: 'fixed',
-            // width: 100% lets the table fill the scroller so the
-            // JS-computed col widths align with what the user sees.
+            // width: 100% so the table fills the scroller. With
+            // table-layout:fixed the browser distributes any
+            // leftover space (viewport - sum of <col> widths)
+            // proportionally across the columns. Not strictly
+            // equal across columns, but good enough.
             width: '100%',
             // Floor so narrow viewports don't shrink columns below
             // their content - the parent's overflowX:auto kicks in
@@ -282,21 +252,18 @@ export function TxTable ({
           }
         : undefined}
     >
-      {/* <colgroup> only kicks in when fixedLayout=true. Each
-          column gets its content min plus an equal share of any
-          extra table width - widths computed in JS above so the
-          browser sees plain px values (calc-with-% inside <col>
-          was being mis-applied here). The embedded section uses
-          showID=false (skipping fixedLayout via WalletDetail's
-          TransactionsSection) so it keeps auto layout. */}
+      {/* <colgroup> only kicks in when fixedLayout=true. The
+          embedded section uses showID=false (skipping fixedLayout
+          via WalletDetail's TransactionsSection) so it keeps auto
+          layout. */}
       {fixedLayout && (
         <colgroup>
-          <col style={{ width: `${colPx.type}px` }} />
-          {showID && <col style={{ width: `${colPx.id}px` }} />}
-          <col style={{ width: `${colPx.age}px` }} />
-          <col style={{ width: `${colPx.amount}px` }} />
-          <col style={{ width: `${colPx.fee}px` }} />
-          <col style={{ width: `${colPx.status}px` }} />
+          <col style={{ width: `${COL_PX.type}px` }} />
+          {showID && <col style={{ width: `${COL_PX.id}px` }} />}
+          <col style={{ width: `${COL_PX.age}px` }} />
+          <col style={{ width: `${COL_PX.amount}px` }} />
+          <col style={{ width: `${COL_PX.fee}px` }} />
+          <col style={{ width: `${COL_PX.status}px` }} />
         </colgroup>
       )}
       <thead className="fs15">
