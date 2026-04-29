@@ -1075,24 +1075,6 @@ func (s *WebServer) apiLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *WebServer) apiNotes(w http.ResponseWriter, r *http.Request) {
-	notes, pokes, err := s.core.Notifications(100)
-	if err != nil {
-		s.writeAPIError(w, fmt.Errorf("failed to get notifications: %w", err))
-		return
-	}
-
-	writeJSON(w, &struct {
-		OK    bool               `json:"ok"`
-		Notes []*db.Notification `json:"notes"`
-		Pokes []*db.Notification `json:"pokes"`
-	}{
-		OK:    true,
-		Notes: notes,
-		Pokes: pokes,
-	})
-}
-
 // apiLogout handles the 'logout' API request. The optional `force` flag
 // bypasses the active-orders check in Core.Logout; callers that set it accept
 // that in-progress swaps may be disrupted by the subsequent wallet/account
