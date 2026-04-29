@@ -58,6 +58,7 @@ export function NotificationBell () {
   const notes = useNotificationStore(s => s.notes)
   const pokes = useNotificationStore(s => s.pokes)
   const ackNotes = useNotificationStore(s => s.ackNotes)
+  const setBellOpen = useNotificationStore(s => s.setBellOpen)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'notes' | 'pokes'>('notes')
   const [pos, setPos] = useState<React.CSSProperties>({})
@@ -86,10 +87,7 @@ export function NotificationBell () {
 
   const handleClose = useCallback(() => {
     setOpen(false)
-    // Dev2 outside-click handler also calls ackNotes - covers any notes
-    // that arrived while the dropdown was open.
-    ackNotes()
-  }, [ackNotes])
+  }, [])
 
   const handleOpen = useCallback(() => {
     setTab('notes')
@@ -134,6 +132,15 @@ export function NotificationBell () {
     setOpen(false)
   }, [pathname])
 
+  // Mirror `open` into the store so notify() can auto-ack notes
+  // arriving while the dropdown is visible. Cleanup forces it false
+  // on unmount (e.g. logout tears down the layout) so a stale
+  // bellOpen=true doesn't auto-ack on a fresh login.
+  useEffect(() => {
+    setBellOpen(open)
+    return () => setBellOpen(false)
+  }, [open, setBellOpen])
+
   return (
     <>
       <div
@@ -161,14 +168,14 @@ export function NotificationBell () {
             <div
               id="noteCat"
               className={`me-3${tab === 'notes' ? ' active' : ''}`}
-              onClick={() => { setTab('notes'); ackNotes() }}
+              onClick={() => setTab('notes')}
             >
               {t('Notifications')}
             </div>
             <div
               id="pokeCat"
               className={tab === 'pokes' ? 'active' : ''}
-              onClick={() => { setTab('pokes'); ackNotes() }}
+              onClick={() => setTab('pokes')}
             >
               {t('Recent Activity')}
             </div>

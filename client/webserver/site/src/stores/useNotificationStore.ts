@@ -18,10 +18,17 @@ interface NotificationState {
   pokes: CoreNote[]
   popupQueue: PopupItem[]
   noteReceivers: Record<string, (n: CoreNote) => void>[]
+  // bellOpen tracks whether the dropdown is visible. Set by
+  // NotificationBell. notify() reads it to auto-ack notes arriving
+  // while the user is actively looking at the dropdown - otherwise a
+  // note that lands during an open session would sit unacked and
+  // bump the badge to 1 after close, even though the user just saw it.
+  bellOpen: boolean
 
   notify: (note: CoreNote) => void
   setNotes: (notes: CoreNote[]) => void
   setPokes: (pokes: CoreNote[]) => void
+  setBellOpen: (open: boolean) => void
   ackNotes: () => void
   removePopup: (id: number) => void
   registerNoteFeeder: (receivers: Record<string, (n: CoreNote) => void>) => () => void
@@ -34,6 +41,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   pokes: [],
   popupQueue: [],
   noteReceivers: [],
+  bellOpen: false,
 
   notify: (note: CoreNote) => {
     const state = get()
@@ -50,12 +58,22 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (note.severity < POKE) return
 
     // 3. POKE → "Recent Activity" tab, SUCCESS+ → "Notifications" tab.
+    //    Auto-ack on the way in if the bell is currently open: the
+    //    user is looking at the dropdown, so the new row appears in
+    //    front of them and shouldn't bump the badge after close.
+    const autoAck = state.bellOpen && !note.acked
+    const incoming: CoreNote = autoAck ? { ...note, acked: true } : note
     set(prev => {
       if (note.severity === POKE) {
-        return { pokes: [note, ...prev.pokes].slice(0, noteCacheSize) }
+        return { pokes: [incoming, ...prev.pokes].slice(0, noteCacheSize) }
       }
-      return { notes: [note, ...prev.notes].slice(0, noteCacheSize) }
+      return { notes: [incoming, ...prev.notes].slice(0, noteCacheSize) }
     })
+    // POKEs have no server-side ack (they aren't persisted as
+    // ack-eligible notifications); only SUCCESS+ go over the wire.
+    if (autoAck && note.id && note.severity > POKE) {
+      useWebSocketStore.getState().request('acknotes', [note.id])
+    }
 
     // 4. Transient bottom-right popup toast.
     //    Gated here (in the store) rather than inside `PopupNotes` so the
@@ -90,6 +108,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   setPokes: (pokes: CoreNote[]) => {
     set({ pokes: pokes.slice(0, noteCacheSize) })
+  },
+
+  setBellOpen: (open: boolean) => {
+    set({ bellOpen: open })
   },
 
   // ackNotes mirrors dev2 `app.ts ackNotes()` (L893): marks every unacked
