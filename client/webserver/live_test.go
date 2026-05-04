@@ -351,7 +351,6 @@ var tExchanges = map[string]*core.Exchange{
 			PendingBonds: []*core.PendingBondState{},
 			BondAssetID:  42,
 			TargetTier:   0,
-			MaxBondedAmt: 100e8,
 		},
 		BondAssets: map[string]*core.BondAsset{
 			"dcr": {
@@ -378,7 +377,6 @@ var tExchanges = map[string]*core.Exchange{
 			PendingBonds: []*core.PendingBondState{},
 			BondAssetID:  42,
 			TargetTier:   0,
-			MaxBondedAmt: 100e8,
 		},
 		BondAssets: map[string]*core.BondAsset{
 			"dcr": {

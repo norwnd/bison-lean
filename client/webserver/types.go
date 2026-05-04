@@ -59,7 +59,6 @@ type postBondForm struct {
 	AssetID      *uint32          `json:"asset,omitempty"` // prevent omission using BTC
 	LockTime     uint64           `json:"lockTime"`
 	Maintain     *bool            `json:"maintain,omitempty"`
-	MaxBondedAmt *uint64          `json:"maxBondedAmt,omitempty"`
 	FeeBuffer    *uint64          `json:"feeBuffer,omitempty"`
 }
 

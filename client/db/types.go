@@ -227,8 +227,11 @@ type AccountInfo struct {
 	// automatically.
 	LegacyEncKey []byte
 
-	Bonds        []*Bond
-	TargetTier   uint64 // zero means no bond maintenance (allows actual tier to drop negative)
+	Bonds      []*Bond
+	TargetTier uint64 // zero means no bond maintenance (allows actual tier to drop negative)
+	// MaxBondedAmt is no longer used. The cap on bonded capital is derived
+	// at use time from TargetTier + PenaltyComps. Field retained for
+	// serialization compatibility with existing v4 account blobs.
 	MaxBondedAmt uint64
 	PenaltyComps uint16
 	BondAsset    uint32 // the asset to use when auto-posting bonds

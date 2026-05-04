@@ -260,7 +260,6 @@ type SupportedAsset struct {
 type BondOptionsForm struct {
 	Host         string  `json:"host"`
 	TargetTier   *uint64 `json:"targetTier,omitempty"`
-	MaxBondedAmt *uint64 `json:"maxBondedAmt,omitempty"`
 	BondAssetID  *uint32 `json:"bondAssetID,omitempty"`
 	PenaltyComps *uint16 `json:"penaltyComps,omitempty"`
 }
@@ -285,8 +284,7 @@ type PostBondForm struct {
 
 	// FeeBuffer is optional, to use same value from BondsFeeBuffer during
 	// wallet funding. If zero, the wallet will use an internal estimate.
-	FeeBuffer    uint64  `json:"feeBuffer,omitempty"`
-	MaxBondedAmt *uint64 `json:"maxBondedAmt,omitempty"`
+	FeeBuffer uint64 `json:"feeBuffer,omitempty"`
 }
 
 // Match represents a match on an order. An order may have many matches.
@@ -707,14 +705,6 @@ type PendingBondState struct {
 	Confs   uint32 `json:"confs"`
 }
 
-// BondOptions are auto-bond maintenance settings for a particular DEX.
-type BondOptions struct {
-	BondAsset    uint32 `json:"bondAsset"`
-	TargetTier   uint64 `json:"targetTier"`
-	MaxBondedAmt uint64 `json:"maxBondedAmt"`
-	PenaltyComps uint16 `json:"PenaltyComps"`
-}
-
 // ExchangeAuth is data characterizing the state of client bonding.
 type ExchangeAuth struct {
 	// Rep is the user's Reputation as reported by the DEX server.
@@ -731,10 +721,6 @@ type ExchangeAuth struct {
 	TargetTier uint64 `json:"targetTier"`
 	// EffectiveTier is the user's current tier, after considering reputation.
 	EffectiveTier int64 `json:"effectiveTier"`
-	// MaxBondedAmt is the maximum amount that can be locked in bonds at a given
-	// time. If not provided, a default is calculated based on TargetTier and
-	// PenaltyComps.
-	MaxBondedAmt uint64 `json:"maxBondedAmt"`
 	// PenaltyComps is the maximum number of penalized tiers to automatically
 	// compensate.
 	PenaltyComps uint16 `json:"penaltyComps"`
@@ -880,7 +866,6 @@ type dexAccount struct {
 	expiredBonds      []*db.Bond // expired and needing refund
 	rep               account.Reputation
 	targetTier        uint64
-	maxBondedAmt      uint64
 	penaltyComps      uint16 // max penalties to compensate for
 	bondAsset         uint32 // asset used for bond maintenance/rotation
 }
@@ -897,7 +882,6 @@ func newDEXAccount(acctInfo *db.AccountInfo, viewOnly bool) *dexAccount {
 		pendingBondsConfs: make(map[string]uint32),
 		// bonds are set separately when categorized in connectDEX
 		targetTier:   acctInfo.TargetTier,
-		maxBondedAmt: acctInfo.MaxBondedAmt,
 		bondAsset:    acctInfo.BondAsset,
 		penaltyComps: acctInfo.PenaltyComps,
 	}

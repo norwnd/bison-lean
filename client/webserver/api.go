@@ -383,7 +383,6 @@ func (s *WebServer) apiPostBond(w http.ResponseWriter, r *http.Request) {
 		LockTime: post.LockTime,
 		// Options valid only when creating an account with bond:
 		MaintainTier: post.Maintain,
-		MaxBondedAmt: post.MaxBondedAmt,
 	}
 
 	if post.FeeBuffer != nil {

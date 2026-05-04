@@ -15,16 +15,9 @@ import Tooltip from '../components/common/Tooltip'
 import { strongTier } from '../components/AccountUtils'
 import { ROUTES, dexSettingsPath } from '../router/routes'
 import { ConnectionStatus, PrepaidBondID } from '../stores/types'
-import type { Exchange } from '../stores/types'
+import type { BondOptionsForm, Exchange } from '../stores/types'
 
 type TierStep = 'feeAsset' | 'newWallet' | 'walletWait' | 'confirm'
-
-interface BondOptionsForm {
-  host?: string
-  bondAssetID?: number
-  targetTier?: number
-  penaltyComps?: number
-}
 
 export default function DexSettingsPage () {
   const { t } = useTranslation()

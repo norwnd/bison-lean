@@ -900,7 +900,6 @@ paths:
               payload:
                 host: "dex.decred.org"
                 targetTier: 1
-                maxBondedAmt: 200000000
 
   /startmmbot:
     post:

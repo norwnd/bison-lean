@@ -3178,10 +3178,10 @@ func (c *Core) walletIsActive(assetID uint32) bool {
 	return false
 }
 
-func (dc *dexConnection) bondOpts() (assetID uint32, targetTier, max uint64) {
+func (dc *dexConnection) bondOpts() (assetID uint32, targetTier uint64) {
 	dc.acct.authMtx.RLock()
 	defer dc.acct.authMtx.RUnlock()
-	return dc.acct.bondAsset, dc.acct.targetTier, dc.acct.maxBondedAmt
+	return dc.acct.bondAsset, dc.acct.targetTier
 }
 
 func (dc *dexConnection) bondTotalInternal(assetID uint32) (total, active uint64) {
@@ -3238,7 +3238,7 @@ func (c *Core) isActiveBondAsset(assetID uint32, includeLive bool) bool {
 	}
 
 	for _, dc := range c.dexConnections() {
-		bondAsset, targetTier, _ := dc.bondOpts()
+		bondAsset, targetTier := dc.bondOpts()
 		if targetTier > 0 && assetIDs[bondAsset] {
 			return true
 		}
@@ -5652,7 +5652,7 @@ func (c *Core) initializeDEXConnections(crypter encrypt.Crypter, walletReady map
 		go func(dc *dexConnection) {
 			defer wg.Done()
 			if walletReady != nil {
-				if bondAssetID, targetTier, _ := dc.bondOpts(); targetTier > 0 {
+				if bondAssetID, targetTier := dc.bondOpts(); targetTier > 0 {
 					if ch, ok := walletReady[bondAssetID]; ok {
 						<-ch
 					}
@@ -5687,9 +5687,9 @@ func (c *Core) initializeDEXConnection(dc *dexConnection, crypter encrypt.Crypte
 	}
 
 	// Unlock the bond wallet if a target tier is set.
-	if bondAssetID, targetTier, maxBondedAmt := dc.bondOpts(); targetTier > 0 {
-		c.log.Debugf("Preparing %s wallet to maintain target tier of %d for %v, bonding limit %v",
-			unbip(bondAssetID), targetTier, dc.acct.host, maxBondedAmt)
+	if bondAssetID, targetTier := dc.bondOpts(); targetTier > 0 {
+		c.log.Debugf("Preparing %s wallet to maintain target tier of %d for %v",
+			unbip(bondAssetID), targetTier, dc.acct.host)
 		wallet, exists := c.wallet(bondAssetID)
 		if !exists || !wallet.connected() { // connectWallets already run, just fail
 			subject, details := c.formatDetails(TopicBondWalletNotConnected, unbip(bondAssetID))

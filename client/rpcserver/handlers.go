@@ -1972,7 +1972,6 @@ var routeInfos = map[string]routeInfo{
 			"lockTime":     "The lock time. 0 means go with server-derived value.",
 			"feeBuffer":    "Optional fee buffer to use during wallet funding.",
 			"maintainTier": "Whether to maintain the trading tier established by this bond.",
-			"maxBondedAmt": "The maximum amount that may be locked in bonds.",
 			"cert":         "The TLS certificate path. Only applicable when registering.",
 		},
 		returns: `Returns:
@@ -1987,7 +1986,6 @@ var routeInfos = map[string]routeInfo{
 		fieldDescs: map[string]string{
 			"host":         descHost,
 			"targetTier":   "The target trading tier.",
-			"maxBondedAmt": "The maximum amount that may be locked in bonds.",
 			"bondAssetID":  "The asset ID with which to auto-post bonds.",
 			"penaltyComps": "The maximum number of penalties to compensate.",
 		},

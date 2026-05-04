@@ -346,15 +346,12 @@ func TestUpdateBondOptions(t *testing.T) {
 	var wrongBondAssetID uint32 = 0
 	var targetTier uint64 = 1
 	var targetTierZero uint64 = 0
-	defaultMaxBondedAmt := maxBondedMult * bondAsset.Amt * targetTier
-	tooLowMaxBonded := defaultMaxBondedAmt - 1
 	// Double because we will reserve for the bond that's about to be posted
 	// in rotateBonds too.
 	singlyBondedReserves := bondAsset.Amt*targetTier*2 + bondFeeBuffer
 
 	type acctState struct {
-		targetTier   uint64
-		maxBondedAmt uint64
+		targetTier uint64
 	}
 
 	for _, tt := range []struct {
@@ -376,8 +373,7 @@ func TestUpdateBondOptions(t *testing.T) {
 				BondAssetID: &bondAsset.ID,
 			},
 			after: acctState{
-				targetTier:   1,
-				maxBondedAmt: defaultMaxBondedAmt,
+				targetTier: 1,
 			},
 			expReserves: singlyBondedReserves,
 		},
@@ -388,17 +384,6 @@ func TestUpdateBondOptions(t *testing.T) {
 				Host:        acct.host,
 				TargetTier:  &targetTier,
 				BondAssetID: &bondAsset.ID,
-			},
-			wantErr: true,
-		},
-		{
-			name: "max-bonded too low",
-			bal:  singlyBondedReserves,
-			form: BondOptionsForm{
-				Host:         acct.host,
-				TargetTier:   &targetTier,
-				BondAssetID:  &bondAsset.ID,
-				MaxBondedAmt: &tooLowMaxBonded,
 			},
 			wantErr: true,
 		},
@@ -420,8 +405,7 @@ func TestUpdateBondOptions(t *testing.T) {
 				BondAssetID: &bondAsset.ID,
 			},
 			before: acctState{
-				targetTier:   1,
-				maxBondedAmt: defaultMaxBondedAmt,
+				targetTier: 1,
 			},
 			after:       acctState{},
 			expReserves: 0,
@@ -435,8 +419,7 @@ func TestUpdateBondOptions(t *testing.T) {
 				BondAssetID: &bondAsset.ID,
 			},
 			before: acctState{
-				targetTier:   1,
-				maxBondedAmt: defaultMaxBondedAmt,
+				targetTier: 1,
 			},
 			addOtherDC:  true,
 			after:       acctState{},
@@ -446,7 +429,6 @@ func TestUpdateBondOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			before, after := tt.before, tt.after
 			acct.targetTier = before.targetTier
-			acct.maxBondedAmt = before.maxBondedAmt
 			tDcrWallet.bal = &asset.Balance{Available: tt.bal}
 
 			if tt.addOtherDC {
@@ -471,9 +453,6 @@ func TestUpdateBondOptions(t *testing.T) {
 			if acct.targetTier != after.targetTier {
 				t.Fatalf("Wrong targetTier. %d != %d", acct.targetTier, after.targetTier)
 			}
-			if acct.maxBondedAmt != after.maxBondedAmt {
-				t.Fatalf("Wrong maxBondedAmt. %d != %d", acct.maxBondedAmt, after.maxBondedAmt)
-			}
 			if tDcrWallet.reserves.Load() != tt.expReserves {
 				t.Fatalf("Wrong reserves. %d != %d", tDcrWallet.reserves.Load(), tt.expReserves)
 			}
@@ -496,7 +475,6 @@ func TestRotateBonds(t *testing.T) {
 	rig.core.wallets[tUTXOAssetA.ID] = dcrWallet
 	bondAsset := dcrBondAsset
 	bondFeeBuffer := tDcrWallet.BondsFeeBuffer(feeRate)
-	maxBondedPerTier := maxBondedMult * bondAsset.Amt
 
 	now := uint64(time.Now().Unix())
 	bondExpiry := rig.dc.config().BondExpiry
@@ -529,7 +507,6 @@ func TestRotateBonds(t *testing.T) {
 	// No bonds, target tier 1. Should create a new bond and add it to pending.
 	var targetTier uint64 = 1
 	acct.targetTier = targetTier
-	acct.maxBondedAmt = maxBondedPerTier * targetTier
 	acct.bondAsset = bondAsset.ID
 	tDcrWallet.bal = &asset.Balance{Available: bondAsset.Amt*targetTier + bondFeeBuffer}
 	rig.queuePrevalidateBond()

@@ -30,6 +30,15 @@ const (
 	bondTickInterval = 20 * time.Second
 )
 
+// derivedMaxBondedAmt returns the cap on actively-committed bond capital,
+// derived from the user's tier intent. Expired-pending-refund bonds are
+// intentionally excluded from this budget — they're stuck in-flight refunds
+// the user can't act on, and counting them creates a deadlock where the cap
+// blocks new posts even though the user wants to keep trading.
+func derivedMaxBondedAmt(targetTier uint64, penaltyComps uint16, bondAssetAmt uint64) uint64 {
+	return maxBondedMult * bondAssetAmt * (targetTier + uint64(penaltyComps))
+}
+
 func cutBond(bonds []*db.Bond, i int) []*db.Bond { // input slice modified
 	bonds[i] = bonds[len(bonds)-1]
 	bonds[len(bonds)-1] = nil
@@ -371,7 +380,6 @@ type dexAcctBondState struct {
 	repost   []*asset.Bond
 	mustPost int64 // includes toComp
 	toComp   int64
-	inBonds  uint64
 }
 
 // bondStateOfDEX collects all the information needed to determine what
@@ -404,8 +412,7 @@ func (c *Core) bondStateOfDEX(dc *dexConnection, bondCfg *dexBondCfg) *dexAcctBo
 	}
 
 	state.Rep, state.TargetTier, state.EffectiveTier = dc.acct.rep, dc.acct.targetTier, dc.acct.rep.EffectiveTier()
-	state.BondAssetID, state.MaxBondedAmt, state.PenaltyComps = dc.acct.bondAsset, dc.acct.maxBondedAmt, dc.acct.penaltyComps
-	state.inBonds, _ = dc.bondTotalInternal(state.BondAssetID)
+	state.BondAssetID, state.PenaltyComps = dc.acct.bondAsset, dc.acct.penaltyComps
 	// Screen the unexpired bonds slices.
 	dc.acct.bonds = filterExpiredBonds(dc.acct.bonds)
 	dc.acct.pendingBonds = filterExpiredBonds(dc.acct.pendingBonds) // possibly expired before confirmed
@@ -458,9 +465,9 @@ type bondID struct {
 	coinID  []byte
 }
 
-// refundExpiredBonds refunds expired bonds and returns the list of bonds that
-// have been refunded and their assetIDs.
-func (c *Core) refundExpiredBonds(ctx context.Context, acct *dexAccount, cfg *dexBondCfg, state *dexAcctBondState, now int64) (map[uint32]struct{}, int64, error) {
+// refundExpiredBonds refunds expired bonds and returns the set of asset IDs
+// that had bonds refunded (so callers can refresh wallet balances).
+func (c *Core) refundExpiredBonds(ctx context.Context, acct *dexAccount, state *dexAcctBondState, now int64) (map[uint32]struct{}, error) {
 	spentBonds := make([]*bondID, 0, len(state.ExpiredBonds))
 	assetIDs := make(map[uint32]struct{})
 
@@ -492,7 +499,7 @@ func (c *Core) refundExpiredBonds(ctx context.Context, acct *dexAccount, cfg *de
 			continue
 		}
 		if _, ok := wallet.Wallet.(asset.Bonder); !ok { // will fail in RefundBond, but assert here anyway
-			return nil, 0, fmt.Errorf("wallet %v is not an asset.Bonder", unbip(bond.AssetID))
+			return nil, fmt.Errorf("wallet %v is not an asset.Bonder", unbip(bond.AssetID))
 		}
 
 		expired, err := wallet.LockTimeExpired(ctx, time.Unix(int64(bond.LockTime), 0))
@@ -597,10 +604,9 @@ func (c *Core) refundExpiredBonds(ctx context.Context, acct *dexAccount, cfg *de
 			}
 		}
 	}
-	expiredBondsStrength := sumBondStrengths(acct.expiredBonds, cfg.bondAssets)
 	acct.authMtx.Unlock()
 
-	return assetIDs, expiredBondsStrength, nil
+	return assetIDs, nil
 }
 
 // repostPendingBonds rebroadcasts all pending bond transactions for a
@@ -633,7 +639,6 @@ func (c *Core) postRequiredBonds(
 	state *dexAcctBondState,
 	bondAsset *msgjson.BondAsset,
 	wallet *xcWallet,
-	expiredStrength int64,
 	unlocked bool,
 ) (newlyBonded uint64) {
 
@@ -659,23 +664,27 @@ func (c *Core) postRequiredBonds(
 		return
 	}
 
-	// For the max bonded limit, we'll normalize all bonds to the
-	// currently selected bond asset.
+	// Cap on actively-committed bond capital. Expired-pending-refund bonds
+	// are intentionally not counted: they're stuck waiting for on-chain
+	// locktime and aren't something the user can act on, so blocking new
+	// posts behind them would deadlock trading without limiting any real
+	// capital exposure the user controls.
+	maxBondedAmt := derivedMaxBondedAmt(state.TargetTier, state.PenaltyComps, bondAsset.Amt)
 	toPost := state.mustPost
 	amt := bondAsset.Amt * uint64(state.mustPost)
-	currentlyBondedAmt := uint64(state.PendingStrength+state.LiveStrength+expiredStrength) * bondAsset.Amt
-	for state.MaxBondedAmt > 0 && amt+currentlyBondedAmt > state.MaxBondedAmt && toPost > 0 {
+	currentlyBondedAmt := uint64(state.PendingStrength+state.LiveStrength) * bondAsset.Amt
+	for maxBondedAmt > 0 && amt+currentlyBondedAmt > maxBondedAmt && toPost > 0 {
 		toPost-- // dumber, but reads easier
 		amt = bondAsset.Amt * uint64(toPost)
 	}
 	if toPost == 0 {
 		c.log.Warnf("Unable to post new bond with equivalent of %s currently bonded (limit of %s)",
-			wallet.amtString(currentlyBondedAmt), wallet.amtString(state.MaxBondedAmt))
+			wallet.amtString(currentlyBondedAmt), wallet.amtString(maxBondedAmt))
 		return
 	}
 	if toPost < state.mustPost {
 		c.log.Warnf("Only posting %d bond increments instead of %d because of current bonding limit of %s",
-			toPost, state.mustPost, wallet.amtString(state.MaxBondedAmt))
+			toPost, state.mustPost, wallet.amtString(maxBondedAmt))
 	}
 
 	lockTime, err := c.calculateMergingLockTime(dc)
@@ -724,7 +733,7 @@ func (c *Core) rotateBonds(ctx context.Context) {
 		}
 		acctBondState := c.bondStateOfDEX(dc, bondCfg)
 
-		refundedAssets, expiredStrength, err := c.refundExpiredBonds(ctx, dc.acct, bondCfg, acctBondState, now)
+		refundedAssets, err := c.refundExpiredBonds(ctx, dc.acct, acctBondState, now)
 		if err != nil {
 			c.log.Errorf("Failed to refund expired bonds for %v: %v", dc.acct.host, err)
 			continue
@@ -755,7 +764,7 @@ func (c *Core) rotateBonds(ctx context.Context) {
 			continue
 		}
 
-		c.postRequiredBonds(dc, bondCfg, acctBondState, bondAsset, wallet, expiredStrength, unlocked)
+		c.postRequiredBonds(dc, bondCfg, acctBondState, bondAsset, wallet, unlocked)
 	}
 
 	c.updateBondReserves()
@@ -1124,9 +1133,10 @@ func (c *Core) nextBondKey(assetID uint32) (*secp256k1.PrivateKey, uint32, error
 	return priv, nextBondKeyIndex, nil
 }
 
-// UpdateBondOptions sets the bond rotation options for a DEX host, including
-// the target trading tier, the preferred asset to use for bonds, and the
-// maximum amount allowable to be locked in bonds.
+// UpdateBondOptions sets the bond rotation options for a DEX host: the
+// target trading tier, the preferred asset to use for bonds, and the
+// number of penalized tiers to auto-compensate. The cap on bonded
+// capital is derived from these — see derivedMaxBondedAmt.
 func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 	dc, _, err := c.dex(form.Host)
 	if err != nil {
@@ -1148,7 +1158,7 @@ func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 	var tierChanged, assetChanged bool
 	var wallet *xcWallet    // new wallet
 	var bondAssetID0 uint32 // old wallet's asset ID
-	var targetTier0, maxBondedAmt0 uint64
+	var targetTier0 uint64
 	var penaltyComps0 uint16
 	defer func() {
 		if (tierChanged || assetChanged) && (wallet != nil) {
@@ -1176,11 +1186,10 @@ func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 
 	// Revert to initial values if we encounter any error below.
 	bondAssetID0 = dc.acct.bondAsset
-	targetTier0, maxBondedAmt0, penaltyComps0 = dc.acct.targetTier, dc.acct.maxBondedAmt, dc.acct.penaltyComps
+	targetTier0, penaltyComps0 = dc.acct.targetTier, dc.acct.penaltyComps
 	defer func() { // still under authMtx lock on defer stack
 		if !success {
 			dc.acct.bondAsset = bondAssetID0
-			dc.acct.maxBondedAmt = maxBondedAmt0
 			dc.acct.penaltyComps = penaltyComps0
 			if dc.acct.targetTier > 0 || assetChanged {
 				dc.acct.targetTier = targetTier0
@@ -1212,30 +1221,12 @@ func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 	dc.acct.penaltyComps = penaltyComps
 	dbAcct.PenaltyComps = penaltyComps
 
-	var bondAssetAmt uint64 // because to disable we must proceed even with no config
 	bondAsset := bondAssets[bondAssetID]
 	if bondAsset == nil {
 		if targetTier > 0 || assetChanged {
 			return fmt.Errorf("dex %v is does not support %v as a bond asset (or we lack their config)",
 				dbAcct.Host, unbip(bondAssetID))
 		} // else disable, attempting to unreserve funds if wallet is available
-	} else {
-		bondAssetAmt = bondAsset.Amt
-	}
-
-	// If we're lowering our bond, we can't set the max bonded amount too low.
-	tierForDefaultMaxBonded := targetTier
-	if targetTier > 0 && targetTier0 > targetTier {
-		tierForDefaultMaxBonded = targetTier0
-	}
-
-	maxBonded := maxBondedMult * bondAssetAmt * (tierForDefaultMaxBonded + uint64(penaltyComps)) // the min if none specified
-	if form.MaxBondedAmt != nil {
-		requested := *form.MaxBondedAmt
-		if requested < maxBonded {
-			return fmt.Errorf("requested bond maximum of %d is lower than minimum of %d", requested, maxBonded)
-		}
-		maxBonded = requested
 	}
 
 	var found bool
@@ -1274,7 +1265,7 @@ func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 			if otherDC.acct.host == dc.acct.host { // Only adding others
 				continue
 			}
-			assetID, _, _ := otherDC.bondOpts()
+			assetID, _ := otherDC.bondOpts()
 			if assetID != bondAssetID {
 				continue
 			}
@@ -1309,15 +1300,10 @@ func (c *Core) UpdateBondOptions(form *BondOptionsForm) error {
 		dbAcct.BondAsset = bondAssetID
 	}
 
-	if assetChanged || tierChanged || form.MaxBondedAmt != nil || maxBonded < dc.acct.maxBondedAmt {
-		dc.acct.maxBondedAmt = maxBonded
-		dbAcct.MaxBondedAmt = maxBonded
-	}
-
 	c.triggerBondRotation()
 
-	c.log.Debugf("Bond options for %v: target tier %d, bond asset %d, maxBonded %v",
-		dbAcct.Host, dc.acct.targetTier, dc.acct.bondAsset, dbAcct.MaxBondedAmt)
+	c.log.Debugf("Bond options for %v: target tier %d, bond asset %d, penalty comps %d",
+		dbAcct.Host, dc.acct.targetTier, dc.acct.bondAsset, dc.acct.penaltyComps)
 
 	if err = c.db.UpdateAccountInfo(dbAcct); err == nil {
 		success = true
@@ -1428,8 +1414,8 @@ func (c *Core) PostBond(form *PostBondForm) (*PostBondResult, error) {
 			if dc.acct.locked() { // require authDEX first to reconcile any existing bond statuses
 				return nil, newError(acctKeyErr, "acct locked %s (login first)", form.Addr)
 			}
-			if form.MaintainTier != nil || form.MaxBondedAmt != nil {
-				return nil, fmt.Errorf("maintain tier and max bonded amount may only be set when registering " +
+			if form.MaintainTier != nil {
+				return nil, fmt.Errorf("maintain tier may only be set when registering " +
 					"(use UpdateBondOptions to change bond maintenance settings)")
 			}
 		}
@@ -1508,24 +1494,19 @@ func (c *Core) PostBond(form *PostBondForm) (*PostBondResult, error) {
 			form.Bond, bondAsset.Amt, rem)
 	}
 	if acctExists { // if account exists, advise using UpdateBondOptions
-		autoBondAsset, targetTier, maxBondedAmt := dc.bondOpts()
+		autoBondAsset, targetTier := dc.bondOpts()
 		c.log.Warnf("Manually posting bond for existing account "+
-			"(target tier %d, bond asset %d, maxBonded %v). "+
+			"(target tier %d, bond asset %d). "+
 			"Consider using UpdateBondOptions instead.",
-			targetTier, autoBondAsset, wallet.amtString(maxBondedAmt))
+			targetTier, autoBondAsset)
 	} else if maintain { // new account (or registering a view-only acct) with tier maintenance enabled
 		// Fully pre-reserve funding with the wallet before making and
 		// transactions. bondConfirmed will call authDEX, which will recognize
 		// that it is the first authorization of the account with the DEX via
 		// the totalReserves and isAuthed fields of dexAccount.
-		maxBondedAmt := maxBondedMult * form.Bond // default
-		if form.MaxBondedAmt != nil {
-			maxBondedAmt = *form.MaxBondedAmt
-		}
 		dc.acct.authMtx.Lock()
 		dc.acct.bondAsset = bondAssetID
 		dc.acct.targetTier = form.Bond / bondAsset.Amt
-		dc.acct.maxBondedAmt = maxBondedAmt
 		dc.acct.authMtx.Unlock()
 	}
 
@@ -1635,16 +1616,17 @@ func (c *Core) makeAndPostBond(dc *dexConnection, acctExists bool, wallet *xcWal
 				bondCoinStr, unbip(bond.AssetID), dc.acct.host, err)
 		}
 	} else {
-		bondAsset, targetTier, maxBondedAmt := dc.bondOpts()
+		bondAsset, targetTier := dc.bondOpts()
 		ai := &db.AccountInfo{
-			Host:         dc.acct.host,
-			Cert:         dc.acct.cert,
-			DEXPubKey:    dc.acct.dexPubKey,
-			EncKeyV2:     dc.acct.encKey,
-			Bonds:        []*db.Bond{dbBond},
-			TargetTier:   targetTier,
-			MaxBondedAmt: maxBondedAmt,
-			BondAsset:    bondAsset,
+			Host:       dc.acct.host,
+			Cert:       dc.acct.cert,
+			DEXPubKey:  dc.acct.dexPubKey,
+			EncKeyV2:   dc.acct.encKey,
+			Bonds:      []*db.Bond{dbBond},
+			TargetTier: targetTier,
+			BondAsset:  bondAsset,
+			// MaxBondedAmt left at zero — column kept for backward DB
+			// compat but no longer used; cap is derived at use time.
 		}
 		err = c.dbCreateOrUpdateAccount(dc, ai)
 		if err != nil {

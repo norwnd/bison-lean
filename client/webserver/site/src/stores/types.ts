@@ -9,10 +9,14 @@ export enum ConnectionStatus {
   InvalidCert = 2,
 }
 
-export interface BondOptions {
-  bondAssetID: number
-  targetTier: number
-  maxBondedAmt: number
+// BondOptionsForm matches Go's core.BondOptionsForm — the request body for
+// /api/updatebondoptions. Keep these field names in sync; renaming on the Go
+// side without updating here will silently drop the value over the wire.
+export interface BondOptionsForm {
+  host?: string
+  targetTier?: number
+  bondAssetID?: number
+  penaltyComps?: number
 }
 
 export interface Reputation {
@@ -30,7 +34,6 @@ export interface ExchangeAuth {
   liveStrength: number
   targetTier: number
   effectiveTier: number
-  maxBondedAmt: number
   penaltyComps: number
   pendingBonds: PendingBondState[]
   expiredBonds: any[]
