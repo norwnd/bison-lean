@@ -3,14 +3,17 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { postJSON, checkResponse } from '../services/api'
 import { useAuthStore } from '../stores/useAuthStore'
+import { useNotifications } from '../hooks/useNotifications'
 import { ROUTES } from '../router/routes'
 import { logoPath } from '../hooks/useFormatters'
 import {
   TX_HISTORY_PAGE_SIZE, mergePendingAndHistory,
+  insertConfirmedTxIntoHistory,
   TxTable, TxDetailModal
 } from '../components/walletTx'
 import type {
-  WalletTransaction, SupportedAsset, TxHistoryResult
+  WalletTransaction, SupportedAsset, TxHistoryResult,
+  CoreNote, TransactionNote, WalletNote
 } from '../stores/types'
 
 // Buttons jump by this many rows (forward / backward) within the
@@ -107,7 +110,11 @@ export default function WalletTransactionsPage () {
 
   // Initial page on mount / assetID change. Resets all state (incl.
   // refs) so navigating between assets doesn't leak the previous
-  // wallet's txs.
+  // wallet's txs. Dep is `[assetID]` directly rather than `[fetchPage]`
+  // - they're equivalent (fetchPage's only dep is assetID), but the
+  // direct form makes it obvious from the call site what triggers
+  // a reload, and prevents an accidental future change to fetchPage's
+  // dep array from silently re-firing this effect.
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -126,7 +133,7 @@ export default function WalletTransactionsPage () {
     }
     load()
     return () => { cancelled = true }
-  }, [fetchPage])
+  }, [assetID])
 
   // Append the next older page. Reads "current" via refs so chained
   // calls (e.g. jumpEarliest's loop) see the freshly-fetched tail
@@ -158,6 +165,31 @@ export default function WalletTransactionsPage () {
   // so the listener doesn't have to re-bind on every loadMore re-creation.
   const loadMoreRef = useRef(loadMore)
   useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
+
+  // Live history merge: when a tx confirms, splice it into the
+  // loaded history at its timestamp position. Mirrors the embedded
+  // TransactionsSection on /wallets, but here we pass the real
+  // moreAvailable so insertConfirmedTxIntoHistory knows whether
+  // appending past the tail would put the tx above unloaded older
+  // entries. Both the array-state and the ref must update so a
+  // subsequent loadMore (which reads via the ref) doesn't reset the
+  // splice.
+  useNotifications(useMemo(() => ({
+    walletnote: (note: CoreNote) => {
+      const wn = note as WalletNote
+      if (wn.payload?.route !== 'transaction') return
+      const txNote = wn.payload as TransactionNote
+      if (txNote.assetID !== assetID) return
+      const tx = txNote.transaction
+      if (!tx?.confirmed) return
+      const merged = insertConfirmedTxIntoHistory(
+        historyRef.current, tx, moreAvailableRef.current
+      )
+      if (merged === historyRef.current) return
+      historyRef.current = merged
+      setHistory(merged)
+    }
+  }), [assetID]))
 
   useEffect(() => {
     const el = scrollerRef.current

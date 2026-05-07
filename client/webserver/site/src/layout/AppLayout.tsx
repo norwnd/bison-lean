@@ -16,7 +16,7 @@ import { ActionRequiredDialog } from '../components/notifications/ActionRequired
 import { handleAutoBumpCapped } from '../components/notifications/autoBumpCappedToast'
 import { handleLostNonce } from '../components/notifications/lostNonceToast'
 import { networkSuffix } from '../components/notifications/actionRequiredUtils'
-import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, LostNonceNote, WalletNote } from '../stores/types'
+import type { ActionRequiredNote, ActionResolvedNote, AutoBumpCappedNote, CustomWalletNote, LostNonceNote, TransactionNote, WalletNote } from '../stores/types'
 
 // Data-freshness contract for the React app:
 //
@@ -59,8 +59,8 @@ export function AppLayout () {
 
   const {
     handleBalanceNote, handleWalletStateNote, handleWalletSyncNote,
-    handleSpotPriceNote, handleRateNote, handleWalletCreationNote,
-    handleConnEventNote,
+    handleTransactionNote, handleSpotPriceNote, handleRateNote,
+    handleWalletCreationNote, handleConnEventNote,
   } = useMarketStore()
 
   const { handleRunStatsNote, handleEpochReportNote, handleCEXProblemsNote } = useMMStore()
@@ -169,6 +169,17 @@ export function AppLayout () {
               break
             case 'actionResolved':
               resolveAction((wn.payload as ActionResolvedNote).uniqueID)
+              break
+            // 'transaction' carries a single WalletTransaction. Merge
+            // into wallet.pendingTxs in the store so the embedded
+            // TransactionsSection on /wallets and the standalone
+            // /wallets/:id/transactions page (both read pending from
+            // the same slice) reflect new sends / ticket purchases /
+            // bridge initiations the moment the wallet emits them,
+            // and drop the entry when the tx confirms. Mirrors vanilla
+            // wallets.ts handleCustomWalletNote case 'transaction'.
+            case 'transaction':
+              handleTransactionNote(wn.payload as TransactionNote)
               break
             case 'autoBumpCapped': {
               const cw = wn.payload as CustomWalletNote

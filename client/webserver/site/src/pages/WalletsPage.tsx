@@ -28,6 +28,7 @@ import { ROUTES, walletTransactionsPath } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
 import {
   TX_HISTORY_PAGE_SIZE, mergePendingAndHistory,
+  insertConfirmedTxIntoHistory,
   TxTable, TxDetailModal
 } from '../components/walletTx'
 import type {
@@ -36,7 +37,8 @@ import type {
   CoreNote, TicketStakingStatus, VotingServiceProvider,
   Exchange, Spot,
   WalletPeer, WalletRestoration,
-  ProposalsMeta, Ticket
+  ProposalsMeta, Ticket,
+  TransactionNote, WalletNote
 } from '../stores/types'
 import { PeerSource, ApprovalStatus, DCRAssetID } from '../stores/types'
 
@@ -426,26 +428,29 @@ export default function WalletsPage () {
   //
   // No page-level `walletnote` / `bridge` subscription. `balance`,
   // `walletstate`, `walletconfig`, `walletsync`, `fiatrateupdate`,
-  // `createwallet` are dispatched globally by AppLayout to
-  // `useMarketStore`, which rebuilds the affected slices of
-  // `useAuthStore` with new top-level refs. The
-  // `useAuthStore(s => s.assets)` / `s.fiatRatesMap` selectors below
-  // fire on those setState calls, so every `useMemo([...])` in this
-  // component re-runs with the fresh refs and the view stays in sync.
-  // Bridge txs move balance between same-ticker network siblings -
-  // the resulting `balance` notes flow through the store and trigger
-  // re-renders here automatically.
+  // `createwallet`, plus `walletnote` route='transaction', are
+  // dispatched globally by AppLayout to `useMarketStore`, which
+  // rebuilds the affected slices of `useAuthStore` with new top-level
+  // refs. The `useAuthStore(s => s.assets)` / `s.fiatRatesMap`
+  // selectors below fire on those setState calls, so every
+  // `useMemo([...])` in this component re-runs with the fresh refs
+  // and the view stays in sync. Bridge txs move balance between
+  // same-ticker network siblings - the resulting `balance` notes flow
+  // through the store and trigger re-renders here automatically.
   //
   // Vanilla's `wallets.ts handleCustomWalletNote` (L2767) also
-  // dispatched `walletnote` route='tipChange' and route='transaction'
-  // for per-asset sync-height updates and tx-history refresh. Those
-  // update paths haven't been ported (sync height is currently
-  // refreshed via `walletsync` notes alone, and the embedded
-  // TransactionsSection / WalletTransactionsPage fetch their pages
-  // on mount and don't auto-refresh on tx notes). If either becomes
-  // a visible problem, the right fix is a typed merge in
-  // useMarketStore (mirroring `handleBalanceNote` /
-  // `handleWalletStateNote`), not a parent-level forceReRender.
+  // dispatched `walletnote` route='tipChange'. That update path
+  // (per-asset sync-height in the sidebar) hasn't been ported - sync
+  // height is currently refreshed via `walletsync` notes alone. The
+  // route='transaction' path IS wired: the store's typed merge
+  // (useMarketStore.handleTransactionNote, dispatched from AppLayout)
+  // keeps wallet.pendingTxs live (new sends appear, confirmed entries
+  // drop), and TransactionsSection / WalletTransactionsPage each have
+  // a local walletnote subscription that splices freshly-confirmed
+  // txs into their `history` array via insertConfirmedTxIntoHistory.
+  // Both updates land in the same React batch on each note, so the
+  // merged display transitions atomically from "pending" to "history"
+  // on the same re-render.
   // The DCR staking flow has its own useNotifications hook below
   // (route='ticketPurchaseUpdate' / 'tipChange') and remains live.
 
@@ -1761,10 +1766,11 @@ function TransactionsSection ({
   )
 
   // Fetch the latest history page on mount + when assetID changes.
-  // We don't auto-refetch on `walletnote transaction` notes: that
-  // sync path isn't wired in the React port yet (see top-of-file
-  // comment) and the user can always navigate to the full page for
-  // an authoritative view.
+  // The history slice stays live afterward via the walletnote
+  // subscription below: confirmed txs splice into `history` in
+  // timestamp order so this section reflects them without a navigation
+  // refetch. The pending slice is live independently - see top-of-file
+  // comment on the WS subscription contract.
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -1782,6 +1788,33 @@ function TransactionsSection ({
     load()
     return () => { cancelled = true }
   }, [asset.id])
+
+  // Live history merge: when a tx confirms, the store's
+  // handleTransactionNote drops it from wallet.pendingTxs (so the
+  // pending slice updates), and this subscriber splices the same tx
+  // into the local `history` array at its timestamp position. Both
+  // updates land in the same React batch, so the merged display
+  // transitions atomically from "pending row" to "history row" on a
+  // single re-render.
+  //
+  // moreAvailable=true is the safe default for the embedded section:
+  // we only ever load the latest TX_HISTORY_PAGE_SIZE history entries,
+  // so any confirmed tx older than the loaded tail would be hidden by
+  // the slice(0, TX_HISTORY_PAGE_SIZE) below anyway, and we don't
+  // want insertConfirmedTxIntoHistory to push it past the page-size
+  // boundary into a wrong-relative-order position. The deep
+  // /wallets/:id/transactions page tracks the real moreAvailable.
+  useNotifications(useMemo(() => ({
+    walletnote: (note: CoreNote) => {
+      const wn = note as WalletNote
+      if (wn.payload?.route !== 'transaction') return
+      const txNote = wn.payload as TransactionNote
+      if (txNote.assetID !== asset.id) return
+      const tx = txNote.transaction
+      if (!tx?.confirmed) return
+      setHistory(prev => insertConfirmedTxIntoHistory(prev, tx, true))
+    }
+  }), [asset.id]))
 
   const merged = useMemo(
     () => mergePendingAndHistory(pendingTxs, history).slice(0, TX_HISTORY_PAGE_SIZE),

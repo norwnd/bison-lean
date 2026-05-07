@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type {
   BalanceNote, WalletStateNote, WalletSyncNote, SpotPriceNote,
-  RateNote, WalletCreationNote, ConnEventNote
+  RateNote, WalletCreationNote, ConnEventNote, TransactionNote,
+  WalletState
 } from './types'
 import { useAuthStore } from './useAuthStore'
 
@@ -23,10 +24,47 @@ import { useAuthStore } from './useAuthStore'
 // equality checks all the way up, so a future memo with a narrower
 // dep can't accidentally regress reactivity.
 
+// patchWallet applies an immutable patch to the wallet for assetID.
+//
+// Resolves the source wallet from `assets[id].wallet` first, falling
+// back to `walletMap[id]`. After fetchUser, buildWalletMap aliases
+// these to the same reference - we look up via assets first because
+// that's where wallet creation actually lands; walletMap is the
+// projection. If neither has a wallet, the call no-ops.
+//
+// Builds the next wallet via patch(), then triple-replaces (wallet ->
+// assets[id] -> walletMap[id]) so the walletMap[id] === assets[id]
+// .wallet alias invariant survives the update. The `assets[id]`
+// branch is conditional because assets may not have an entry for
+// every assetID we track in walletMap (e.g. tokens that lost their
+// parent asset config); walletMap is always written.
+//
+// Returning the same ref from patch() is a no-op (skips setState).
+// Use this when the patch couldn't find anything to change - it
+// avoids spurious re-renders without scattering early-return
+// branches across the handlers.
+function patchWallet (
+  assetID: number,
+  patch: (w: WalletState) => WalletState
+): void {
+  const { assets, walletMap } = useAuthStore.getState()
+  const sourceWallet = assets[assetID]?.wallet ?? walletMap[assetID]
+  if (!sourceWallet) return
+  const nextWallet = patch(sourceWallet)
+  if (nextWallet === sourceWallet) return
+  const nextAssets = { ...assets }
+  if (assets[assetID]) {
+    nextAssets[assetID] = { ...assets[assetID], wallet: nextWallet }
+  }
+  const nextWalletMap = { ...walletMap, [assetID]: nextWallet }
+  useAuthStore.setState({ assets: nextAssets, walletMap: nextWalletMap })
+}
+
 interface MarketState {
   handleBalanceNote: (note: BalanceNote) => void
   handleWalletStateNote: (note: WalletStateNote) => void
   handleWalletSyncNote: (note: WalletSyncNote) => void
+  handleTransactionNote: (note: TransactionNote) => void
   handleSpotPriceNote: (note: SpotPriceNote) => void
   handleRateNote: (note: RateNote) => void
   handleWalletCreationNote: (note: WalletCreationNote) => void
@@ -35,26 +73,15 @@ interface MarketState {
 
 export const useMarketStore = create<MarketState>(() => ({
   handleBalanceNote: (note: BalanceNote) => {
-    const { assets, walletMap } = useAuthStore.getState()
-    const asset = assets[note.assetID]
-    // After fetchUser, `buildWalletMap` aliases `walletMap[id]` to
-    // `assets[id].wallet` - they're the same reference. Preserve that
-    // invariant by building ONE new wallet object and pointing both
-    // collections at it. Otherwise consumers reading through
-    // `assets[id].wallet.balance` would see the stale value while
-    // consumers reading through `walletMap[id].balance` would see the
-    // fresh one.
-    const sourceWallet = asset?.wallet ?? walletMap[note.assetID]
-    if (!sourceWallet) return
-    const nextWallet = { ...sourceWallet, balance: note.balance }
-    const nextAssets = { ...assets }
-    if (asset) {
-      nextAssets[note.assetID] = { ...asset, wallet: nextWallet }
-    }
-    const nextWalletMap = { ...walletMap, [note.assetID]: nextWallet }
-    useAuthStore.setState({ assets: nextAssets, walletMap: nextWalletMap })
+    patchWallet(note.assetID, w => ({ ...w, balance: note.balance }))
   },
 
+  // walletstate replaces the wallet wholesale, so we don't go through
+  // patchWallet (which only patches an existing wallet). The note's
+  // own `wallet` is the authoritative new value; we always write it
+  // to walletMap, and conditionally graft it onto `assets[id]` when
+  // we have an entry for that asset. Same triple-replacement shape
+  // as patchWallet, just with a fixed source.
   handleWalletStateNote: (note: WalletStateNote) => {
     const { assets, walletMap } = useAuthStore.getState()
     const assetID = note.wallet.assetID
@@ -67,22 +94,39 @@ export const useMarketStore = create<MarketState>(() => ({
   },
 
   handleWalletSyncNote: (note: WalletSyncNote) => {
-    const { assets, walletMap } = useAuthStore.getState()
-    const w = walletMap[note.assetID]
-    if (!w) return
-    // Preserve the `walletMap[id] === assets[id].wallet` invariant -
-    // see handleBalanceNote for the rationale.
-    const nextWallet = {
+    patchWallet(note.assetID, w => ({
       ...w,
       syncStatus: note.syncStatus,
       syncProgress: note.syncProgress
-    }
-    const nextAssets = { ...assets }
-    if (assets[note.assetID]) {
-      nextAssets[note.assetID] = { ...assets[note.assetID], wallet: nextWallet }
-    }
-    const nextWalletMap = { ...walletMap, [note.assetID]: nextWallet }
-    useAuthStore.setState({ assets: nextAssets, walletMap: nextWalletMap })
+    }))
+  },
+
+  // Merge a single tx update into wallet.pendingTxs. Mirrors vanilla
+  // wallets.ts handleTxNote (fc634606:client/webserver/site/src/js
+  // /wallets.ts:2090): on confirm, drop the entry; otherwise upsert.
+  //
+  // Vanilla also gated the upsert on tx.timestamp > 0; we don't.
+  // The DCR wallet legitimately resets Timestamp to 0 when a
+  // previously-mined tx gets reorged back to mempool (see dcr.go
+  // L7647), and the gate would silently drop that update, leaving
+  // the local copy with stale block-confirm state until something
+  // else triggers a refresh. The backend only emits TransactionNote
+  // for txs already in its xcWallet.pendingTxs map, so always
+  // upserting on the not-confirmed branch is safe - we can't add a
+  // tx that shouldn't be there.
+  handleTransactionNote: (note: TransactionNote) => {
+    const tx = note.transaction
+    if (!tx?.id) return
+    patchWallet(note.assetID, w => {
+      const prev = w.pendingTxs ?? {}
+      if (tx.confirmed) {
+        if (!(tx.id in prev)) return w
+        const next = { ...prev }
+        delete next[tx.id]
+        return { ...w, pendingTxs: next }
+      }
+      return { ...w, pendingTxs: { ...prev, [tx.id]: tx } }
+    })
   },
 
   handleSpotPriceNote: (note: SpotPriceNote) => {

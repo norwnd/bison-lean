@@ -163,6 +163,57 @@ export function mergePendingAndHistory (
   return out
 }
 
+// insertConfirmedTxIntoHistory splices a freshly-confirmed tx into a
+// timestamp-descending history array, preserving sort order. Used by
+// the live `walletnote` route='transaction' path so a tx that just
+// dropped out of pendingTxs reappears in `history` without waiting
+// for a /api/txhistory refetch.
+//
+// Cases:
+//   - tx already in history (by id): replace in place. Position
+//     doesn't move because timestamps don't change post-confirm.
+//   - tx.timestamp <= 0: skip. We can't place something without a
+//     timestamp; in DCR/BTC/ETH a confirmed tx always has one, but
+//     defending against the asset-wallet contract being violated.
+//   - history empty OR tx newer-or-equal than history[0]: unshift.
+//   - tx older than the loaded tail:
+//       * moreAvailable: skip. Inserting at the tail would put this
+//         tx above unloaded older txs that should sort below it,
+//         breaking the ordering invariant. The next loadMore page
+//         (eventually fetched as the user scrolls) will deliver it
+//         in its correct position.
+//       * !moreAvailable: append. We've loaded everything; this tx
+//         is the new oldest.
+//   - tx fits within the loaded range: splice at the first slot
+//     whose timestamp is strictly less than tx.timestamp; ties go
+//     after the equal entry (predicate is `<`, not `<=`). If no
+//     entry is strictly less - i.e. every entry from some position
+//     through tail ties at tx.timestamp - append at the end. Either
+//     ordering preserves the descending sort.
+export function insertConfirmedTxIntoHistory (
+  history: WalletTransaction[],
+  tx: WalletTransaction,
+  moreAvailable: boolean
+): WalletTransaction[] {
+  const idx = history.findIndex(h => h.id === tx.id)
+  if (idx >= 0) {
+    if (history[idx] === tx) return history
+    const next = history.slice()
+    next[idx] = tx
+    return next
+  }
+  if (tx.timestamp <= 0) return history
+  if (history.length === 0) return [tx]
+  if (tx.timestamp >= history[0].timestamp) return [tx, ...history]
+  const tail = history[history.length - 1]
+  if (tx.timestamp < tail.timestamp) {
+    return moreAvailable ? history : [...history, tx]
+  }
+  const insertAt = history.findIndex(h => h.timestamp < tx.timestamp)
+  if (insertAt < 0) return [...history, tx]
+  return [...history.slice(0, insertAt), tx, ...history.slice(insertAt)]
+}
+
 // ---------------------------------------------------------------------------
 // TxTable - shared row rendering for both the embedded /wallets section
 // and the dedicated /wallets/:assetID/transactions page.

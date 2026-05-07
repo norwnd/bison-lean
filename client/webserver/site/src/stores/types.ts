@@ -252,7 +252,11 @@ export interface WalletState {
   approved: Record<number, ApprovalStatus>
   bridgeApproved?: Record<string, ApprovalStatus>
   feeState?: FeeState
-  pendingTxs: Record<string, WalletTransaction>
+  // Optional because the Go side serializes a nil map as JSON null
+  // (and may omit the field on freshly-created wallets that have no
+  // pending txs yet). Every reader treats absence as "empty"; the
+  // type-level optionality makes that contract honest.
+  pendingTxs?: Record<string, WalletTransaction>
   // tradeSafe is set by RPC-multiplexed wallets (eth/polygon) to
   // signal whether their provider-redundancy threshold is met.
   // false → block new-trade UI affordances. For non-RPC-multiplexed
