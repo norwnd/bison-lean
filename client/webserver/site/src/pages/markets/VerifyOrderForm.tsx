@@ -143,7 +143,7 @@ export function VerifyOrderForm ({
     : ''
 
   return (
-    <form id="verifyForm" className="modal-form" autoComplete="off">
+    <div id="verifyForm" className="modal-form">
       <button type="button" className="form-close-btn" onClick={onClose} aria-label="Close"><span className="ico-cross"></span></button>
       {order && bui && qui && currentMkt && (
         <>
@@ -234,6 +234,6 @@ export function VerifyOrderForm ({
           <span>{t('SHOW_DISCLAIMER')}</span>
         </button>
       )}
-    </form>
+    </div>
   )
 }

@@ -126,8 +126,12 @@
 }
 
 // Card appearance (border + background + shadow) for forms rendered
-// inside `FormOverlay`. The overlay itself just dims the backdrop; the
-// inner card brings its own `.modal-form` class for the panel look.
+// inside `FormOverlay`. Two usage patterns:
+//   1. Default mode (`<FormOverlay>`) - the overlay's inner wrapper
+//      gets `.modal-form` automatically.
+//   2. Bare mode (`<FormOverlay bare>`) - the overlay just dims the
+//      backdrop; the caller applies `.modal-form` to its own element
+//      (e.g. side panels in ProposalsPage/ProposalPage, VerifyOrderForm).
 .modal-form {
   background-color: var(--form-bg);
   border-radius: 5px;
@@ -138,6 +142,16 @@
   padding: 1rem;
   position: relative;
   min-width: 320px;
+}
+
+// When `.modal-form` is the default FormOverlay wrapper (bare=false), give
+// it a generous viewport-relative width so content has room to breathe.
+// Scoped to the direct child of `.form-overlay` so that side-panel forms
+// (ProposalsPage filter, ProposalPage vote, VerifyOrderForm) which use
+// `.modal-form` *inside* a `bare` FormOverlay keep their own sizing.
+.form-overlay > .modal-form {
+  width: 60vw;
+  max-width: 1200px;
 }
 
 // Subtle close-X button, absolutely positioned in the top-right of a

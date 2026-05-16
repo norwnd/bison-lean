@@ -415,7 +415,17 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
       {marketLimits.length > 0 && (
         <div className="mb-3">
           <div className="fs16 mb-1">{t('MARKET_LIMITS')}</div>
-          <table className="table table-sm fs14">
+          {/* `table-layout: fixed` keeps column widths stable as the user
+              steps tier up/down -- otherwise the auto layout reflows
+              every column whenever the number magnitudes change. Market
+              column is pinned narrow (just two icons); Starting and
+              Privileged split the remainder evenly. */}
+          <table className="table table-sm fs14" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '120px' }} />
+              <col />
+              <col />
+            </colgroup>
             <thead>
               <tr>
                 <th>{t('Market')}</th>
@@ -426,9 +436,11 @@ export function FeeAssetSelectionForm ({ exchange, certFile, onSuccess }: Props)
             <tbody>
               {marketLimits.map(({ market, baseSymbol, quoteSymbol, baseUnit, limits }) => (
                 <tr key={`${market.baseid}-${market.quoteid}`}>
-                  <td className="d-flex align-items-center gap-1">
-                    <img className="micro-icon" src={logoPath(baseSymbol)} alt="" />
-                    <img className="micro-icon" src={logoPath(quoteSymbol)} alt="" />
+                  <td>
+                    <div className="d-flex align-items-center gap-1">
+                      <img className="micro-icon" src={logoPath(baseSymbol)} alt="" />
+                      <img className="micro-icon" src={logoPath(quoteSymbol)} alt="" />
+                    </div>
                   </td>
                   <td>
                     {formatBestWeCan(limits.low)} {baseUnit}
