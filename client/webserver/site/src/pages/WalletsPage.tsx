@@ -28,7 +28,7 @@ import { ROUTES, walletTransactionsPath } from '../router/routes'
 import { walletConnecting } from '../hooks/useWalletMsg'
 import {
   TX_HISTORY_PAGE_SIZE, mergePendingAndHistory,
-  insertConfirmedTxIntoHistory,
+  insertConfirmedTxIntoHistory, pendingTxList,
   TxTable, TxDetailModal
 } from '../components/walletTx'
 import type {
@@ -1761,7 +1761,7 @@ function TransactionsSection ({
   // re-render when the parent passes a fresh `wallet` ref (driven by
   // useMarketStore notes - see CL-ASSETS-STALE-MEMO).
   const pendingTxs = useMemo(
-    () => wallet.pendingTxs ? Object.values(wallet.pendingTxs) : [],
+    () => pendingTxList(wallet.pendingTxs),
     [wallet.pendingTxs]
   )
 

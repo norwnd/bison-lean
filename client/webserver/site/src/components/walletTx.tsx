@@ -133,34 +133,60 @@ export function feeUSD (
   return `$${formatFiat(v)}`
 }
 
-// mergePendingAndHistory combines pending txs (live, from
-// `wallet.pendingTxs`) with historical txs (from /api/txhistory) into a
-// single list with pending first. Dedupes by tx id across BOTH lists
-// AND within each list, so:
-//   - a tx that's pending locally and also appears in a fetched
-//     history page only renders once (pending wins, since it has the
-//     freshest confirms data)
-//   - any duplicates introduced by chained loadMore calls (the
-//     /api/txhistory endpoint includes the refID tx in its response,
-//     so the first row of each new page is the last row of the
-//     previous one) get squashed.
-export function mergePendingAndHistory (
-  pending: WalletTransaction[],
-  history: WalletTransaction[]
+// pendingTxList materializes wallet.pendingTxs (a tx-id-keyed map, or
+// undefined when the wallet has none - Go serializes a nil map as JSON
+// null) into an array for rendering / merging.
+export function pendingTxList (
+  pendingTxs?: Record<string, WalletTransaction>
 ): WalletTransaction[] {
+  return pendingTxs ? Object.values(pendingTxs) : []
+}
+
+// byTimestampDesc sorts WalletTransactions newest-first. timestamp <= 0
+// is treated as newest (sorts to top). Comparison instead of
+// subtraction avoids Infinity - Infinity = NaN when two timestamp-0 txs
+// meet, which would corrupt the sort.
+function byTimestampDesc (a: WalletTransaction, b: WalletTransaction): number {
+  const ra = a.timestamp > 0 ? a.timestamp : Infinity
+  const rb = b.timestamp > 0 ? b.timestamp : Infinity
+  if (ra === rb) return 0
+  return ra > rb ? -1 : 1
+}
+
+// dedupeById removes txs with a duplicate id, keeping the first
+// occurrence. Squashes:
+//   - a tx that's pending locally AND also in a fetched history page:
+//     mergePendingAndHistory lists pending first, so the pending copy
+//     wins (it has the freshest confirms data)
+//   - duplicates from chained loadMore calls - the /api/txhistory
+//     endpoint echoes the refID tx as the first row of each new page
+//     (i.e. the last row of the previous one)
+function dedupeById (txs: WalletTransaction[]): WalletTransaction[] {
   const seen = new Set<string>()
   const out: WalletTransaction[] = []
-  for (const tx of pending) {
-    if (seen.has(tx.id)) continue
-    seen.add(tx.id)
-    out.push(tx)
-  }
-  for (const tx of history) {
+  for (const tx of txs) {
     if (seen.has(tx.id)) continue
     seen.add(tx.id)
     out.push(tx)
   }
   return out
+}
+
+// mergePendingAndHistory combines pending txs (live, from
+// `wallet.pendingTxs`) with historical txs (from /api/txhistory) into a
+// single list with pending first, each block sorted newest-first by
+// timestamp to match the Age column. pendingTxs arrives in arbitrary
+// map order so we sort it here; history is already timestamp-descending
+// from the backend and is left as-is. timestamp <= 0 (freshly
+// submitted, or reset to mempool by a DCR reorg - shows "Pending" in
+// the Age column) sorts as newest so just-sent txs stay on top.
+// Dedupes by id across both blocks (see dedupeById).
+export function mergePendingAndHistory (
+  pending: WalletTransaction[],
+  history: WalletTransaction[]
+): WalletTransaction[] {
+  const sortedPending = [...pending].sort(byTimestampDesc)
+  return dedupeById([...sortedPending, ...history])
 }
 
 // insertConfirmedTxIntoHistory splices a freshly-confirmed tx into a

@@ -8,7 +8,7 @@ import { ROUTES } from '../router/routes'
 import { logoPath } from '../hooks/useFormatters'
 import {
   TX_HISTORY_PAGE_SIZE, mergePendingAndHistory,
-  insertConfirmedTxIntoHistory,
+  insertConfirmedTxIntoHistory, pendingTxList,
   TxTable, TxDetailModal
 } from '../components/walletTx'
 import type {
@@ -81,7 +81,7 @@ export default function WalletTransactionsPage () {
   const scrollerRef = useRef<HTMLDivElement>(null)
 
   const pendingTxs = useMemo(
-    () => wallet?.pendingTxs ? Object.values(wallet.pendingTxs) : [],
+    () => pendingTxList(wallet?.pendingTxs),
     [wallet?.pendingTxs]
   )
 
